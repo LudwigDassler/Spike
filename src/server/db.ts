@@ -133,25 +133,31 @@ export async function getTasksTreeFromDb(brandId: string = 'herbalife_wellness')
   `;
 
   if (isPostgresConnected) {
-    const { rows } = await pool.query(sqlQuery, [brandId]);
-    const tasks: TaskItem[] = rows.map((r) => ({
-      id: r.id,
-      parentTaskId: r.parent_task_id,
-      code: r.code,
-      title: r.title,
-      description: r.description,
-      status: r.status,
-      priority: r.priority,
-      project: r.project,
-      assigneeName: r.assignee_name,
-      assigneeRole: r.assignee_role,
-      dueDate: r.due_date,
-      pvImpact: Number(r.pv_impact),
-      estimatedHours: Number(r.estimated_hours),
-      playbookSource: r.playbook_source || undefined,
-      subtasks: Array.isArray(r.subtasks) ? r.subtasks : [],
-    }));
-    return { tasks, engine: 'postgresql_ltree', sqlExecuted: sqlQuery.trim() };
+    try {
+      const { rows } = await pool.query(sqlQuery, [brandId]);
+      if (rows.length > 0) {
+        const tasks: TaskItem[] = rows.map((r) => ({
+          id: r.id,
+          parentTaskId: r.parent_task_id,
+          code: r.code,
+          title: r.title,
+          description: r.description,
+          status: r.status,
+          priority: r.priority,
+          project: r.project,
+          assigneeName: r.assignee_name,
+          assigneeRole: r.assignee_role,
+          dueDate: r.due_date,
+          pvImpact: Number(r.pv_impact),
+          estimatedHours: Number(r.estimated_hours),
+          playbookSource: r.playbook_source || undefined,
+          subtasks: Array.isArray(r.subtasks) ? r.subtasks : [],
+        }));
+        return { tasks, engine: 'postgresql_ltree', sqlExecuted: sqlQuery.trim() };
+      }
+    } catch {
+      // Fallback to in-memory mirror when schema migration has not yet been applied
+    }
   }
 
   return {
@@ -170,7 +176,7 @@ export async function createTaskInDb(
   const brandId = payload.brandId || WHITE_LABEL_PRESETS[0].id;
   const newId = `task-${Date.now()}`;
   const nextNumber = 100 + memoryTasks.length + 1;
-  const code = `PF-${nextNumber}`;
+  const code = `TC-${nextNumber}`;
 
   const insertSql = `
     INSERT INTO tasks (
@@ -192,41 +198,45 @@ export async function createTaskInDb(
   `;
 
   if (isPostgresConnected) {
-    const { rows } = await pool.query(insertSql, [
-      newId,
-      brandId,
-      payload.parentTaskId || null,
-      code,
-      payload.title,
-      payload.description,
-      payload.priority,
-      payload.project,
-      payload.assigneeName,
-      payload.assigneeRole || 'Независимый Партнёр',
-      payload.dueDate,
-      payload.pvImpact,
-      payload.estimatedHours || 3,
-      payload.playbookSource || null,
-      JSON.stringify(payload.subtasks || []),
-    ]);
-    const r = rows[0];
-    return {
-      id: r.id,
-      parentTaskId: r.parent_task_id,
-      code: r.code,
-      title: r.title,
-      description: r.description,
-      status: r.status,
-      priority: r.priority,
-      project: r.project,
-      assigneeName: r.assignee_name,
-      assigneeRole: r.assignee_role,
-      dueDate: r.due_date,
-      pvImpact: Number(r.pv_impact),
-      estimatedHours: Number(r.estimated_hours),
-      playbookSource: r.playbook_source || undefined,
-      subtasks: r.subtasks || [],
-    };
+    try {
+      const { rows } = await pool.query(insertSql, [
+        newId,
+        brandId,
+        payload.parentTaskId || null,
+        code,
+        payload.title,
+        payload.description,
+        payload.priority,
+        payload.project,
+        payload.assigneeName,
+        payload.assigneeRole || 'Независимый Партнёр',
+        payload.dueDate,
+        payload.pvImpact,
+        payload.estimatedHours || 3,
+        payload.playbookSource || null,
+        JSON.stringify(payload.subtasks || []),
+      ]);
+      const r = rows[0];
+      return {
+        id: r.id,
+        parentTaskId: r.parent_task_id,
+        code: r.code,
+        title: r.title,
+        description: r.description,
+        status: r.status,
+        priority: r.priority,
+        project: r.project,
+        assigneeName: r.assignee_name,
+        assigneeRole: r.assignee_role,
+        dueDate: r.due_date,
+        pvImpact: Number(r.pv_impact),
+        estimatedHours: Number(r.estimated_hours),
+        playbookSource: r.playbook_source || undefined,
+        subtasks: r.subtasks || [],
+      };
+    } catch {
+      // Fallback to in-memory mirror
+    }
   }
 
   const created: TaskItem = {

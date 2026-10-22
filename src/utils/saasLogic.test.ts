@@ -380,3 +380,116 @@ test('calculateSaasValuation computes ARR, NDR, LTV/CAC and Enterprise M&A valua
   assert.ok(valuation.ltvCacRatio > 10);
   assert.ok(valuation.enterpriseValuationRub > 300_000_000);
 });
+
+test('Zero-Chat CRM: sendTelegramNotification, sendWhatsAppTemplate, inviteToTeamChat and Seamless Messaging deep-links', async () => {
+  const {
+    sendTelegramNotification,
+    sendWhatsAppTemplate,
+    inviteToTeamChat,
+  } = await import('../services/messengerService');
+  const {
+    handleTelegramContact,
+    handleWhatsAppContact,
+  } = await import('./seamlessMessaging');
+
+  // 1. Тест sendTelegramNotification с Inline Keyboard (web_app)
+  let capturedTgUrl = '';
+  let capturedTgBody = '';
+  const mockTgFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    capturedTgUrl = String(url);
+    capturedTgBody = String(init?.body || '');
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 777 } }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  const tgResult = await sendTelegramNotification(
+    99887766,
+    'Екатерина: заканчивается Коктейль Формула 1 (3 дн.)',
+    'https://app.tedcloud.ru/tma?taskId=task-101',
+    {
+      botToken: '123456:ABC-DEF',
+      fetchImpl: mockTgFetch,
+    }
+  );
+
+  assert.equal(tgResult.ok, true);
+  assert.equal(tgResult.messageId, 777);
+  assert.equal(capturedTgUrl, 'https://api.telegram.org/bot123456:ABC-DEF/sendMessage');
+  const parsedTg = JSON.parse(capturedTgBody);
+  assert.equal(
+    parsedTg.reply_markup.inline_keyboard[0][0].web_app.url,
+    'https://app.tedcloud.ru/tma?taskId=task-101'
+  );
+
+  // 2. Тест sendWhatsAppTemplate (нормализация номера и подстановка переменных шаблона)
+  let capturedWaUrl = '';
+  let capturedWaBody = '';
+  const mockWaFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    capturedWaUrl = String(url);
+    capturedWaBody = String(init?.body || '');
+    return new Response(
+      JSON.stringify({ messages: [{ id: 'wamid.HBgLNzkyNjQxODIyMTAVAgASGBQz' }] }),
+      { status: 200 }
+    );
+  }) as typeof fetch;
+
+  const waResult = await sendWhatsAppTemplate(
+    '+7 (926) 418-22-10',
+    'tedcloud_refill_reminder_v1',
+    ['Екатерина', 'Протеиновый коктейль Формула 1', '3'],
+    {
+      accessToken: 'EAAB_TOKEN',
+      phoneNumberId: '10987654321',
+      fetchImpl: mockWaFetch,
+    }
+  );
+
+  assert.equal(waResult.ok, true);
+  assert.equal(capturedWaUrl, 'https://graph.facebook.com/v20.0/10987654321/messages');
+  const parsedWa = JSON.parse(capturedWaBody);
+  assert.equal(parsedWa.to, '79264182210');
+  assert.equal(parsedWa.type, 'template');
+  assert.equal(parsedWa.template.name, 'tedcloud_refill_reminder_v1');
+  assert.equal(parsedWa.template.components[0].parameters.length, 3);
+  assert.equal(parsedWa.template.components[0].parameters[0].text, 'Екатерина');
+
+  // 3. Тест клиентских Seamless Messaging ссылок (Telegram & WhatsApp)
+  const tgLinks = handleTelegramContact('@ekaterina_wellness', 'Привет, Екатерина!');
+  assert.equal(tgLinks.cleanUsername, 'ekaterina_wellness');
+  assert.equal(
+    tgLinks.tgResolveUrl,
+    `tg://resolve?domain=ekaterina_wellness&text=${encodeURIComponent('Привет, Екатерина!')}`
+  );
+
+  const waLink = handleWhatsAppContact('8 (926) 418-22-10', 'Привет, Екатерина!');
+  assert.equal(
+    waLink,
+    `https://wa.me/79264182210?text=${encodeURIComponent('Привет, Екатерина!')}`
+  );
+
+  // 4. Тест inviteToTeamChat (одноразовая ссылка member_limit: 1)
+  let capturedInviteBody = '';
+  const mockInviteFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedInviteBody = String(init?.body || '');
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        result: {
+          invite_link: 'https://t.me/+OneTimeMentorGroupLink',
+          member_limit: 1,
+        },
+      }),
+      { status: 200 }
+    );
+  }) as typeof fetch;
+
+  const inviteResult = await inviteToTeamChat('123456:ABC-DEF', -100192837465, 554433, {
+    fetchImpl: mockInviteFetch,
+  });
+  assert.equal(inviteResult.ok, true);
+  assert.equal(inviteResult.invite_link, 'https://t.me/+OneTimeMentorGroupLink');
+  assert.equal(inviteResult.member_limit, 1);
+  assert.equal(JSON.parse(capturedInviteBody).member_limit, 1);
+});
+

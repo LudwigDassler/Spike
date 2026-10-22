@@ -46,17 +46,17 @@ export function getPermissionsForRole(role: UserRole): RolePermissions {
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
-  SUPERADMIN: 'Руководитель платформы (Superadmin)',
-  NETWORK_PARTNER: 'Партнёр сети (Продажи и клиенты)',
-  INTERNAL_IT: 'Инженер поддержки (IT-отдел)',
+  NETWORK_PARTNER: 'Партнёр сети (NETWORK_PARTNER)',
+  INTERNAL_IT: 'Разработчик / Поддержка (INTERNAL_IT)',
+  SUPERADMIN: 'Администратор (SUPERADMIN)',
 };
 
 const RoleContext = createContext<RoleContextValue | undefined>(undefined);
 
-export const CurrentRoleProvider: React.FC<{
+export const RoleProvider: React.FC<{
   initialRole?: UserRole;
   children: React.ReactNode;
-}> = ({ initialRole = 'SUPERADMIN', children }) => {
+}> = ({ initialRole = 'NETWORK_PARTNER', children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>(initialRole);
 
   const value = useMemo<RoleContextValue>(() => {
@@ -72,10 +72,14 @@ export const CurrentRoleProvider: React.FC<{
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
 };
 
-export function useCurrentRole(): RoleContextValue {
+export const CurrentRoleProvider = RoleProvider;
+
+export function useRole(): RoleContextValue {
   const ctx = useContext(RoleContext);
   if (!ctx) {
-    throw new Error('useCurrentRole must be used within CurrentRoleProvider');
+    throw new Error('useRole must be used within RoleProvider');
   }
   return ctx;
 }
+
+export const useCurrentRole = useRole;

@@ -290,6 +290,61 @@ async function startServer() {
     res.json(state);
   });
 
+  // 9. Zero-Chat CRM: Серверные эндпоинты оркестрации мессенджеров (Telegram Bot API & WhatsApp Cloud API)
+  app.post('/api/messenger/telegram/notify', async (req, res) => {
+    try {
+      const { chatId, message, webAppUrl } = req.body;
+      if (!chatId || !message || !webAppUrl) {
+        res.status(400).json({ error: 'Параметры chatId, message и webAppUrl обязательны' });
+        return;
+      }
+      const { sendTelegramNotification } = await import('./src/services/messengerService');
+      const result = await sendTelegramNotification(chatId, message, webAppUrl);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/messenger/whatsapp/template', async (req, res) => {
+    try {
+      const { phone, templateName, variables } = req.body;
+      if (!phone || !templateName) {
+        res.status(400).json({ error: 'Параметры phone и templateName обязательны' });
+        return;
+      }
+      const { sendWhatsAppTemplate } = await import('./src/services/messengerService');
+      const result = await sendWhatsAppTemplate(
+        phone,
+        templateName,
+        Array.isArray(variables) ? variables : []
+      );
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/messenger/telegram/invite', async (req, res) => {
+    try {
+      const { chatId, userId, mode } = req.body;
+      if (!chatId || !userId) {
+        res.status(400).json({ error: 'Параметры chatId и userId обязательны' });
+        return;
+      }
+      const { inviteToTeamChat } = await import('./src/services/messengerService');
+      const result = await inviteToTeamChat(
+        process.env.TELEGRAM_BOT_TOKEN || '',
+        chatId,
+        userId,
+        { mode }
+      );
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

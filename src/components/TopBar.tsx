@@ -19,25 +19,32 @@ export const TopBar: React.FC<TopBarProps> = ({
     currentRole,
     setCurrentRole,
     canViewCrmAndPv,
+    canViewItTickets,
     canViewPartnerNetwork,
     canViewWhiteLabel,
   } = useCurrentRole();
 
-  const allNavItems: Array<{ id: ActiveTab; label: string; visible: boolean }> = [
-    { id: 'copilot', label: 'Фокус дня', visible: true },
-    { id: 'tasks', label: 'Задачи и тикеты', visible: true },
-    { id: 'crm', label: 'Воронка и CRM', visible: canViewCrmAndPv },
-    { id: 'partners', label: 'Партнёрская сеть', visible: canViewPartnerNetwork },
-    { id: 'enterprise', label: 'B2B и White-Label', visible: canViewWhiteLabel },
+  // Ролевая фильтрация навигации:
+  // - NETWORK_PARTNER: только "Фокус дня" и "Мои клиенты" (IT-задачи и White-Label скрыты)
+  // - INTERNAL_IT: только "Фокус дня" и "Задачи отдела" (CRM-воронка и баллы PV/VP скрыты)
+  // - SUPERADMIN: полный доступ ко всем контурам TedCloud
+  const navItems: Array<{ id: ActiveTab; label: string }> = [
+    { id: 'copilot', label: 'Фокус дня' },
+    ...(canViewCrmAndPv ? [{ id: 'crm' as const, label: 'Мои клиенты' }] : []),
+    ...(canViewItTickets ? [{ id: 'tasks' as const, label: 'Задачи отдела' }] : []),
+    ...(currentRole === 'SUPERADMIN' && canViewPartnerNetwork
+      ? [{ id: 'partners' as const, label: 'Партнёрская сеть' }]
+      : []),
+    ...(canViewWhiteLabel
+      ? [{ id: 'enterprise' as const, label: 'B2B & White-Label' }]
+      : []),
   ];
 
-  const visibleNavItems = allNavItems.filter((item) => item.visible);
-
-  const handleRoleChange = (newRole: UserRole) => {
-    setCurrentRole(newRole);
-    if (newRole === 'INTERNAL_IT' && (activeTab === 'crm' || activeTab === 'partners' || activeTab === 'enterprise')) {
+  const handleRoleSwitch = (nextRole: UserRole) => {
+    setCurrentRole(nextRole);
+    if (nextRole === 'NETWORK_PARTNER' && activeTab !== 'copilot' && activeTab !== 'crm') {
       onSelectTab('copilot');
-    } else if (newRole === 'NETWORK_PARTNER' && activeTab === 'enterprise') {
+    } else if (nextRole === 'INTERNAL_IT' && activeTab !== 'copilot' && activeTab !== 'tasks') {
       onSelectTab('copilot');
     }
   };
@@ -56,27 +63,33 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           TedCloud
         </a>
-        <span className="text-xs text-slate-400 hidden sm:inline">·</span>
+        <span className="text-xs text-slate-300 hidden sm:inline">|</span>
         <span className="text-xs font-medium text-slate-500 hidden sm:inline">
-          Единое рабочее пространство
+          {currentRole === 'INTERNAL_IT'
+            ? 'Инженерный контур и поддержка'
+            : currentRole === 'SUPERADMIN'
+            ? 'Центр управления платформой'
+            : 'Рабочее место партнёра'}
         </span>
       </div>
 
-      {/* Zone 2: Role-Filtered Navigation Links */}
+      {/* Zone 2: Role-Scoped Navigation */}
       <nav
         aria-label="Основная навигация"
         className="flex items-center gap-6 overflow-x-auto text-sm font-medium text-slate-600"
       >
-        {visibleNavItems.map((item) => {
+        {navItems.map((item) => {
           const isActive = activeTab === item.id;
           return (
             <button
               key={item.id}
               type="button"
               onClick={() => onSelectTab(item.id)}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${
+              className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${
                 isActive
-                  ? 'border-emerald-700 text-slate-900 font-semibold'
+                  ? currentRole === 'INTERNAL_IT'
+                    ? 'border-blue-700 text-slate-900 font-semibold'
+                    : 'border-emerald-700 text-slate-900 font-semibold'
                   : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
               }`}
             >
@@ -86,29 +99,56 @@ export const TopBar: React.FC<TopBarProps> = ({
         })}
       </nav>
 
-      {/* Zone 3: Role Context Switcher + Primary Action */}
+      {/* Zone 3: Role Switcher (NETWORK_PARTNER / INTERNAL_IT / SUPERADMIN) + Primary Action */}
       <div className="flex items-center gap-3 shrink-0">
-        <div className="flex items-center gap-1.5">
-          <label htmlFor="header-role-select" className="text-xs text-slate-500 hidden md:inline">
-            Режим доступа:
-          </label>
-          <select
-            id="header-role-select"
-            aria-label="Текущая роль пользователя в TedCloud"
-            value={currentRole}
-            onChange={(e) => handleRoleChange(e.target.value as UserRole)}
-            className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 bg-slate-100 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-700"
+        <div
+          role="group"
+          aria-label="Переключатель ролей"
+          className="flex items-center p-1 bg-slate-100 rounded-lg border border-slate-200"
+        >
+          <button
+            type="button"
+            onClick={() => handleRoleSwitch('NETWORK_PARTNER')}
+            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+              currentRole === 'NETWORK_PARTNER'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
-            <option value="SUPERADMIN">Руководитель (Superadmin)</option>
-            <option value="NETWORK_PARTNER">Партнёр сети (Продажи)</option>
-            <option value="INTERNAL_IT">IT-специалист (Поддержка)</option>
-          </select>
+            NETWORK_PARTNER
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRoleSwitch('INTERNAL_IT')}
+            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+              currentRole === 'INTERNAL_IT'
+                ? 'bg-blue-700 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            INTERNAL_IT
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRoleSwitch('SUPERADMIN')}
+            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+              currentRole === 'SUPERADMIN'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            SUPERADMIN
+          </button>
         </div>
 
         <button
           type="button"
           onClick={onOpenNewTaskModal}
-          className="px-4 py-2 text-xs font-semibold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+          className={`px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+            currentRole === 'INTERNAL_IT'
+              ? 'bg-blue-700 hover:bg-blue-800'
+              : 'bg-emerald-700 hover:bg-emerald-800'
+          }`}
         >
           {currentRole === 'INTERNAL_IT' ? '+ Новый тикет' : '+ Новая задача'}
         </button>

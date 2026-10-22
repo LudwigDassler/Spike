@@ -8,7 +8,7 @@ import {
 import { SmartTaskCard } from './SmartTaskCard';
 import { useCurrentRole } from '../context/RoleContext';
 import { DEPARTMENT_QUEUE_OPTIONS } from '../data/seedData';
-import { CheckCircle2, Plus } from 'lucide-react';
+import { CheckCircle2, Plus, ShieldCheck } from 'lucide-react';
 
 interface TmaCopilotViewProps {
   copilotTasks: SmartCopilotTask[];
@@ -40,9 +40,9 @@ const DEFAULT_INTERNAL_TICKETS: SmartCopilotTask[] = [
     productName: 'Задержка отображения бонусных баллов при повторной оплате заказа в мобильном кабинете',
     cycleDays: 1,
     daysRemaining: 1,
-    pvImpact: 0,
+    pvImpact: 8,
     empatheticScript:
-      'После оплаты заказа клиентом в мобильном приложении статус заказа обновляется мгновенно, но пересчёт группового объёма задерживается на 15 минут. Просьба проверить очередь обработки платежей.',
+      'После оплаты заказа клиентом в мобильном приложении статус заказа обновляется мгновенно, но пересчёт командного объёма задерживается на 15 минут. Просьба проверить очередь обработки платежей.',
     status: 'pending',
     dueDate: '2026-10-24',
     comments: [
@@ -72,7 +72,7 @@ const DEFAULT_INTERNAL_TICKETS: SmartCopilotTask[] = [
     productName: 'Подключение единого входа (SSO) и витрины продуктов для нового филиала',
     cycleDays: 3,
     daysRemaining: 3,
-    pvImpact: 0,
+    pvImpact: 5,
     empatheticScript:
       'Необходимо активировать корпоративный домен и синхронизировать справочник продуктов для филиала в Казани до понедельника.',
     status: 'pending',
@@ -84,7 +84,6 @@ const DEFAULT_INTERNAL_TICKETS: SmartCopilotTask[] = [
 export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
   copilotTasks,
   clientCycles,
-  activePreset,
   onRunRefillWorker,
   onClientReordered,
   onAdvanceJitStep,
@@ -93,19 +92,14 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
   onSendTelegramTask,
   onOpenNewTaskModal,
 }) => {
-  const { currentRole, canViewCrmAndPv, canViewItTickets } = useCurrentRole();
-  const [superadminCardFilter, setSuperadminCardFilter] =
-    useState<TaskClass>('client_action');
+  const { currentRole } = useCurrentRole();
   const [currentFocusIndex, setCurrentFocusIndex] = useState(0);
   const [localTickets, setLocalTickets] = useState<SmartCopilotTask[]>(
     DEFAULT_INTERNAL_TICKETS
   );
 
-  const activeTaskClass: TaskClass = useMemo(() => {
-    if (currentRole === 'INTERNAL_IT') return 'internal_ticket';
-    if (currentRole === 'NETWORK_PARTNER') return 'client_action';
-    return superadminCardFilter;
-  }, [currentRole, superadminCardFilter]);
+  const activeTaskClass: TaskClass =
+    currentRole === 'INTERNAL_IT' ? 'internal_ticket' : 'client_action';
 
   const combinedTasks = useMemo(() => {
     const clientItems = copilotTasks.map((t) => ({
@@ -138,12 +132,8 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
                     id: `cmt-${Date.now()}`,
                     taskId,
                     authorPartnerId,
-                    authorName:
-                      currentRole === 'INTERNAL_IT'
-                        ? 'Инженер поддержки'
-                        : 'Алина Соколова',
-                    authorRole:
-                      currentRole === 'INTERNAL_IT' ? 'IT Support' : 'Руководитель',
+                    authorName: 'Инженер поддержки',
+                    authorRole: 'IT Support',
                     body,
                     createdAt: 'Только что',
                   },
@@ -174,65 +164,39 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
       {/* Contextual Header */}
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
-          <div className="text-xs text-slate-500 mb-1">
-            TedCloud · {activePreset.brandName}
+          <div className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
+            <span>TedCloud</span>
+            <span>·</span>
+            <span>
+              {currentRole === 'INTERNAL_IT'
+                ? 'Внутренняя служба поддержки и разработки'
+                : 'Умный помощник сопровождения клиентов'}
+            </span>
+            <span
+              title="Безопасное соединение"
+              aria-label="Безопасное соединение"
+              className="inline-flex items-center text-emerald-700 cursor-help ml-1"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+            </span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            {activeTaskClass === 'internal_ticket'
-              ? 'Очередь сервисных тикетов подразделений'
-              : 'Фокус дня: сопровождение клиентов и повторные продажи'}
+            {currentRole === 'INTERNAL_IT'
+              ? 'Очередь сервисных обращений подразделений'
+              : 'Фокус дня: забота о клиентах и начисление VP'}
           </h1>
         </div>
-
-        {/* Для SUPERADMIN доступен переключатель между клиентскими задачами и внутренними тикетами */}
-        {currentRole === 'SUPERADMIN' && (
-          <div
-            role="group"
-            aria-label="Тип отображаемых карточек"
-            className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg self-start shrink-0"
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setSuperadminCardFilter('client_action');
-                setCurrentFocusIndex(0);
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                superadminCardFilter === 'client_action'
-                  ? 'bg-white text-emerald-800 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Клиентские задачи
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSuperadminCardFilter('internal_ticket');
-                setCurrentFocusIndex(0);
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                superadminCardFilter === 'internal_ticket'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Внутренние тикеты отделов
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Main Split: Left = Polymorphic SmartTaskCard, Right = Clean Business Context */}
+      {/* Main Split: Left = Polymorphic SmartTaskCard, Right = Role-Specific Business Context */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left 7 Cols: Polymorphic SmartTaskCard */}
         <section
           aria-label="Текущая приоритетная карточка"
           className="lg:col-span-7 flex flex-col gap-4"
         >
           <div className="flex items-center justify-between text-xs text-slate-600">
             <span>
-              Активных карточек в очереди:{' '}
+              В очереди на сегодня:{' '}
               <strong className="font-mono tabular-nums text-slate-900">
                 {pendingTasks.length}
               </strong>
@@ -281,29 +245,29 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
             <div className="p-8 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
               <CheckCircle2 className="w-8 h-8 text-emerald-700 mx-auto" />
               <h2 className="text-base font-bold text-slate-900">
-                Все задачи в текущем списке выполнены
+                Все задачи на сегодня выполнены!
               </h2>
               <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
-                Новые задачи появятся автоматически по мере приближения дат обновления клиентских программ или поступления обращений.
+                Отличная работа! Все запланированные действия закрыты.
               </p>
             </div>
           )}
         </section>
 
-        {/* Right 5 Cols: Clean Business Context (Client Schedule for Sales vs Department Queues for IT) */}
+        {/* Right 5 Cols: Role-Scoped Context */}
         <section
           aria-label="Сводка по направлению"
           className="lg:col-span-5 p-6 bg-white border border-slate-200 rounded-2xl space-y-5"
         >
-          {canViewCrmAndPv && activeTaskClass === 'client_action' ? (
+          {currentRole !== 'INTERNAL_IT' ? (
             <>
               <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-200">
                 <div>
                   <h2 className="text-base font-bold text-slate-900">
-                    График сопровождения клиентов
+                    Календарь продления заказов
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Активные программы питания и плановые даты продления заказа
+                    Ближайшие обновления клиентских программ и награда в VP
                   </p>
                 </div>
                 <button
@@ -311,7 +275,7 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
                   onClick={onRunRefillWorker}
                   className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  Обновить расписание
+                  Обновить список
                 </button>
               </div>
 
@@ -326,41 +290,39 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
                         {cycle.clientFirstName} · {cycle.productName}
                       </div>
                       <div className="text-slate-500 mt-0.5">
-                        Куратор: {cycle.ownerPartnerName} · Дата завершения курса:{' '}
+                        Завершение курса:{' '}
                         <span className="font-mono tabular-nums text-slate-700">
                           {cycle.cycleEndDate}
                         </span>
                       </div>
                     </div>
 
-                    <div className="sm:text-right font-mono tabular-nums font-semibold text-emerald-700 shrink-0">
-                      +{cycle.pvValue} PV
-                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full font-mono tabular-nums font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 self-start sm:self-center">
+                      +{cycle.pvValue} VP
+                    </span>
                   </div>
                 ))}
               </div>
             </>
-          ) : null}
-
-          {(canViewItTickets || activeTaskClass === 'internal_ticket') && (
+          ) : (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-200">
                 <div>
                   <h2 className="text-base font-bold text-slate-900">
-                    Целевые отделы поддержки TedCloud
+                    Очереди подразделений TedCloud
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Обращения направляются в общую очередь выбранного департамента
+                    Новые тикеты распределяются по профильным отделам
                   </p>
                 </div>
                 {onOpenNewTaskModal && (
                   <button
                     type="button"
                     onClick={onOpenNewTaskModal}
-                    className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center gap-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg flex items-center gap-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Создать тикет</span>
+                    <span>Новый тикет</span>
                   </button>
                 )}
               </div>
@@ -369,16 +331,16 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
                 {DEPARTMENT_QUEUE_OPTIONS.map((dept) => (
                   <div
                     key={dept.id}
-                    className="py-2.5 flex items-center justify-between gap-3"
+                    className="py-3 flex items-center justify-between gap-3"
                   >
-                    <div>
-                      <div className="font-semibold text-slate-900">
-                        [{dept.label}]
-                      </div>
-                      <div className="text-slate-500 mt-0.5">{dept.category}</div>
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200/80">
+                        {dept.label}
+                      </span>
+                      <div className="text-slate-500">{dept.category}</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium shrink-0">
-                      Очередь активна
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium shrink-0">
+                      Активна
                     </span>
                   </div>
                 ))}
