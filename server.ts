@@ -1,13 +1,18 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import {
+  addCopilotTaskComment,
+  advanceCopilotJitStep,
   checkPostgresConnection,
+  completeCopilotReorder,
   convertMemoryLeadToPartner,
   createPartnerWithLtreeInDb,
   createTaskInDb,
   getFullMemoryState,
   getTasksTreeFromDb,
   resetMemoryState,
+  snoozeCopilotTask,
+  triggerRefillEngineWorker,
   updateMemoryLeads,
   updateMemoryPartners,
   updateMemoryTasks,
@@ -37,12 +42,61 @@ async function startServer() {
         tasks: treeResult.tasks,
         partners: state.partners,
         leads: state.leads,
+        clientCycles: state.clientCycles,
+        copilotTasks: state.copilotTasks,
         engine: treeResult.engine,
         lastSqlSample: treeResult.sqlExecuted,
       });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
+  });
+
+  // 1.1. Предиктивный трекер (Refill Engine с idempotency_key)
+  app.post('/api/refill-engine/run', (_req, res) => {
+    const result = triggerRefillEngineWorker('2026-10-22');
+    res.json(result);
+  });
+
+  // 1.2. Фокус-задача TMA: Клиент заказал (Продлить цикл +21 день и начислить PV)
+  app.post('/api/copilot/tasks/:id/reorder', (req, res) => {
+    const state = completeCopilotReorder(req.params.id);
+    if (!state) {
+      res.status(404).json({ error: 'Фокус-задача не найдена' });
+      return;
+    }
+    res.json(state);
+  });
+
+  // 1.3. Фокус-задача TMA: Напомнить завтра (Snooze)
+  app.post('/api/copilot/tasks/:id/snooze', (req, res) => {
+    const state = snoozeCopilotTask(req.params.id);
+    res.json(state);
+  });
+
+  // 1.4. Шаг 2: Just-in-Time Playbook State Machine (генерация строго 1 следующей задачи по графу JSONB)
+  app.post('/api/copilot/tasks/:id/jit-advance', (req, res) => {
+    const result = advanceCopilotJitStep(req.params.id);
+    if (!result) {
+      res.status(404).json({ error: 'Задача не найдена' });
+      return;
+    }
+    res.json(result);
+  });
+
+  // 1.5. Шаг 4: Zero-Chat Архитектура (контекстные комментарии task_comments между наставником и новичком)
+  app.post('/api/copilot/tasks/:id/comments', (req, res) => {
+    const { body, authorPartnerId } = req.body;
+    if (!body || typeof body !== 'string' || !body.trim()) {
+      res.status(400).json({ error: 'Текст комментария обязателен' });
+      return;
+    }
+    const state = addCopilotTaskComment(
+      req.params.id,
+      body.trim(),
+      authorPartnerId || 'partner-4'
+    );
+    res.status(201).json(state);
   });
 
   // 2. Эндпоинт получения иерархического дерева задач (WITH RECURSIVE + JOIN partner_nodes ltree)

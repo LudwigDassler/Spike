@@ -311,3 +311,407 @@ export function calculateSaasValuation(input: ValuationInput): ValuationMetrics 
     readinessScore,
   };
 }
+
+/**
+ * Защита базы от кражи (Privacy by Design / RLS-маскирование на клиенте и сервере):
+ * Если карточку просматривает владелец клиента (ownerPartnerId === viewerPartnerId),
+ * возвращается полный номер. Если карточку смотрит вышестоящий наставник — номер маскируется (+7 *** ***-**-10).
+ */
+export function maskPhoneForRls(
+  rawPhone: string,
+  ownerPartnerId: string,
+  viewerPartnerId: string
+): {
+  displayPhone: string;
+  isMasked: boolean;
+} {
+  if (ownerPartnerId && viewerPartnerId && ownerPartnerId === viewerPartnerId) {
+    return {
+      displayPhone: rawPhone,
+      isMasked: false,
+    };
+  }
+
+  const digits = rawPhone.replace(/\D/g, '');
+  const lastTwo = digits.length >= 2 ? digits.slice(-2) : '00';
+  return {
+    displayPhone: `+7 *** ***-**-${lastTwo}`,
+    isMasked: true,
+  };
+}
+
+/**
+ * Детерминированный ключ идемпотентности для исключения дублей при перезапуске pg_cron воркера
+ */
+export function buildRefillIdempotencyKey(
+  clientId: string,
+  productSku: string,
+  cycleEndDateIso: string
+): string {
+  return `refill:${clientId}:${productSku}:${cycleEndDateIso}`;
+}
+
+/**
+ * Генерация заботливого («Anti-Cringe») скрипта для клиента без давления холодных продаж
+ */
+export function buildEmpatheticRefillScript(
+  clientFirstName: string,
+  productName: string,
+  daysRemaining: number
+): string {
+  const daysWord =
+    daysRemaining === 1 ? '1 день' : daysRemaining <= 4 ? `${daysRemaining} дня` : `${daysRemaining} дней`;
+  return `${clientFirstName}, привет! 🌿 Смотрю по нашему дневнику, твоя баночка «${productName}» подходит к концу примерно через ${daysWord}. Как твоё самочувствие и лёгкость по утрам? Давай закажем свежую заранее, чтобы не прерывать твой ритм, или попробуем новый вкус?`;
+}
+
+/**
+ * Идемпотентный воркер Refill Engine: проверяет 21-дневные циклы потребления
+ * и за 0..3 дня до конца генерирует фокус-задачу (с защитой через idempotencyKey)
+ */
+export function runRefillEngineIdempotent(
+  cycles: import('../types/saas').ClientCycleItem[],
+  existingTasks: import('../types/saas').SmartCopilotTask[],
+  referenceDateIso: string = '2026-10-22'
+): {
+  createdCount: number;
+  skippedDuplicatesCount: number;
+  tasks: import('../types/saas').SmartCopilotTask[];
+} {
+  const existingKeys = new Set(existingTasks.map((t) => t.idempotencyKey));
+  const refTime = new Date(`${referenceDateIso}T00:00:00Z`).getTime();
+  const newlyCreated: import('../types/saas').SmartCopilotTask[] = [];
+  let skippedDuplicatesCount = 0;
+
+  for (const cycle of cycles) {
+    if (!cycle.isActive) continue;
+    const endTime = new Date(`${cycle.cycleEndDate}T00:00:00Z`).getTime();
+    const diffDays = Math.round((endTime - refTime) / (1000 * 60 * 60 * 24));
+
+    if (diffDays >= 0 && diffDays <= 3) {
+      const idempotencyKey = buildRefillIdempotencyKey(
+        cycle.id,
+        cycle.productSku,
+        cycle.cycleEndDate
+      );
+
+      if (existingKeys.has(idempotencyKey)) {
+        skippedDuplicatesCount += 1;
+        continue;
+      }
+
+      existingKeys.add(idempotencyKey);
+      newlyCreated.push({
+        id: `copilot-task-${cycle.id}-${cycle.cycleEndDate}`,
+        idempotencyKey,
+        ownerPartnerId: cycle.ownerPartnerId,
+        ownerPartnerName: cycle.ownerPartnerName,
+        clientId: cycle.id,
+        clientFirstName: cycle.clientFirstName,
+        phoneRaw: cycle.phoneRaw,
+        telegramUsername: cycle.telegramUsername,
+        productSku: cycle.productSku,
+        productName: cycle.productName,
+        cycleDays: cycle.cycleDays,
+        daysRemaining: diffDays,
+        pvImpact: cycle.pvValue,
+        playbookStepId: 'step_1_warm_touch',
+        nextStepIdOnSuccess: 'step_2_taste_check',
+        customData: { vertical: 'wellness_franchise', cycleDays: cycle.cycleDays },
+        empatheticScript: buildEmpatheticRefillScript(
+          cycle.clientFirstName,
+          cycle.productName,
+          diffDays
+        ),
+        status: 'pending',
+        dueDate: referenceDateIso,
+        comments: [
+          {
+            id: `cmt-init-${cycle.id}`,
+            taskId: `copilot-task-${cycle.id}-${cycle.cycleEndDate}`,
+            authorPartnerId: 'partner-1',
+            authorName: 'Алина Соколова',
+            authorRole: 'Наставник ветки',
+            body: 'Сделай мягкое касание в Telegram по готовому скрипту, не предлагай сразу каталог.',
+            createdAt: 'Сегодня, 09:30',
+          },
+        ],
+      });
+    }
+  }
+
+  return {
+    createdCount: newlyCreated.length,
+    skippedDuplicatesCount,
+    tasks: [...newlyCreated, ...existingTasks],
+  };
+}
+
+/**
+ * Шаг 2: Граф состояний универсального Playbook (JSONB State Machine)
+ * Вместо генерации 30 задач на месяц вперёд хранит переходы и выдаёт строго по 1 задаче Just-in-Time
+ */
+export const UNIVERSAL_PLAYBOOK_GRAPH: import('../types/saas').PlaybookStateGraph = {
+  id: 'pb-graph-universal-01',
+  code: 'JIT_CLIENT_RETENTION_FLOW',
+  title: 'Умный онбординг и удержание клиента (Just-in-Time Граф)',
+  initialStepId: 'step_1_warm_touch',
+  nodes: {
+    step_1_warm_touch: {
+      stepId: 'step_1_warm_touch',
+      title: 'Шаг 1/3: Мягкое касание за 3 дня до конца цикла',
+      scriptTemplate:
+        '{{clientName}}, привет! 🌿 Смотрю по нашему трекеру, «{{productName}}» скоро заканчивается. Как твоя динамика и самочувствие на этой неделе?',
+      kpiValue: 25,
+      transitions: {
+        success: 'step_2_taste_check',
+        fallback: 'step_1_retry',
+      },
+    },
+    step_2_taste_check: {
+      stepId: 'step_2_taste_check',
+      title: 'Шаг 2/3: Подбор обновлённой программы (Just-in-Time)',
+      scriptTemplate:
+        '{{clientName}}, супер! Давай на следующие 21 день оставим «{{productName}}» как базу, но добавим новый вкус, чтобы не приедалось. Оформить доставку на привычный адрес?',
+      kpiValue: 50,
+      transitions: {
+        success: 'step_3_referral_invite',
+        fallback: 'step_2_taste_check',
+      },
+    },
+    step_3_referral_invite: {
+      stepId: 'step_3_referral_invite',
+      title: 'Шаг 3/3: Приглашение с подругой (Партнёрский рычаг)',
+      scriptTemplate:
+        '{{clientName}}, заказ в пути! Кстати, в понедельник стартует закрытая фокус-группа на 10 дней. Если позовёшь с собой одного человека — для тебя участие с бонусной привилегией 25%. Кого запишем?',
+      kpiValue: 100,
+      transitions: {
+        success: null,
+        fallback: null,
+      },
+    },
+  },
+};
+
+/**
+ * Серверный метод Just-in-Time генерации следующей задачи по триггеру выполнения текущего шага State Machine
+ */
+export function advancePlaybookStepJustInTime(params: {
+  completedTask: import('../types/saas').SmartCopilotTask;
+  outcome?: 'success' | 'fallback';
+  existingTasks: import('../types/saas').SmartCopilotTask[];
+  graph?: import('../types/saas').PlaybookStateGraph;
+}): {
+  nextTask: import('../types/saas').SmartCopilotTask | null;
+  nextStepId: string | null;
+  tasks: import('../types/saas').SmartCopilotTask[];
+} {
+  const graph = params.graph || UNIVERSAL_PLAYBOOK_GRAPH;
+  const outcome = params.outcome || 'success';
+  const currentStepId = params.completedTask.playbookStepId || graph.initialStepId;
+  const currentNode = graph.nodes[currentStepId];
+
+  const updatedList = params.existingTasks.map((t) =>
+    t.id === params.completedTask.id
+      ? { ...t, status: 'completed_reordered' as const }
+      : t
+  );
+
+  if (!currentNode) {
+    return { nextTask: null, nextStepId: null, tasks: updatedList };
+  }
+
+  const nextStepId =
+    outcome === 'success'
+      ? currentNode.transitions.success
+      : currentNode.transitions.fallback || null;
+
+  if (!nextStepId || !graph.nodes[nextStepId]) {
+    return { nextTask: null, nextStepId: null, tasks: updatedList };
+  }
+
+  const nextNode = graph.nodes[nextStepId];
+  const jitIdempotencyKey = `jit:${params.completedTask.clientId}:${nextNode.stepId}`;
+
+  // Защита от дублей: если задача этого шага уже сгенерирована, не дублируем
+  const alreadyExists = updatedList.find((t) => t.idempotencyKey === jitIdempotencyKey);
+  if (alreadyExists) {
+    return { nextTask: alreadyExists, nextStepId, tasks: updatedList };
+  }
+
+  const renderedScript = nextNode.scriptTemplate
+    .replace(/\{\{clientName\}\}/g, params.completedTask.clientFirstName)
+    .replace(/\{\{productName\}\}/g, params.completedTask.productName);
+
+  const nextTask: import('../types/saas').SmartCopilotTask = {
+    id: `copilot-jit-${params.completedTask.clientId}-${nextNode.stepId}`,
+    idempotencyKey: jitIdempotencyKey,
+    ownerPartnerId: params.completedTask.ownerPartnerId,
+    ownerPartnerName: params.completedTask.ownerPartnerName,
+    clientId: params.completedTask.clientId,
+    clientFirstName: params.completedTask.clientFirstName,
+    phoneRaw: params.completedTask.phoneRaw,
+    telegramUsername: params.completedTask.telegramUsername,
+    productSku: params.completedTask.productSku,
+    productName: `${params.completedTask.productName} · ${nextNode.title}`,
+    cycleDays: params.completedTask.cycleDays,
+    daysRemaining: params.completedTask.daysRemaining,
+    pvImpact: nextNode.kpiValue,
+    playbookStepId: nextNode.stepId,
+    nextStepIdOnSuccess: nextNode.transitions.success,
+    customData: {
+      ...(params.completedTask.customData || {}),
+      jitGeneratedFrom: currentStepId,
+    },
+    empatheticScript: renderedScript,
+    status: 'pending',
+    dueDate: params.completedTask.dueDate,
+    comments: [
+      {
+        id: `cmt-jit-${Date.now()}`,
+        taskId: `copilot-jit-${params.completedTask.clientId}-${nextNode.stepId}`,
+        authorPartnerId: 'partner-1',
+        authorName: 'Система JIT Playbook',
+        authorRole: 'State Machine',
+        body: `Задача создана автоматически (Just-in-Time) после закрытия шага «${currentStepId}».`,
+        createdAt: 'Только что',
+      },
+    ],
+  };
+
+  return {
+    nextTask,
+    nextStepId,
+    tasks: [nextTask, ...updatedList],
+  };
+}
+
+/**
+ * Шаг 1: Гибридное дерево organization_nodes (ltree), где в одной БД сосуществуют
+ * внутренние отделы (tedcloud.internal.it, tedcloud.internal.hr) и внешняя партнёрская сеть (tedcloud.network.leader_1)
+ */
+export const TEDCLOUD_HYBRID_ORG_NODES: import('../types/saas').OrganizationNodeItem[] = [
+  {
+    id: 'node-it-dept',
+    displayName: 'IT-отдел (Core Platform)',
+    nodeScope: 'INTERNAL_DEPT',
+    roleCode: 'internal_it',
+    treePath: 'tedcloud.internal.it',
+    kpiValue: 420,
+    customData: { kpiUnit: 'Story Points', slaHours: 4, repo: 'tedcloud/core' },
+  },
+  {
+    id: 'node-it-dev-max',
+    displayName: 'Максим Орлов (Senior Backend Dev)',
+    nodeScope: 'INTERNAL_DEPT',
+    roleCode: 'internal_it',
+    treePath: 'tedcloud.internal.it.dev_max',
+    kpiValue: 145,
+    customData: { kpiUnit: 'Story Points', grade: 'Senior', stack: 'Next.js / PostgreSQL' },
+  },
+  {
+    id: 'node-hr-dept',
+    displayName: 'HR & People Ops',
+    nodeScope: 'INTERNAL_DEPT',
+    roleCode: 'internal_hr',
+    treePath: 'tedcloud.internal.hr',
+    kpiValue: 85,
+    customData: { kpiUnit: 'Закрытые вакансии', openRoles: 6 },
+  },
+  {
+    id: 'node-net-leader-1',
+    displayName: 'Алина Соколова (Лидер ветки #1)',
+    nodeScope: 'EXTERNAL_NETWORK',
+    roleCode: 'network_leader',
+    treePath: 'tedcloud.network.leader_1',
+    kpiValue: 4680,
+    customData: { kpiUnit: 'PV', rank: 'Супервайзор', region: 'Москва' },
+  },
+  {
+    id: 'node-net-partner-4',
+    displayName: 'Артём Громов (Партнёр сети)',
+    nodeScope: 'EXTERNAL_NETWORK',
+    roleCode: 'network_partner',
+    treePath: 'tedcloud.network.leader_1.partner_4',
+    kpiValue: 320,
+    customData: { kpiUnit: 'PV', rank: 'Консультант', tmaEnabled: true },
+  },
+];
+
+/**
+ * Шаг 2: Маршрутизация задач (RBAC Tickets).
+ * - Если задачу создаёт партнёр из внешней сети (tedcloud.network.*) для внутреннего отдела (tedcloud.internal.*),
+ *   задача НЕ может быть назначена напрямую разработчику — она принудительно попадает в общую очередь отдела
+ *   (assigneeNodeId = null, routingMode = 'DEPARTMENT_QUEUE').
+ * - Внутри своего отдела (например, тимлид IT -> разработчик IT) задачи назначаются напрямую (DIRECT_ASSIGNMENT).
+ */
+export function routeTedCloudTaskByRbac(params: {
+  creatorTreePath: string;
+  targetDepartmentPath: string;
+  requestedAssigneeNodeId?: string | null;
+  requestedAssigneeName?: string | null;
+}): {
+  assigneeNodeId: string | null;
+  assigneeNodeName: string;
+  routingMode: import('../types/saas').TedCloudRoutingMode;
+  wasForcedToDepartmentQueue: boolean;
+  rlsPolicyExplanation: string;
+} {
+  const isExternalNetworkCreator = isDescendantLtreePath(
+    params.creatorTreePath,
+    'tedcloud.network'
+  );
+  const isInternalDepartmentTarget = isDescendantLtreePath(
+    params.targetDepartmentPath,
+    'tedcloud.internal'
+  );
+
+  // Межконтурный тикет: Партнёр сети -> Внутренний отдел (IT / HR)
+  if (isExternalNetworkCreator && isInternalDepartmentTarget) {
+    return {
+      assigneeNodeId: null,
+      assigneeNodeName: `Общая очередь (${params.targetDepartmentPath})`,
+      routingMode: 'DEPARTMENT_QUEUE',
+      wasForcedToDepartmentQueue: Boolean(params.requestedAssigneeNodeId),
+      rlsPolicyExplanation:
+        'RLS Policy: Партнёр внешней сети не может назначать баг напрямую разработчику — тикет помещён в общую очередь отдела.',
+    };
+  }
+
+  // Внутри своего отдела или своей ветки: разрешено прямое назначение
+  if (params.requestedAssigneeNodeId) {
+    return {
+      assigneeNodeId: params.requestedAssigneeNodeId,
+      assigneeNodeName: params.requestedAssigneeName || params.requestedAssigneeNodeId,
+      routingMode: 'DIRECT_ASSIGNMENT',
+      wasForcedToDepartmentQueue: false,
+      rlsPolicyExplanation:
+        'RLS Policy: Внутри своего подразделения разрешено прямое назначение исполнителя (DIRECT_ASSIGNMENT).',
+    };
+  }
+
+  return {
+    assigneeNodeId: null,
+    assigneeNodeName: `Очередь (${params.targetDepartmentPath})`,
+    routingMode: 'DEPARTMENT_QUEUE',
+    wasForcedToDepartmentQueue: false,
+    rlsPolicyExplanation: 'Задача поставлена в очередь подразделения.',
+  };
+}
+
+/**
+ * Фильтрация списка задач по роли пользователя из CurrentRoleProvider:
+ * - SUPERADMIN видит и клиентские задачи (client_action), и внутренние тикеты отделов (internal_ticket)
+ * - NETWORK_PARTNER видит только клиентские задачи продаж и сопровождения (client_action)
+ * - INTERNAL_IT видит только внутренние тикеты отделов (internal_ticket)
+ */
+export function filterTasksByUserRole<T extends { task_class?: import('../types/saas').TaskClass }>(
+  items: T[],
+  role: import('../types/saas').UserRole
+): T[] {
+  if (role === 'SUPERADMIN') return items;
+  if (role === 'INTERNAL_IT') {
+    return items.filter((item) => item.task_class === 'internal_ticket');
+  }
+  return items.filter((item) => (item.task_class || 'client_action') === 'client_action');
+}
+

@@ -6,7 +6,12 @@ import {
   TaskStatus,
   WhiteLabelPreset,
 } from '../types/saas';
-import { computeTaskBoardMetrics, filterTasks } from '../utils/saasLogic';
+import {
+  computeTaskBoardMetrics,
+  filterTasks,
+  filterTasksByUserRole,
+} from '../utils/saasLogic';
+import { useCurrentRole } from '../context/RoleContext';
 import { CheckSquare, ListFilter, Plus, Search, Square } from 'lucide-react';
 
 interface TasksWorkspaceViewProps {
@@ -50,14 +55,16 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
   onDeployPlaybook,
   onOpenNewTaskModal,
 }) => {
+  const { currentRole, canViewCrmAndPv } = useCurrentRole();
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'playbooks'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'all'>('all');
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>('task-1');
 
-  const metrics = computeTaskBoardMetrics(tasks);
-  const filteredTasks = filterTasks(tasks, {
+  const roleScopedTasks = filterTasksByUserRole(tasks, currentRole);
+  const metrics = computeTaskBoardMetrics(roleScopedTasks);
+  const filteredTasks = filterTasks(roleScopedTasks, {
     search: searchQuery,
     status: statusFilter,
     priority: priorityFilter,
@@ -77,11 +84,13 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
           <div className="text-xs text-slate-500 mb-1">
-            Рабочее пространство · {activePreset.brandName} ·{' '}
+            TedCloud · {activePreset.brandName} ·{' '}
             {selectedProject === 'all' ? 'Все проекты' : selectedProject}
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Управление задачами и партнёрскими спринтами
+            {currentRole === 'INTERNAL_IT'
+              ? 'Сервисные тикеты и задачи подразделений'
+              : 'Управление задачами и партнёрскими спринтами'}
           </h1>
         </div>
 
@@ -113,24 +122,26 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
           >
             Таблица реестра
           </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('playbooks')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
-              viewMode === 'playbooks'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Библиотека плейбуков ({playbooks.length})
-          </button>
+          {canViewCrmAndPv && (
+            <button
+              type="button"
+              onClick={() => setViewMode('playbooks')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                viewMode === 'playbooks'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Библиотека плейбуков ({playbooks.length})
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 4-Column Metric Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Metric Strip */}
+      <div className={`grid grid-cols-2 ${canViewCrmAndPv ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">Всего задач в потоке</div>
+          <div className="text-xs text-slate-500">Всего карточек в потоке</div>
           <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
             {metrics.total}
           </div>
@@ -140,29 +151,31 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
         </div>
 
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">Индекс закрытия спринта</div>
+          <div className="text-xs text-slate-500">Индекс выполнения</div>
           <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-emerald-700">
             {metrics.completionRate}%
           </div>
           <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
-            Завершено {metrics.done} из {metrics.total} задач
+            Завершено {metrics.done} из {metrics.total}
           </div>
         </div>
 
-        <div className="p-4 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">
-            Потенциал объёма · {activePreset.volumeUnitLabel}
+        {canViewCrmAndPv && (
+          <div className="p-4 bg-white border border-slate-200 rounded-lg">
+            <div className="text-xs text-slate-500">
+              Потенциал объёма · {activePreset.volumeUnitLabel}
+            </div>
+            <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
+              +{metrics.totalPvImpact.toLocaleString('ru-RU')}
+            </div>
+            <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+              Уже подтверждено: {metrics.earnedPvImpact.toLocaleString('ru-RU')} PV
+            </div>
           </div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
-            +{metrics.totalPvImpact.toLocaleString('ru-RU')}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
-            Уже подтверждено: {metrics.earnedPvImpact.toLocaleString('ru-RU')} PV
-          </div>
-        </div>
+        )}
 
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">Критичные дедлайны</div>
+          <div className="text-xs text-slate-500">Критичный приоритет</div>
           <div
             className={`mt-1 text-2xl font-bold font-mono tabular-nums ${
               metrics.criticalCount > 0 ? 'text-amber-700' : 'text-slate-900'
@@ -171,7 +184,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
             {metrics.criticalCount}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            Требуют контроля наставника ветки
+            Требуют первоочередной реакции
           </div>
         </div>
       </div>
@@ -305,12 +318,19 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                     return (
                       <article
                         key={task.id}
-                        className="p-4 bg-white border border-slate-200 rounded-lg flex flex-col gap-2.5 hover:border-slate-300 transition-colors"
+                        className={`p-4 bg-white border rounded-lg flex flex-col gap-2.5 transition-colors ${
+                          task.task_class === 'internal_ticket'
+                            ? 'border-slate-300'
+                            : 'border-slate-200 hover:border-emerald-300'
+                        }`}
                       >
-                        {/* Unboxed Metadata Kicker (Zero-Pill Discipline) */}
+                        {/* Unboxed Metadata Kicker */}
                         <div className="flex items-center justify-between text-xs text-slate-500">
                           <span className="font-mono tabular-nums font-medium text-slate-700">
-                            {task.code} · {task.project}
+                            {task.code} ·{' '}
+                            {task.task_class === 'internal_ticket' && task.targetDepartment
+                              ? `[${task.targetDepartment}]`
+                              : task.project}
                           </span>
                           <span className={priorityMeta.colorClass}>
                             {priorityMeta.text}
@@ -335,10 +355,14 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                           <span className="font-mono tabular-nums">
                             Срок: {task.dueDate}
                           </span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-mono tabular-nums text-emerald-700 font-semibold">
-                            +{task.pvImpact} PV
-                          </span>
+                          {task.task_class !== 'internal_ticket' && task.pvImpact > 0 && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono tabular-nums text-emerald-700 font-semibold">
+                                +{task.pvImpact} PV
+                              </span>
+                            </>
+                          )}
                         </div>
 
                         {/* Interactive Subtasks Checklist Toggle */}

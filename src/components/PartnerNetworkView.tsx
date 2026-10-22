@@ -203,19 +203,10 @@ export const PartnerNetworkView: React.FC<PartnerNetworkViewProps> = ({
                   </span>
                 </div>
 
-                {/* Unboxed Metadata with PostgreSQL ltree Path */}
+                {/* Clean Business Metadata (No raw technical paths) */}
                 <div className="mt-1 text-xs text-slate-500">
                   Город: {partner.city} · Наставник: {partner.uplineName} · В сети с{' '}
                   <span className="font-mono tabular-nums">{partner.joinedDate}</span>
-                  {partner.hierarchyPath && (
-                    <>
-                      {' '}
-                      · ltree:{' '}
-                      <code className="font-mono text-slate-700">
-                        {partner.hierarchyPath}
-                      </code>
-                    </>
-                  )}
                 </div>
 
                 {/* Volume Metrics */}

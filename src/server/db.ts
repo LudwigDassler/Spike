@@ -1,15 +1,24 @@
 import pg from 'pg';
 import {
+  INITIAL_CLIENT_CYCLES,
   INITIAL_CRM_LEADS,
   INITIAL_PARTNERS,
   INITIAL_TASKS,
   WHITE_LABEL_PRESETS,
 } from '../data/seedData';
-import { CrmLead, PartnerNode, TaskItem } from '../types/saas';
 import {
+  ClientCycleItem,
+  CrmLead,
+  PartnerNode,
+  SmartCopilotTask,
+  TaskItem,
+} from '../types/saas';
+import {
+  advancePlaybookStepJustInTime,
   buildChildLtreePath,
   computeDownlineGroupPv,
   convertLeadToPartner,
+  runRefillEngineIdempotent,
 } from '../utils/saasLogic';
 
 const { Pool } = pg;
@@ -42,6 +51,12 @@ export async function checkPostgresConnection(): Promise<boolean> {
 let memoryTasks: TaskItem[] = structuredClone(INITIAL_TASKS);
 let memoryPartners: PartnerNode[] = structuredClone(INITIAL_PARTNERS);
 let memoryLeads: CrmLead[] = structuredClone(INITIAL_CRM_LEADS);
+let memoryClientCycles: ClientCycleItem[] = structuredClone(INITIAL_CLIENT_CYCLES);
+let memoryCopilotTasks: SmartCopilotTask[] = runRefillEngineIdempotent(
+  memoryClientCycles,
+  [],
+  '2026-10-22'
+).tasks;
 
 /**
  * Пересчитывает групповой объём (group_pv) каждого партнёра через дерево ltree (<@)
@@ -477,8 +492,115 @@ export function getFullMemoryState() {
     tasks: memoryTasks,
     partners: memoryPartners,
     leads: memoryLeads,
+    clientCycles: memoryClientCycles,
+    copilotTasks: memoryCopilotTasks,
     isPostgresConnected,
   };
+}
+
+export function triggerRefillEngineWorker(referenceDateIso: string = '2026-10-22') {
+  const result = runRefillEngineIdempotent(
+    memoryClientCycles,
+    memoryCopilotTasks,
+    referenceDateIso
+  );
+  memoryCopilotTasks = result.tasks;
+  return {
+    createdCount: result.createdCount,
+    skippedDuplicatesCount: result.skippedDuplicatesCount,
+    copilotTasks: memoryCopilotTasks,
+    clientCycles: memoryClientCycles,
+  };
+}
+
+export function completeCopilotReorder(taskId: string) {
+  const target = memoryCopilotTasks.find((t) => t.id === taskId);
+  if (!target) return null;
+
+  memoryCopilotTasks = memoryCopilotTasks.map((t) =>
+    t.id === taskId ? { ...t, status: 'completed_reordered' } : t
+  );
+
+  // Продлеваем цикл потребления клиента на +21 день
+  memoryClientCycles = memoryClientCycles.map((c) => {
+    if (c.id !== target.clientId) return c;
+    const nextEnd = new Date(`${c.cycleEndDate}T00:00:00Z`);
+    nextEnd.setUTCDate(nextEnd.getUTCDate() + c.cycleDays);
+    return {
+      ...c,
+      cycleStartedAt: '2026-10-22',
+      cycleEndDate: nextEnd.toISOString().split('T')[0],
+    };
+  });
+
+  // Начисляем PV владельцу клиента и пересчитываем групповой объём ветки (ltree)
+  memoryPartners = memoryPartners.map((p) =>
+    p.id === target.ownerPartnerId
+      ? { ...p, personalPv: p.personalPv + target.pvImpact }
+      : p
+  );
+  recalculateMemoryGroupPv();
+
+  return getFullMemoryState();
+}
+
+export function snoozeCopilotTask(taskId: string) {
+  memoryCopilotTasks = memoryCopilotTasks.map((t) =>
+    t.id === taskId ? { ...t, status: 'snoozed', dueDate: '2026-10-23' } : t
+  );
+  return getFullMemoryState();
+}
+
+export function advanceCopilotJitStep(taskId: string) {
+  const target = memoryCopilotTasks.find((t) => t.id === taskId);
+  if (!target) return null;
+
+  const result = advancePlaybookStepJustInTime({
+    completedTask: target,
+    outcome: 'success',
+    existingTasks: memoryCopilotTasks,
+  });
+
+  memoryCopilotTasks = result.tasks;
+
+  // Начисляем универсальный kpi_value (pvImpact) партнёру
+  memoryPartners = memoryPartners.map((p) =>
+    p.id === target.ownerPartnerId
+      ? { ...p, personalPv: p.personalPv + target.pvImpact }
+      : p
+  );
+  recalculateMemoryGroupPv();
+
+  return {
+    nextTask: result.nextTask,
+    nextStepId: result.nextStepId,
+    ...getFullMemoryState(),
+  };
+}
+
+export function addCopilotTaskComment(
+  taskId: string,
+  body: string,
+  authorPartnerId: string
+) {
+  const isMentor = authorPartnerId === 'partner-1';
+  const newComment = {
+    id: `cmt-${Date.now()}`,
+    taskId,
+    authorPartnerId,
+    authorName: isMentor ? 'Алина Соколова' : 'Артём Громов',
+    authorRole: isMentor ? 'Наставник ветки' : 'Партнёр (Владелец сделки)',
+    body,
+    createdAt: 'Только что',
+  };
+
+  memoryCopilotTasks = memoryCopilotTasks.map((t) =>
+    t.id === taskId
+      ? { ...t, comments: [...(t.comments || []), newComment] }
+      : t
+  );
+
+  return getFullMemoryState();
 }
 
 export function updateMemoryTasks(updater: (prev: TaskItem[]) => TaskItem[]) {
@@ -530,5 +652,11 @@ export function resetMemoryState() {
   memoryTasks = structuredClone(INITIAL_TASKS);
   memoryPartners = structuredClone(INITIAL_PARTNERS);
   memoryLeads = structuredClone(INITIAL_CRM_LEADS);
+  memoryClientCycles = structuredClone(INITIAL_CLIENT_CYCLES);
+  memoryCopilotTasks = runRefillEngineIdempotent(
+    memoryClientCycles,
+    [],
+    '2026-10-22'
+  ).tasks;
   return getFullMemoryState();
 }
