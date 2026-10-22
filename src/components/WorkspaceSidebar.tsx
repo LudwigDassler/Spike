@@ -2,7 +2,7 @@ import React from 'react';
 import { PartnerPlaybook, WhiteLabelPreset } from '../types/saas';
 import { useCurrentRole } from '../context/RoleContext';
 import { DEPARTMENT_QUEUE_OPTIONS } from '../data/seedData';
-import { ShieldCheck, Sparkles } from 'lucide-react';
+import { ShieldCheck, Sparkles, X } from 'lucide-react';
 
 interface WorkspaceSidebarProps {
   presets: WhiteLabelPreset[];
@@ -16,6 +16,8 @@ interface WorkspaceSidebarProps {
   totalBranchPv: number;
   completedTasksCount: number;
   totalTasksCount: number;
+  isMobileDrawer?: boolean;
+  onCloseMobileDrawer?: () => void;
 }
 
 export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
@@ -27,6 +29,8 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
   totalBranchPv,
   completedTasksCount,
   totalTasksCount,
+  isMobileDrawer = false,
+  onCloseMobileDrawer,
 }) => {
   const { currentRole, canViewCrmAndPv } = useCurrentRole();
 
@@ -39,11 +43,45 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
     return !isItProject && proj !== 'Корпоративный B2B';
   });
 
+  const handleProjectClick = (proj: string) => {
+    onSelectProject(proj);
+    if (onCloseMobileDrawer) onCloseMobileDrawer();
+  };
+
+  const handlePlaybookClick = (pb: PartnerPlaybook) => {
+    onDeployPlaybook(pb);
+    if (onCloseMobileDrawer) onCloseMobileDrawer();
+  };
+
   return (
     <aside
-      aria-label="Панель управления TedCloud"
-      className="w-full lg:w-72 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-5 flex flex-col gap-6"
+      aria-label={isMobileDrawer ? 'Мобильное меню TedCloud' : 'Панель управления TedCloud'}
+      className={
+        isMobileDrawer
+          ? 'w-80 max-w-[85vw] h-full overflow-y-auto bg-white border-r border-slate-200 p-5 flex flex-col gap-6 shadow-2xl'
+          : 'hidden md:flex md:w-72 shrink-0 bg-white border-r border-slate-200 p-5 flex-col gap-6'
+      }
     >
+      {isMobileDrawer && (
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+          <div>
+            <div className="text-sm font-bold text-slate-900">TedCloud</div>
+            <div className="text-xs text-slate-500">
+              {currentRole === 'INTERNAL_IT'
+                ? 'Очереди и потоки поддержки'
+                : 'Мой баланс VP и сценарии'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCloseMobileDrawer}
+            aria-label="Закрыть меню"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
       {canViewCrmAndPv ? (
         <>
           {/* Мотивационный блок геймификации VP (Volume Points) для продавцов и лидеров сети */}
@@ -113,7 +151,7 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => onDeployPlaybook(pb)}
+                    onClick={() => handlePlaybookClick(pb)}
                     className="w-full py-1.5 px-3 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     Запустить сценарий
@@ -173,7 +211,7 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
             <div className="flex flex-col gap-1">
               <button
                 type="button"
-                onClick={() => onSelectProject('all')}
+                onClick={() => handleProjectClick('all')}
                 className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap truncate cursor-pointer ${
                   selectedProject === 'all'
                     ? 'bg-slate-800 text-white'
@@ -186,7 +224,7 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                 <button
                   key={proj}
                   type="button"
-                  onClick={() => onSelectProject(proj)}
+                  onClick={() => handleProjectClick(proj)}
                   className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap truncate cursor-pointer ${
                     selectedProject === proj
                       ? 'bg-slate-800 text-white'
@@ -203,3 +241,4 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
     </aside>
   );
 };
+

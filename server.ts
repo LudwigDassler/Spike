@@ -346,18 +346,24 @@ async function startServer() {
   });
 
   // 10. Telegram Webhook (/start) & Mini App Sync & Smart Push Deep Links
-  app.post('/api/telegram/webhook', async (req, res) => {
+  const telegramWebhookHandler: express.RequestHandler = async (req, res) => {
     try {
       const { handleTelegramWebhookUpdate } = await import('./src/services/messengerService');
       const result = await handleTelegramWebhookUpdate(req.body, {
         botToken: process.env.TELEGRAM_BOT_TOKEN,
-        webAppUrl: process.env.APP_URL || 'https://app.tedcloud.ru',
+        webAppUrl:
+          process.env.NEXT_PUBLIC_APP_URL ||
+          process.env.APP_URL ||
+          'https://app.tedcloud.ru',
       });
       res.status(200).json({ ok: true, ...result });
     } catch (error) {
       res.status(200).json({ ok: false, error: (error as Error).message });
     }
-  });
+  };
+
+  app.post('/api/telegram/webhook', telegramWebhookHandler);
+  app.post('/api/webhook', telegramWebhookHandler);
 
   app.post('/api/telegram/sync-node', (req, res) => {
     const { nodeId, telegramChatId, telegramUsername } = req.body;
@@ -389,6 +395,18 @@ async function startServer() {
     }
   });
 
+  // Автоматический запуск поллинга /start, если задан TELEGRAM_BOT_TOKEN без активного Webhook
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    const { startTelegramLongPolling } = await import('./src/server/bot');
+    void startTelegramLongPolling({
+      botToken: process.env.TELEGRAM_BOT_TOKEN,
+      webAppUrl:
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.APP_URL ||
+        'https://app.tedcloud.ru',
+    });
+  }
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -400,7 +418,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`PartnerFlow Full-Stack Server listening on http://0.0.0.0:${PORT}`);
+    console.log(`TedCloud Full-Stack Server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

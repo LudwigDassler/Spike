@@ -129,7 +129,7 @@ export const SmartTaskCard: React.FC<SmartTaskCardProps> = ({
     return (
       <article
         aria-label={`Инженерный тикет: ${task.productName}`}
-        className="bg-white border border-slate-300 rounded-xl p-5 sm:p-6 flex flex-col gap-4 shadow-xs"
+        className="w-full bg-white border border-slate-300 rounded-xl p-4 sm:p-6 flex flex-col gap-4 shadow-xs"
       >
         {/* Верхняя панель: Soft Pill бейдж отдела (без квадратных скобок) + Story Points + Иконка щита */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
@@ -254,7 +254,7 @@ export const SmartTaskCard: React.FC<SmartTaskCardProps> = ({
   return (
     <article
       aria-label={`Клиентская задача: ${task.clientFirstName}`}
-      className="bg-white border border-emerald-200 rounded-2xl p-5 sm:p-6 flex flex-col gap-5 shadow-xs"
+      className="w-full bg-white border border-emerald-200 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xs"
     >
       {/* Верхняя панель с геймифицированным Soft Pill бейджем +{kpiValue} VP и иконкой щита */}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-emerald-100">

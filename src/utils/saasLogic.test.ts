@@ -583,6 +583,49 @@ test('Telegram Deep Integration: /start webhook, initDataUnsafe user/start_param
     parsedSmartPush.reply_markup.inline_keyboard[0][0].web_app.url,
     'https://app.tedcloud.ru/?startapp=ticket-it-102'
   );
+
+  // 4. Тест серверного модуля bot.ts (команда /start + InlineKeyboardMarkup web_app)
+  const { handleTelegramStartCommand, TEDCLOUD_START_MESSAGE } = await import(
+    '../server/bot'
+  );
+  let botStartBody = '';
+  const mockBotFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    botStartBody = String(init?.body || '');
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 903 } }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  const botStartResult = await handleTelegramStartCommand(
+    {
+      update_id: 20001,
+      message: {
+        message_id: 55,
+        chat: { id: 11223344, type: 'private', first_name: 'Екатерина' },
+        date: 1729600100,
+        text: '/start',
+      },
+    },
+    {
+      botToken: '123456:ABC-DEF',
+      webAppUrl: 'https://app.tedcloud.ru',
+      fetchImpl: mockBotFetch,
+    }
+  );
+
+  assert.equal(botStartResult.handled, true);
+  assert.equal(botStartResult.command, '/start');
+  const parsedBotStart = JSON.parse(botStartBody);
+  assert.equal(
+    parsedBotStart.text,
+    'Добро пожаловать в TedCloud! Ваше рабочее пространство готово.'
+  );
+  assert.equal(parsedBotStart.text, TEDCLOUD_START_MESSAGE);
+  assert.equal(
+    parsedBotStart.reply_markup.inline_keyboard[0][0].web_app.url,
+    'https://app.tedcloud.ru'
+  );
 });
+
 
 

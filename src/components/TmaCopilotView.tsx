@@ -182,7 +182,7 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="w-full flex flex-col gap-6">
       {/* Contextual Header */}
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
@@ -202,7 +202,7 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
               <ShieldCheck className="w-3.5 h-3.5" />
             </span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
             {currentRole === 'INTERNAL_IT'
               ? 'Очередь сервисных обращений подразделений'
               : 'Фокус дня: забота о клиентах и начисление VP'}
@@ -210,11 +210,11 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
         </div>
       </div>
 
-      {/* Main Split: Left = Polymorphic SmartTaskCard, Right = Role-Specific Business Context */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* Main Split: Left = Polymorphic SmartTaskCard (100% width on mobile), Right = Role-Specific Business Context */}
+      <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <section
           aria-label="Текущая приоритетная карточка"
-          className="lg:col-span-7 flex flex-col gap-4"
+          className="w-full lg:col-span-7 flex flex-col gap-4"
         >
           <div className="flex items-center justify-between text-xs text-slate-600">
             <span>
@@ -264,7 +264,7 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
               onAddComment={handleTicketComment}
             />
           ) : (
-            <div className="p-8 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
+            <div className="w-full p-8 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
               <CheckCircle2 className="w-8 h-8 text-emerald-700 mx-auto" />
               <h2 className="text-base font-bold text-slate-900">
                 Все задачи на сегодня выполнены!
@@ -279,7 +279,7 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
         {/* Right 5 Cols: Role-Scoped Context */}
         <section
           aria-label="Сводка по направлению"
-          className="lg:col-span-5 p-6 bg-white border border-slate-200 rounded-2xl space-y-5"
+          className="w-full lg:col-span-5 p-5 sm:p-6 bg-white border border-slate-200 rounded-2xl space-y-5"
         >
           {currentRole !== 'INTERNAL_IT' ? (
             <>

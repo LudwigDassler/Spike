@@ -52,6 +52,7 @@ export default function App() {
   const [lastWorkerLog, setLastWorkerLog] = useState<string | null>(null);
 
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [preselectedAssignee, setPreselectedAssignee] = useState<string | undefined>(
     undefined
   );
@@ -246,7 +247,7 @@ export default function App() {
       setActiveTab('tasks');
       showNotice(
         enrichedTask.task_class === 'internal_ticket'
-          ? `Тикет направлен в общую очередь отдела [${enrichedTask.targetDepartment}]: «${enrichedTask.title}»`
+          ? `Тикет направлен в общую очередь отдела ${enrichedTask.targetDepartment}: «${enrichedTask.title}»`
           : `Создана клиентская задача: «${enrichedTask.title}»`
       );
     } catch (error) {
@@ -460,18 +461,57 @@ export default function App() {
   return (
     <CurrentRoleProvider initialRole="NETWORK_PARTNER">
       <div id="workspace" className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-        {/* TopBar with TedCloud Wordmark & RoleContext Navigation */}
+        {/* TopBar with TedCloud Wordmark, Hamburger Button & RoleContext Navigation */}
         <TopBar
           activeTab={activeTab}
           onSelectTab={setActiveTab}
+          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           onOpenNewTaskModal={() => {
             setPreselectedAssignee(undefined);
             setIsNewTaskModalOpen(true);
           }}
         />
 
-        {/* Workspace Body: Sidebar + Main Viewport */}
-        <div className="flex-1 flex flex-col lg:flex-row max-w-[1440px] w-full mx-auto">
+        {/* Mobile Offcanvas Drawer (< md) with bg-slate-900/50 backdrop */}
+        {isMobileSidebarOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Меню подразделений и сценариев TedCloud"
+            className="fixed inset-0 z-50 flex md:hidden"
+          >
+            <div
+              className="fixed inset-0 bg-slate-900/50 transition-opacity"
+              onClick={() => setIsMobileSidebarOpen(false)}
+            />
+            <div className="relative z-10 flex h-full">
+              <WorkspaceSidebar
+                presets={WHITE_LABEL_PRESETS}
+                activePreset={activePreset}
+                onSelectPreset={(preset) => {
+                  setActivePreset(preset);
+                  showNotice(`Активирован отраслевой профиль: ${preset.brandName}`);
+                }}
+                projects={projectsList}
+                selectedProject={selectedProject}
+                onSelectProject={(proj) => {
+                  setSelectedProject(proj);
+                  setActiveTab('tasks');
+                }}
+                playbooks={PARTNER_PLAYBOOKS}
+                onDeployPlaybook={handleDeployPlaybook}
+                totalBranchPv={totalBranchPv}
+                completedTasksCount={completedTasksCount}
+                totalTasksCount={tasks.length}
+                isMobileDrawer
+                onCloseMobileDrawer={() => setIsMobileSidebarOpen(false)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Workspace Body: Desktop Sidebar (md:flex) + Full-Width Main Viewport (w-full px-4 on mobile) */}
+        <div className="flex-1 flex flex-col md:flex-row max-w-[1440px] w-full mx-auto">
           <WorkspaceSidebar
             presets={WHITE_LABEL_PRESETS}
             activePreset={activePreset}
@@ -492,7 +532,7 @@ export default function App() {
             totalTasksCount={tasks.length}
           />
 
-          <main className="flex-1 p-6 lg:p-8 min-w-0">
+          <main className="flex-1 w-full px-4 py-5 md:p-6 lg:p-8 min-w-0">
             {statusNotice && (
               <div
                 role="status"
