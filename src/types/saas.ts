@@ -9,6 +9,7 @@ export interface SubtaskItem {
 
 export interface TaskItem {
   id: string;
+  parentTaskId?: string | null;
   code: string;
   title: string;
   description: string;
@@ -53,6 +54,8 @@ export type PartnerRank =
 
 export interface PartnerNode {
   id: string;
+  uplineId?: string | null;
+  hierarchyPath?: string; // PostgreSQL ltree путь, например: 'root.p_1.p_2'
   name: string;
   city: string;
   joinedDate: string;

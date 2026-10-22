@@ -1,15 +1,83 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildChildLtreePath,
   calculateSaasValuation,
+  computeDownlineGroupPv,
   computeTaskBoardMetrics,
   convertLeadToPartner,
   determinePartnerRank,
   filterTasks,
   getNextTaskStatus,
   instantiatePlaybookTasks,
+  isDescendantLtreePath,
 } from './saasLogic';
-import { CrmLead, PartnerPlaybook, TaskItem } from '../types/saas';
+import { CrmLead, PartnerNode, PartnerPlaybook, TaskItem } from '../types/saas';
+
+test('ltree hierarchy functions build valid paths and compute downline group PV (<@ operator)', () => {
+  const rootPath = buildChildLtreePath(null, 'partner-1');
+  assert.equal(rootPath, 'root.p_partner_1');
+
+  const branchPath = buildChildLtreePath(rootPath, 'partner-2');
+  assert.equal(branchPath, 'root.p_partner_1.p_partner_2');
+
+  const leafPath = buildChildLtreePath(branchPath, 'partner-4');
+  assert.equal(leafPath, 'root.p_partner_1.p_partner_2.p_partner_4');
+
+  assert.equal(isDescendantLtreePath(leafPath, rootPath), true);
+  assert.equal(isDescendantLtreePath(rootPath, leafPath), false);
+
+  const sampleTree: PartnerNode[] = [
+    {
+      id: 'partner-1',
+      hierarchyPath: rootPath,
+      name: 'Алина',
+      city: 'Москва',
+      joinedDate: '2026-01-01',
+      uplineName: 'HQ',
+      personalPv: 1000,
+      groupPv: 0,
+      targetPv: 4000,
+      activeClients: 10,
+      onboardingCompletedSteps: 6,
+      onboardingTotalSteps: 6,
+      status: 'active',
+    },
+    {
+      id: 'partner-2',
+      hierarchyPath: branchPath,
+      name: 'Елена',
+      city: 'НСК',
+      joinedDate: '2026-02-01',
+      uplineName: 'Алина',
+      personalPv: 800,
+      groupPv: 0,
+      targetPv: 2500,
+      activeClients: 8,
+      onboardingCompletedSteps: 6,
+      onboardingTotalSteps: 6,
+      status: 'active',
+    },
+    {
+      id: 'partner-4',
+      hierarchyPath: leafPath,
+      name: 'Артём',
+      city: 'ЕКБ',
+      joinedDate: '2026-03-01',
+      uplineName: 'Елена',
+      personalPv: 300,
+      groupPv: 0,
+      targetPv: 500,
+      activeClients: 3,
+      onboardingCompletedSteps: 2,
+      onboardingTotalSteps: 6,
+      status: 'onboarding',
+    },
+  ];
+
+  assert.equal(computeDownlineGroupPv(sampleTree, rootPath), 1100);
+  assert.equal(computeDownlineGroupPv(sampleTree, branchPath), 300);
+});
 
 test('determinePartnerRank assigns Herbalife-style partner tiers accurately by PV', () => {
   assert.equal(determinePartnerRank(120), 'Консультант');

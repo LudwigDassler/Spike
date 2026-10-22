@@ -336,6 +336,8 @@ export const INITIAL_CRM_LEADS: CrmLead[] = [
 export const INITIAL_PARTNERS: PartnerNode[] = [
   {
     id: 'partner-1',
+    uplineId: null,
+    hierarchyPath: 'root.p_partner_1',
     name: 'Алина Соколова',
     city: 'Москва',
     joinedDate: '2024-03-12',
@@ -350,6 +352,8 @@ export const INITIAL_PARTNERS: PartnerNode[] = [
   },
   {
     id: 'partner-2',
+    uplineId: 'partner-1',
+    hierarchyPath: 'root.p_partner_1.p_partner_2',
     name: 'Елена Кузнецова',
     city: 'Новосибирск',
     joinedDate: '2025-08-19',
@@ -364,6 +368,8 @@ export const INITIAL_PARTNERS: PartnerNode[] = [
   },
   {
     id: 'partner-3',
+    uplineId: 'partner-1',
+    hierarchyPath: 'root.p_partner_1.p_partner_3',
     name: 'Марат Сафин',
     city: 'Казань',
     joinedDate: '2026-04-05',
@@ -378,6 +384,8 @@ export const INITIAL_PARTNERS: PartnerNode[] = [
   },
   {
     id: 'partner-4',
+    uplineId: 'partner-2',
+    hierarchyPath: 'root.p_partner_1.p_partner_2.p_partner_4',
     name: 'Артём Громов',
     city: 'Екатеринбург',
     joinedDate: '2026-10-10',

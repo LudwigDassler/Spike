@@ -26,16 +26,6 @@ import {
   TaskStatus,
   WhiteLabelPreset,
 } from './types/saas';
-import {
-  convertLeadToPartner,
-  getNextLeadStage,
-  getNextTaskStatus,
-  instantiatePlaybookTasks,
-} from './utils/saasLogic';
-
-const STORAGE_KEY_TASKS = 'partnerflow_tasks_v1';
-const STORAGE_KEY_LEADS = 'partnerflow_leads_v1';
-const STORAGE_KEY_PARTNERS = 'partnerflow_partners_v1';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tasks');
@@ -44,32 +34,9 @@ export default function App() {
   );
   const [selectedProject, setSelectedProject] = useState<string>('all');
 
-  const [tasks, setTasks] = useState<TaskItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_TASKS);
-      return saved ? JSON.parse(saved) : INITIAL_TASKS;
-    } catch {
-      return INITIAL_TASKS;
-    }
-  });
-
-  const [leads, setLeads] = useState<CrmLead[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_LEADS);
-      return saved ? JSON.parse(saved) : INITIAL_CRM_LEADS;
-    } catch {
-      return INITIAL_CRM_LEADS;
-    }
-  });
-
-  const [partners, setPartners] = useState<PartnerNode[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_PARTNERS);
-      return saved ? JSON.parse(saved) : INITIAL_PARTNERS;
-    } catch {
-      return INITIAL_PARTNERS;
-    }
-  });
+  const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
+  const [leads, setLeads] = useState<CrmLead[]>(INITIAL_CRM_LEADS);
+  const [partners, setPartners] = useState<PartnerNode[]>(INITIAL_PARTNERS);
 
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
   const [preselectedAssignee, setPreselectedAssignee] = useState<string | undefined>(
@@ -77,29 +44,28 @@ export default function App() {
   );
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
+  // Первичная загрузка дерева задач, партнёров (ltree) и лидов с бэкенда
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(tasks));
-    } catch {
-      // ignore storage errors
+    let isMounted = true;
+    async function loadWorkspaceFromApi() {
+      try {
+        const res = await fetch('/api/workspace');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isMounted) {
+          if (Array.isArray(data.tasks)) setTasks(data.tasks);
+          if (Array.isArray(data.partners)) setPartners(data.partners);
+          if (Array.isArray(data.leads)) setLeads(data.leads);
+        }
+      } catch {
+        // Fallback на предзагруженное состояние при оффлайне
+      }
     }
-  }, [tasks]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_LEADS, JSON.stringify(leads));
-    } catch {
-      // ignore storage errors
-    }
-  }, [leads]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_PARTNERS, JSON.stringify(partners));
-    } catch {
-      // ignore storage errors
-    }
-  }, [partners]);
+    loadWorkspaceFromApi();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const showNotice = (msg: string) => {
     setStatusNotice(msg);
@@ -122,197 +88,234 @@ export default function App() {
   );
   const completedTasksCount = tasks.filter((t) => t.status === 'done').length;
 
-  // Task Handlers
-  const handleAdvanceTaskStatus = (taskId: string) => {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id !== taskId) return t;
-        const nextStatus = getNextTaskStatus(t.status);
-        showNotice(`Статус задачи ${t.code} обновлён.`);
-        return { ...t, status: nextStatus };
-      })
-    );
+  // Шаг 4: Асинхронное создание задачи через HTTP POST /api/tasks вместо синхронного localStorage
+  const handleCreateTask = async (
+    newTaskData: Omit<TaskItem, 'id' | 'code' | 'status'>
+  ) => {
+    try {
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newTaskData,
+          brandId: activePreset.id,
+        }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Не удалось сохранить задачу в БД');
+      }
+
+      const { task: createdTask } = (await response.json()) as { task: TaskItem };
+      setTasks((prev) => [createdTask, ...prev]);
+      setActiveTab('tasks');
+      showNotice(`Создана задача ${createdTask.code}: «${createdTask.title}» (сохранено через API)`);
+    } catch (error) {
+      showNotice(`Ошибка сохранения задачи: ${(error as Error).message}`);
+    }
   };
 
-  const handleChangeTaskStatus = (taskId: string, newStatus: TaskStatus) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-    );
+  const handleAdvanceTaskStatus = async (taskId: string) => {
+    try {
+      const target = tasks.find((t) => t.id === taskId);
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'advance' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks);
+        if (target) showNotice(`Статус задачи ${target.code} обновлён.`);
+      }
+    } catch (error) {
+      showNotice(`Ошибка обновления задачи: ${(error as Error).message}`);
+    }
   };
 
-  const handleToggleSubtask = (taskId: string, subtaskId: string) => {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id !== taskId) return t;
-        return {
-          ...t,
-          subtasks: t.subtasks.map((st) =>
-            st.id === subtaskId ? { ...st, completed: !st.completed } : st
-          ),
-        };
-      })
-    );
+  const handleChangeTaskStatus = async (taskId: string, newStatus: TaskStatus) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_status', status: newStatus }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks);
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    showNotice('Задача перенесена в архив.');
+  const handleToggleSubtask = async (taskId: string, subtaskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_subtask', subtaskId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks);
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  const handleCreateTask = (newTaskData: Omit<TaskItem, 'id' | 'code' | 'status'>) => {
-    const nextNum = 100 + tasks.length + 1;
-    const newTask: TaskItem = {
-      ...newTaskData,
-      id: `task-custom-${Date.now()}`,
-      code: `PF-${nextNum}`,
-      status: 'todo',
-    };
-    setTasks((prev) => [newTask, ...prev]);
-    setActiveTab('tasks');
-    showNotice(`Создана задача ${newTask.code}: «${newTask.title}»`);
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks);
+        showNotice('Задача перенесена в архив.');
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  const handleDeployPlaybook = (playbook: PartnerPlaybook) => {
-    const targetPartner = partners[partners.length - 1] || partners[0];
-    const generated = instantiatePlaybookTasks(
-      playbook,
-      targetPartner ? targetPartner.name : 'Артём Громов',
-      'Независимый Партнёр',
-      tasks.length
-    );
-    setTasks((prev) => [...generated, ...prev]);
-    setSelectedProject('all');
-    setActiveTab('tasks');
-    showNotice(
-      `Развёрнут плейбук «${playbook.title}»: добавлено ${generated.length} задач (+${playbook.expectedPvGain} PV).`
-    );
+  const handleDeployPlaybook = async (playbook: PartnerPlaybook) => {
+    try {
+      const res = await fetch(`/api/playbooks/${playbook.id}/deploy`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks);
+        setSelectedProject('all');
+        setActiveTab('tasks');
+        showNotice(
+          `Развёрнут плейбук «${playbook.title}»: добавлено ${data.generated.length} задач (+${playbook.expectedPvGain} PV).`
+        );
+      }
+    } catch (error) {
+      showNotice(`Ошибка развёртывания плейбука: ${(error as Error).message}`);
+    }
   };
 
-  // CRM Handlers
-  const handleAdvanceLeadStage = (leadId: string) => {
-    setLeads((prev) =>
-      prev.map((l) =>
-        l.id === leadId ? { ...l, stage: getNextLeadStage(l.stage) } : l
-      )
-    );
+  // CRM Handlers (через API)
+  const handleAdvanceLeadStage = async (leadId: string) => {
+    try {
+      const res = await fetch(`/api/leads/${leadId}/advance`, { method: 'PATCH' });
+      if (res.ok) {
+        const data = await res.json();
+        setLeads(data.leads);
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  const handleConvertLeadToPartner = (lead: CrmLead) => {
-    const { updatedLead, newPartner, onboardingTasks } = convertLeadToPartner(
-      lead,
-      partners.length,
-      tasks.length
-    );
-    setLeads((prev) => prev.map((l) => (l.id === lead.id ? updatedLead : l)));
-    setPartners((prev) => [newPartner, ...prev]);
-    setTasks((prev) => [...onboardingTasks, ...prev]);
-    showNotice(
-      `Клиент ${lead.name} переведён в статус Независимого Партнёра! Автоматически создано ${onboardingTasks.length} задачи онбординга.`
-    );
+  const handleConvertLeadToPartner = async (lead: CrmLead) => {
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/convert`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setLeads(data.leads);
+        setPartners(data.partners);
+        setTasks(data.tasks);
+        showNotice(
+          `Клиент ${lead.name} переведён в статус Независимого Партнёра (ltree: ${data.newPartner.hierarchyPath})! Создано ${data.onboardingTasks.length} задачи онбординга.`
+        );
+      }
+    } catch (error) {
+      showNotice(`Ошибка конверсии клиента: ${(error as Error).message}`);
+    }
   };
 
-  const handleAddLead = (newLeadData: Omit<CrmLead, 'id' | 'lastActivity'>) => {
-    const created: CrmLead = {
-      ...newLeadData,
-      id: `lead-${Date.now()}`,
-      lastActivity: 'Только что · Карточка создана в CRM',
-    };
-    setLeads((prev) => [created, ...prev]);
-    showNotice(`Клиент ${created.name} добавлен в CRM-воронку.`);
+  const handleAddLead = async (newLeadData: Omit<CrmLead, 'id' | 'lastActivity'>) => {
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLeadData),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLeads(data.leads);
+        showNotice(`Клиент ${data.lead.name} добавлен в CRM-воронку.`);
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  // Partner Network Handlers
-  const handleAddPartnerVolume = (partnerId: string, addedPv: number) => {
-    setPartners((prev) =>
-      prev.map((p) =>
-        p.id === partnerId ? { ...p, personalPv: p.personalPv + addedPv } : p
-      )
-    );
-    showNotice(`Начислено +${addedPv} PV личного объёма партнёра.`);
+  // Partner Network Handlers (через PostgreSQL ltree API)
+  const handleAddPartnerVolume = async (partnerId: string, addedPv: number) => {
+    try {
+      const res = await fetch(`/api/partners/${partnerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add_pv', addedPv }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPartners(data.partners);
+        showNotice(`Начислено +${addedPv} PV личного объёма (групповой объём ветки пересчитан по ltree).`);
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  const handleAdvanceOnboardingStep = (partnerId: string) => {
-    setPartners((prev) =>
-      prev.map((p) =>
-        p.id === partnerId
-          ? {
-              ...p,
-              onboardingCompletedSteps: Math.min(
-                p.onboardingTotalSteps,
-                p.onboardingCompletedSteps + 1
-              ),
-              status:
-                p.onboardingCompletedSteps + 1 >= p.onboardingTotalSteps
-                  ? 'active'
-                  : p.status,
-            }
-          : p
-      )
-    );
+  const handleAdvanceOnboardingStep = async (partnerId: string) => {
+    try {
+      const res = await fetch(`/api/partners/${partnerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'advance_onboarding' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPartners(data.partners);
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  const handleRegisterNewPartner = (
+  const handleRegisterNewPartner = async (
     name: string,
     city: string,
     uplineName: string
   ) => {
-    const newPartner: PartnerNode = {
-      id: `partner-${Date.now()}`,
-      name,
-      city,
-      joinedDate: '2026-10-22',
-      uplineName,
-      personalPv: 100,
-      groupPv: 0,
-      targetPv: 500,
-      activeClients: 1,
-      onboardingCompletedSteps: 1,
-      onboardingTotalSteps: 6,
-      status: 'onboarding',
-    };
-    const starterTask: TaskItem = {
-      id: `task-partner-init-${Date.now()}`,
-      code: `PF-${100 + tasks.length + 1}`,
-      title: `Стартовый онбординг 14 дней: ${name}`,
-      description: `Ввод нового партнёра (${city}) в рабочий процесс: список 30 контактов и запуск первого марафона.`,
-      status: 'todo',
-      priority: 'high',
-      project: 'Запуск партнёров',
-      assigneeName: name,
-      assigneeRole: 'Консультант (Новичок)',
-      dueDate: '2026-10-28',
-      pvImpact: 400,
-      estimatedHours: 4,
-      playbookSource: 'Авто-регистрация партнёра',
-      subtasks: [
-        {
-          id: `st-reg-1-${Date.now()}`,
-          title: 'Пройти инструктаж с наставником и настроить профиль',
-          completed: true,
-        },
-        {
-          id: `st-reg-2-${Date.now()}`,
-          title: 'Добавить первых 10 кандидатов в CRM-воронку',
-          completed: false,
-        },
-      ],
-    };
-
-    setPartners((prev) => [newPartner, ...prev]);
-    setTasks((prev) => [starterTask, ...prev]);
-    showNotice(
-      `Партнёр ${name} подключён к ветке ${uplineName}. Выдана задача ${starterTask.code}.`
-    );
+    try {
+      const res = await fetch('/api/partners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, city, uplineName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPartners(data.partners);
+        setTasks(data.tasks);
+        showNotice(
+          `Партнёр ${name} подключён к ветке ${uplineName} (ltree: ${data.partner.hierarchyPath}). Выдана задача ${data.starterTask.code}.`
+        );
+      }
+    } catch (error) {
+      showNotice(`Ошибка регистрации партнёра: ${(error as Error).message}`);
+    }
   };
 
-  const handleResetDemoData = () => {
-    setTasks(INITIAL_TASKS);
-    setLeads(INITIAL_CRM_LEADS);
-    setPartners(INITIAL_PARTNERS);
-    localStorage.removeItem(STORAGE_KEY_TASKS);
-    localStorage.removeItem(STORAGE_KEY_LEADS);
-    localStorage.removeItem(STORAGE_KEY_PARTNERS);
-    showNotice('Демо-данные рабочего пространства восстановлены.');
+  const handleResetDemoData = async () => {
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks);
+        setLeads(data.leads);
+        setPartners(data.partners);
+        showNotice('Демо-данные рабочего пространства восстановлены на сервере.');
+      }
+    } catch {
+      // ignore
+    }
   };
 
   return (

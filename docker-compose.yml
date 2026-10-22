@@ -1,0 +1,24 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: partnerflow_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: partnerflow_user
+      POSTGRES_PASSWORD: partnerflow_secret_password
+      POSTGRES_DB: partnerflow_saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U partnerflow_user -d partnerflow_saas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

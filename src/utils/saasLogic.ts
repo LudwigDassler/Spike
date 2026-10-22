@@ -18,6 +18,56 @@ export function determinePartnerRank(totalPv: number): PartnerRank {
   return 'Консультант';
 }
 
+/**
+ * Преобразует произвольный ID партнёра в валидный сегмент PostgreSQL ltree ([A-Za-z0-9_])
+ */
+export function sanitizeLtreeLabel(rawId: string): string {
+  const cleaned = rawId.replace(/[^A-Za-z0-9_]/g, '_');
+  return cleaned.startsWith('p_') ? cleaned : `p_${cleaned}`;
+}
+
+/**
+ * Формирует материализованный путь ltree для нового партнёра:
+ * Например: uplinePath = 'root.p_partner_1', childId = 'partner-5' -> 'root.p_partner_1.p_partner_5'
+ */
+export function buildChildLtreePath(
+  uplinePath: string | null | undefined,
+  childId: string
+): string {
+  const label = sanitizeLtreeLabel(childId);
+  const base = uplinePath && uplinePath.trim().length > 0 ? uplinePath.trim() : 'root';
+  return `${base}.${label}`;
+}
+
+/**
+ * Аналог оператора PostgreSQL ltree `candidatePath <@ ancestorPath`
+ */
+export function isDescendantLtreePath(
+  candidatePath: string,
+  ancestorPath: string
+): boolean {
+  if (!candidatePath || !ancestorPath) return false;
+  if (candidatePath === ancestorPath) return true;
+  return candidatePath.startsWith(`${ancestorPath}.`);
+}
+
+/**
+ * Вычисляет групповой объём (ГО) всех нижестоящих веток партнёра по дереву ltree
+ */
+export function computeDownlineGroupPv(
+  partners: PartnerNode[],
+  ancestorPath: string
+): number {
+  return partners
+    .filter(
+      (p) =>
+        p.hierarchyPath &&
+        p.hierarchyPath !== ancestorPath &&
+        isDescendantLtreePath(p.hierarchyPath, ancestorPath)
+    )
+    .reduce((sum, p) => sum + p.personalPv, 0);
+}
+
 export function getNextTaskStatus(current: TaskStatus): TaskStatus {
   const order: TaskStatus[] = ['todo', 'in_progress', 'review', 'done'];
   const idx = order.indexOf(current);
