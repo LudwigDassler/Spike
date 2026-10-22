@@ -345,6 +345,50 @@ async function startServer() {
     }
   });
 
+  // 10. Telegram Webhook (/start) & Mini App Sync & Smart Push Deep Links
+  app.post('/api/telegram/webhook', async (req, res) => {
+    try {
+      const { handleTelegramWebhookUpdate } = await import('./src/services/messengerService');
+      const result = await handleTelegramWebhookUpdate(req.body, {
+        botToken: process.env.TELEGRAM_BOT_TOKEN,
+        webAppUrl: process.env.APP_URL || 'https://app.tedcloud.ru',
+      });
+      res.status(200).json({ ok: true, ...result });
+    } catch (error) {
+      res.status(200).json({ ok: false, error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/telegram/sync-node', (req, res) => {
+    const { nodeId, telegramChatId, telegramUsername } = req.body;
+    if (!nodeId || !telegramChatId) {
+      res.status(400).json({ error: 'Параметры nodeId и telegramChatId обязательны' });
+      return;
+    }
+    res.json({
+      ok: true,
+      syncedNodeId: nodeId,
+      telegram_chat_id: String(telegramChatId),
+      telegram_username: telegramUsername || null,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  app.post('/api/telegram/smart-push', async (req, res) => {
+    try {
+      const { chatId, message, taskId } = req.body;
+      if (!chatId || !message) {
+        res.status(400).json({ error: 'Параметры chatId и message обязательны' });
+        return;
+      }
+      const { sendSmartPush } = await import('./src/services/messengerService');
+      const result = await sendSmartPush(chatId, message, taskId);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -493,3 +493,96 @@ test('Zero-Chat CRM: sendTelegramNotification, sendWhatsAppTemplate, inviteToTea
   assert.equal(JSON.parse(capturedInviteBody).member_limit, 1);
 });
 
+test('Telegram Deep Integration: /start webhook, initDataUnsafe user/start_param extraction, and sendSmartPush with startapp={taskId}', async () => {
+  const {
+    handleTelegramWebhookUpdate,
+    sendSmartPush,
+  } = await import('../services/messengerService');
+  const { extractTelegramInitContext } = await import('../hooks/useTelegramSync');
+
+  // 1. Тест команды /start на вебхуке
+  let webhookBody = '';
+  const mockWebhookFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    webhookBody = String(init?.body || '');
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 901 } }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  const webhookResult = await handleTelegramWebhookUpdate(
+    {
+      update_id: 10001,
+      message: {
+        message_id: 42,
+        chat: { id: 77889900, type: 'private', first_name: 'Артём' },
+        date: 1729600000,
+        text: '/start',
+      },
+    },
+    {
+      botToken: '123456:ABC-DEF',
+      webAppUrl: 'https://app.tedcloud.ru',
+      fetchImpl: mockWebhookFetch,
+    }
+  );
+
+  assert.equal(webhookResult.handled, true);
+  assert.equal(webhookResult.command, '/start');
+  const parsedWebhookPayload = JSON.parse(webhookBody);
+  assert.equal(parsedWebhookPayload.parse_mode, 'Markdown');
+  assert.equal(
+    parsedWebhookPayload.reply_markup.inline_keyboard[0][0].text,
+    '🚀 Открыть рабочее пространство'
+  );
+  assert.equal(
+    parsedWebhookPayload.reply_markup.inline_keyboard[0][0].web_app.url,
+    'https://app.tedcloud.ru'
+  );
+
+  // 2. Тест извлечения initDataUnsafe.user.id и start_param в useTelegramSync
+  const tgCtx = extractTelegramInitContext({
+    Telegram: {
+      WebApp: {
+        initDataUnsafe: {
+          user: { id: 77889900, username: 'artem_tedcloud' },
+          start_param: 'ticket-it-102',
+        },
+      },
+    },
+  });
+  assert.equal(tgCtx.telegramChatId, '77889900');
+  assert.equal(tgCtx.telegramUsername, 'artem_tedcloud');
+  assert.equal(tgCtx.startAppTaskId, 'ticket-it-102');
+
+  // 3. Тест sendSmartPush с параметром taskId (кнопка "Посмотреть задачу" со startapp={taskId})
+  let smartPushBody = '';
+  const mockSmartPushFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    smartPushBody = String(init?.body || '');
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 902 } }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  await sendSmartPush(
+    '77889900',
+    'Вам назначена новая фокус-задача в *TedCloud*',
+    'ticket-it-102',
+    {
+      botToken: '123456:ABC-DEF',
+      baseWebAppUrl: 'https://app.tedcloud.ru',
+      fetchImpl: mockSmartPushFetch,
+    }
+  );
+
+  const parsedSmartPush = JSON.parse(smartPushBody);
+  assert.equal(
+    parsedSmartPush.reply_markup.inline_keyboard[0][0].text,
+    'Посмотреть задачу'
+  );
+  assert.equal(
+    parsedSmartPush.reply_markup.inline_keyboard[0][0].web_app.url,
+    'https://app.tedcloud.ru/?startapp=ticket-it-102'
+  );
+});
+
+

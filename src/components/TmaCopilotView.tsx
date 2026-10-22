@@ -7,6 +7,7 @@ import {
 } from '../types/saas';
 import { SmartTaskCard } from './SmartTaskCard';
 import { useCurrentRole } from '../context/RoleContext';
+import { useTelegramSync } from '../hooks/useTelegramSync';
 import { DEPARTMENT_QUEUE_OPTIONS } from '../data/seedData';
 import { CheckCircle2, Plus, ShieldCheck } from 'lucide-react';
 
@@ -92,7 +93,7 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
   onSendTelegramTask,
   onOpenNewTaskModal,
 }) => {
-  const { currentRole } = useCurrentRole();
+  const { currentRole, setCurrentRole } = useCurrentRole();
   const [currentFocusIndex, setCurrentFocusIndex] = useState(0);
   const [localTickets, setLocalTickets] = useState<SmartCopilotTask[]>(
     DEFAULT_INTERNAL_TICKETS
@@ -112,6 +113,27 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
   const pendingTasks = combinedTasks.filter(
     (t) => t.status === 'pending' && (t.task_class || 'client_action') === activeTaskClass
   );
+
+  // Шаг 2 & 3: Синхронизация Telegram Mini App (initDataUnsafe.user.id) и перехват Deep Link startapp={taskId}
+  useTelegramSync({
+    currentNodeId: 'partner-4',
+    onDeepLinkTaskDetected: (deepLinkedTaskId) => {
+      const targetTask = combinedTasks.find((t) => t.id === deepLinkedTaskId);
+      if (!targetTask) return;
+      if (targetTask.task_class === 'internal_ticket' && currentRole !== 'INTERNAL_IT') {
+        setCurrentRole('INTERNAL_IT');
+      }
+      const sameClassList = combinedTasks.filter(
+        (t) =>
+          t.status === 'pending' &&
+          (t.task_class || 'client_action') === (targetTask.task_class || 'client_action')
+      );
+      const targetIdx = sameClassList.findIndex((t) => t.id === deepLinkedTaskId);
+      if (targetIdx >= 0) {
+        setCurrentFocusIndex(targetIdx);
+      }
+    },
+  });
 
   const safeIndex =
     pendingTasks.length > 0
