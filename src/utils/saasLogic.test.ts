@@ -659,7 +659,7 @@ test('Telegram Deep Integration: /start webhook, initDataUnsafe user/start_param
   );
 });
 
-test('processTelegramWebhook handles employee /start, guest /start, and guest lead registration in crm_leads', async () => {
+test('processTelegramWebhook handles Multi-Tenant employee workspace with startapp deep-link and guest lead capture with null company_id', async () => {
   const { processTelegramWebhook } = await import(
     '../app/api/telegram/webhook/route'
   );
@@ -680,6 +680,8 @@ test('processTelegramWebhook handles employee /start, guest /start, and guest le
                           id: 'node-1',
                           name: 'Артём Громов',
                           role_type: 'NETWORK_PARTNER',
+                          company_id: 'comp-uuid-1',
+                          companies: { name: 'Alpha Wellness Group' },
                         },
                         error: null,
                       };
@@ -712,7 +714,7 @@ test('processTelegramWebhook handles employee /start, guest /start, and guest le
     });
   }) as typeof fetch;
 
-  // 1. Сотрудник отправляет /start
+  // 1. Зарегистрированный сотрудник отправляет /start с параметром startapp (Deep Link на задачу)
   const empRes = await processTelegramWebhook(
     {
       update_id: 1,
@@ -720,7 +722,7 @@ test('processTelegramWebhook handles employee /start, guest /start, and guest le
         message_id: 10,
         chat: { id: 500100, type: 'private' },
         date: 1729600200,
-        text: '/start',
+        text: '/start task-777',
       },
     },
     {
@@ -731,45 +733,26 @@ test('processTelegramWebhook handles employee /start, guest /start, and guest le
     }
   );
 
-  assert.equal(empRes.action, 'employee_start');
+  assert.equal(empRes.action, 'employee_active');
+  assert.equal(empRes.companyName, 'Alpha Wellness Group');
+  assert.equal(
+    empRes.webAppUrl,
+    'https://tedcloud.vercel.app/?startapp=task-777'
+  );
   assert.equal(
     sentPayloads[0].text,
-    '⚡️ С возвращением в TedCloud! Ваше рабочее пространство готово.'
+    '⚡️ TedCloud активен. Рабочее пространство [Alpha Wellness Group] готово.'
   );
 
-  // 2. Незнакомец отправляет /start
-  const guestStartRes = await processTelegramWebhook(
+  // 2. Неизвестный пользователь пишет в бота -> ответ с ID + сохранение в crm_leads с company_id: null
+  const guestRes = await processTelegramWebhook(
     {
       update_id: 2,
       message: {
         message_id: 11,
+        from: { id: 999888, first_name: 'Екатерина', last_name: 'Смирнова' },
         chat: { id: 999888, type: 'private' },
         date: 1729600210,
-        text: '/start',
-      },
-    },
-    {
-      botToken: '123456:BOT',
-      siteUrl: 'https://tedcloud.vercel.app',
-      supabaseClient: mockSupabase as never,
-      fetchImpl: mockFetch,
-    }
-  );
-
-  assert.equal(guestStartRes.action, 'guest_start');
-  assert.equal(
-    sentPayloads[1].text,
-    'Добро пожаловать в TedCloud! Ваш Telegram ID: 999888. Если вы сотрудник, передайте его администратору. Если у вас вопрос — просто напишите его сюда.'
-  );
-
-  // 3. Незнакомец пишет текстовый вопрос -> создаётся запись в crm_leads
-  const leadRes = await processTelegramWebhook(
-    {
-      update_id: 3,
-      message: {
-        message_id: 12,
-        chat: { id: 999888, type: 'private' },
-        date: 1729600220,
         text: 'Здравствуйте, хочу подключить партнерскую программу TedCloud!',
       },
     },
@@ -781,20 +764,22 @@ test('processTelegramWebhook handles employee /start, guest /start, and guest le
     }
   );
 
-  assert.equal(leadRes.action, 'lead_created');
+  assert.equal(guestRes.action, 'guest_lead_captured');
   assert.equal(insertedLeads.length, 1);
+  assert.equal(insertedLeads[0].company_id, null);
   assert.equal(insertedLeads[0].stage, 'new');
-  assert.equal(insertedLeads[0].full_name, 'Новый контакт из ТГ');
+  assert.equal(insertedLeads[0].full_name, 'Екатерина Смирнова');
   assert.equal(insertedLeads[0].telegram_chat_id, '999888');
   assert.equal(
     insertedLeads[0].description,
     'Здравствуйте, хочу подключить партнерскую программу TedCloud!'
   );
   assert.equal(
-    sentPayloads[2].text,
-    'Ваша заявка принята! Мы свяжемся с вами в ближайшее время.'
+    sentPayloads[1].text,
+    'Добро пожаловать в TedCloud! Ваш ID: 999888. Передайте его руководителю для приглашения в рабочее пространство компании, либо оставьте заявку.'
   );
 });
+
 
 
 

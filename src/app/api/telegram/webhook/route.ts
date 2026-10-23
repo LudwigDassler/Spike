@@ -29,6 +29,14 @@ export interface WebhookProcessOptions {
   fetchImpl?: typeof fetch;
 }
 
+interface OrganizationNodeWithCompany {
+  id: string;
+  name: string;
+  role_type: string;
+  company_id?: string | null;
+  companies?: { name?: string } | Array<{ name?: string }> | null;
+}
+
 function getServerSupabaseClient(): Pick<SupabaseClient, 'from'> | null {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -69,15 +77,47 @@ async function sendTelegramMessage(
 }
 
 /**
- * Основная бизнес-логика обработки входящего Telegram Webhook (команда /start и входящие лиды).
+ * Извлекает параметр startapp из команды /start <startParam> или текста сообщения для Deep Linking.
+ */
+export function extractStartAppParam(rawText: string): string | null {
+  const trimmed = rawText.trim();
+  const startMatch = trimmed.match(/^\/start(?:@\S+)?\s+([A-Za-z0-9_-]+)$/i);
+  if (startMatch?.[1]) {
+    return startMatch[1];
+  }
+  const urlMatch = trimmed.match(/[?&]startapp=([A-Za-z0-9_-]+)/i);
+  if (urlMatch?.[1]) {
+    return urlMatch[1];
+  }
+  return null;
+}
+
+/**
+ * Формирует URL для Telegram Web App с поддержкой Deep Linking (?startapp=...).
+ */
+export function buildDeepLinkedWebAppUrl(
+  baseUrl: string,
+  startAppParam?: string | null
+): string {
+  const normalizedBase = baseUrl.replace(/\/$/, '');
+  if (!startAppParam) {
+    return normalizedBase;
+  }
+  return `${normalizedBase}/?startapp=${encodeURIComponent(startAppParam)}`;
+}
+
+/**
+ * Основной движок обработки входящего Telegram Webhook (Multi-Tenancy + Deep Linking).
  */
 export async function processTelegramWebhook(
   update: TelegramUpdate,
   options?: WebhookProcessOptions
 ): Promise<{
   ok: boolean;
-  action: 'employee_start' | 'guest_start' | 'lead_created' | 'ignored';
+  action: 'employee_active' | 'guest_lead_captured' | 'ignored';
   chatId: number | null;
+  companyName?: string;
+  webAppUrl?: string;
   replyPayload?: Record<string, unknown>;
 }> {
   const message = update.message;
@@ -102,97 +142,94 @@ export async function processTelegramWebhook(
       : getServerSupabaseClient();
   const fetchFn = options?.fetchImpl ?? fetch;
 
-  // 1. Проверяем наличие пользователя в таблице organization_nodes по telegram_chat_id
-  let existingNode: { id: string; name: string; role_type: string } | null = null;
+  // 1. Проверяем наличие пользователя в organization_nodes по telegram_chat_id + подтягиваем название компании
+  let existingNode: OrganizationNodeWithCompany | null = null;
+  let companyName = 'TedCloud Enterprise';
 
   if (supabase) {
     const { data } = await supabase
       .from('organization_nodes')
-      .select('id, name, role_type')
+      .select('id, name, role_type, company_id, companies(name)')
       .eq('telegram_chat_id', String(chatId))
       .maybeSingle();
 
     if (data) {
-      existingNode = data as { id: string; name: string; role_type: string };
-    }
-  }
-
-  const isCommand = rawText.startsWith('/');
-  const isStartCommand = /^\/start(@\S+)?(\s+.*)?$/i.test(rawText);
-
-  // СЦЕНАРИЙ А: Команда /start
-  if (isStartCommand) {
-    if (existingNode) {
-      // Пользователь найден (сотрудник / партнёр)
-      const replyPayload = {
-        chat_id: chatId,
-        text: '⚡️ С возвращением в TedCloud! Ваше рабочее пространство готово.',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '🚀 Открыть систему',
-                web_app: {
-                  url: siteUrl,
-                },
-              },
-            ],
-          ],
-        },
-      };
-
-      await sendTelegramMessage(botToken, replyPayload, fetchFn);
-      return {
-        ok: true,
-        action: 'employee_start',
-        chatId,
-        replyPayload,
-      };
-    } else {
-      // Пользователь НЕ найден (незнакомец / клиент)
-      const replyPayload = {
-        chat_id: chatId,
-        text: `Добро пожаловать в TedCloud! Ваш Telegram ID: ${chatId}. Если вы сотрудник, передайте его администратору. Если у вас вопрос — просто напишите его сюда.`,
-      };
-
-      await sendTelegramMessage(botToken, replyPayload, fetchFn);
-      return {
-        ok: true,
-        action: 'guest_start',
-        chatId,
-        replyPayload,
-      };
-    }
-  }
-
-  // СЦЕНАРИЙ Б: Любое текстовое сообщение (кроме команд)
-  if (!isCommand) {
-    if (!existingNode) {
-      if (supabase) {
-        await supabase.from('crm_leads').insert({
-          stage: 'new',
-          full_name: 'Новый контакт из ТГ',
-          telegram_chat_id: String(chatId),
-          description: rawText,
-        });
+      existingNode = data as OrganizationNodeWithCompany;
+      const joinedCompany = existingNode.companies;
+      if (Array.isArray(joinedCompany) && joinedCompany[0]?.name) {
+        companyName = joinedCompany[0].name;
+      } else if (
+        joinedCompany &&
+        !Array.isArray(joinedCompany) &&
+        joinedCompany.name
+      ) {
+        companyName = joinedCompany.name;
       }
-
-      const replyPayload = {
-        chat_id: chatId,
-        text: 'Ваша заявка принята! Мы свяжемся с вами в ближайшее время.',
-      };
-
-      await sendTelegramMessage(botToken, replyPayload, fetchFn);
-      return {
-        ok: true,
-        action: 'lead_created',
-        chatId,
-        replyPayload,
-      };
     }
   }
 
-  return { ok: true, action: 'ignored', chatId };
+  // 2. Извлекаем параметр startapp (для открытия конкретной задачи в Mini App по Deep Link)
+  const startAppParam = extractStartAppParam(rawText);
+  const targetWebAppUrl = buildDeepLinkedWebAppUrl(siteUrl, startAppParam);
+
+  // СЦЕНАРИЙ 1: Зарегистрированный сотрудник (найден в organization_nodes)
+  if (existingNode) {
+    const replyPayload = {
+      chat_id: chatId,
+      text: `⚡️ TedCloud активен. Рабочее пространство [${companyName}] готово.`,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: '🚀 Открыть систему',
+              web_app: {
+                url: targetWebAppUrl,
+              },
+            },
+          ],
+        ],
+      },
+    };
+
+    await sendTelegramMessage(botToken, replyPayload, fetchFn);
+    return {
+      ok: true,
+      action: 'employee_active',
+      chatId,
+      companyName,
+      webAppUrl: targetWebAppUrl,
+      replyPayload,
+    };
+  }
+
+  // СЦЕНАРИЙ 2: Неизвестный пользователь (отсутствует в organization_nodes)
+  // Сохраняем обращение в crm_leads с пустым company_id (null) для ручного разбора
+  if (supabase) {
+    await supabase.from('crm_leads').insert({
+      company_id: null,
+      stage: 'new',
+      full_name:
+        [message?.from?.first_name, message?.from?.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || 'Новый контакт из ТГ',
+      telegram_chat_id: String(chatId),
+      description: rawText,
+    });
+  }
+
+  const replyPayload = {
+    chat_id: chatId,
+    text: `Добро пожаловать в TedCloud! Ваш ID: ${chatId}. Передайте его руководителю для приглашения в рабочее пространство компании, либо оставьте заявку.`,
+  };
+
+  await sendTelegramMessage(botToken, replyPayload, fetchFn);
+  return {
+    ok: true,
+    action: 'guest_lead_captured',
+    chatId,
+    replyPayload,
+  };
 }
 
 /**

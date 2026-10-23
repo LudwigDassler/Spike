@@ -474,7 +474,7 @@ export default function App() {
           }}
         />
 
-        {/* Mobile Offcanvas Drawer (< md) with bg-slate-900/50 backdrop */}
+        {/* Mobile Offcanvas Drawer (< md) with bg-black/50 backdrop */}
         {isMobileSidebarOpen && (
           <div
             role="dialog"
@@ -483,7 +483,7 @@ export default function App() {
             className="fixed inset-0 z-50 flex md:hidden"
           >
             <div
-              className="fixed inset-0 bg-slate-900/50 transition-opacity"
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity duration-200"
               onClick={() => setIsMobileSidebarOpen(false)}
             />
             <div className="relative z-10 flex h-full">
@@ -505,6 +505,7 @@ export default function App() {
                 totalBranchPv={totalBranchPv}
                 completedTasksCount={completedTasksCount}
                 totalTasksCount={tasks.length}
+                leadsCount={leads.length}
                 isMobileDrawer
                 onCloseMobileDrawer={() => setIsMobileSidebarOpen(false)}
               />
@@ -532,9 +533,10 @@ export default function App() {
             totalBranchPv={totalBranchPv}
             completedTasksCount={completedTasksCount}
             totalTasksCount={tasks.length}
+            leadsCount={leads.length}
           />
 
-          <main className="flex-1 w-full px-4 py-5 md:p-6 lg:p-8 min-w-0">
+          <main className="flex-1 w-full px-4 py-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6 lg:p-8 min-w-0">
             {statusNotice && (
               <div
                 role="status"
