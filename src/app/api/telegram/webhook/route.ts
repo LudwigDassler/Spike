@@ -17,26 +17,28 @@ export interface TelegramInlineKeyboardButton {
 
 export type TelegramInlineKeyboard = TelegramInlineKeyboardButton[][];
 
+export interface TelegramMessage {
+  message_id: number;
+  from?: {
+    id: number;
+    is_bot?: boolean;
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+  };
+  chat: {
+    id: number;
+    type: string;
+    first_name?: string;
+    username?: string;
+  };
+  date?: number;
+  text?: string;
+}
+
 export interface TelegramUpdate {
   update_id?: number;
-  message?: {
-    message_id: number;
-    from?: {
-      id: number;
-      is_bot?: boolean;
-      first_name?: string;
-      last_name?: string;
-      username?: string;
-    };
-    chat: {
-      id: number;
-      type: 'private' | 'group' | 'supergroup' | 'channel';
-      first_name?: string;
-      username?: string;
-    };
-    date: number;
-    text?: string;
-  };
+  message?: TelegramMessage;
 }
 
 export interface OrganizationNodeAuthRow {
@@ -51,31 +53,13 @@ export interface WebhookProcessOptions {
   siteUrl?: string;
   supabaseClient?: Pick<SupabaseClient, 'from'> | null;
   fetchImpl?: typeof fetch;
-}
-
-// Инициализация серверного клиента Supabase
-function getServerSupabaseClient(): Pick<SupabaseClient, 'from'> | null {
-  const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    '';
-
-  if (!supabaseUrl || !supabaseKey) {
-    return null;
-  }
-
-  return createClient(supabaseUrl, supabaseKey, {
-    auth: { persistSession: false },
-  });
+  enableDebugPing?: boolean;
 }
 
 /**
- * Внутренний хелпер отправки сообщений в Telegram Bot API
+ * 100% надежная функция отправки сообщений через нативный fetch к Telegram Bot API.
  */
-async function sendMessage(
+export async function sendMessage(
   chatId: number | string,
   text: string,
   inlineKeyboard?: TelegramInlineKeyboard,
@@ -99,19 +83,27 @@ async function sendMessage(
   }
 
   if (!token && fetchFn === fetch) {
+    console.error('[Telegram Debug]: TELEGRAM_BOT_TOKEN не задан в .env!');
     return payload;
   }
 
-  const endpoint = `https://api.telegram.org/bot${token}/sendMessage`;
-  const response = await fetchFn(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const response = await fetchFn(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
 
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error(`[Telegram sendMessage Error ${response.status}]:`, errText);
+    const responseText = await response.text();
+    console.log(
+      `[Telegram sendMessage -> chat_id=${chatId} status=${response.status}]:`,
+      responseText
+    );
+  } catch (networkErr) {
+    console.error('[Telegram sendMessage Network Error]:', networkErr);
   }
 
   return payload;
@@ -148,41 +140,30 @@ export function buildDeepLinkedWebAppUrl(
 }
 
 /**
- * Авторизация в Supabase: ищет запись в organization_nodes по telegram_id (с фоллбэком на telegram_chat_id)
+ * Инициализация Supabase ВНУТРИ обработчика (чтобы отсутствие env-переменных не роняло файл до старта POST)
  */
-async function findUserNodeByTelegramId(
-  supabase: Pick<SupabaseClient, 'from'>,
-  chatIdStr: string
-): Promise<OrganizationNodeAuthRow | null> {
-  // 1. Поиск по полю telegram_id
-  const primaryRes = await supabase
-    .from('organization_nodes')
-    .select('id, company_id, role_type, name')
-    .eq('telegram_id', chatIdStr)
-    .maybeSingle();
+function createServerSupabase(): Pick<SupabaseClient, 'from'> {
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    '';
 
-  if (!primaryRes.error && primaryRes.data) {
-    return primaryRes.data as OrganizationNodeAuthRow;
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      'Не найдены переменные NEXT_PUBLIC_SUPABASE_URL или NEXT_PUBLIC_SUPABASE_ANON_KEY (SUPABASE_SERVICE_ROLE_KEY) в окружении Vercel.'
+    );
   }
 
-  // 2. Фоллбэк на telegram_chat_id, если в схеме используется это имя колонки
-  if (primaryRes.error) {
-    const fallbackRes = await supabase
-      .from('organization_nodes')
-      .select('id, company_id, role_type, name')
-      .eq('telegram_chat_id', chatIdStr)
-      .maybeSingle();
-
-    if (!fallbackRes.error && fallbackRes.data) {
-      return fallbackRes.data as OrganizationNodeAuthRow;
-    }
-  }
-
-  return null;
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false },
+  });
 }
 
 /**
- * Основная серверная логика обработки входящего сообщения Telegram
+ * Тестируемое ядро обработки вебхука
  */
 export async function processTelegramWebhook(
   update: TelegramUpdate,
@@ -214,19 +195,37 @@ export async function processTelegramWebhook(
     process.env.NEXT_PUBLIC_SITE_URL ??
     'https://tedcloud.vercel.app'
   ).replace(/\/$/, '');
+  const fetchImpl = options?.fetchImpl ?? fetch;
+
+  if (options?.enableDebugPing) {
+    await sendMessage(
+      message.chat.id,
+      '🔄 Пинг прошел. Ваш ID: ' + message.chat.id,
+      undefined,
+      { botToken, fetchImpl }
+    );
+  }
+
   const supabase =
     options?.supabaseClient !== undefined
       ? options.supabaseClient
-      : getServerSupabaseClient();
-  const fetchImpl = options?.fetchImpl ?? fetch;
+      : createServerSupabase();
 
-  // Авторизация (Supabase): ищем пользователя по telegram_id === String(message.chat.id)
   let userNode: OrganizationNodeAuthRow | null = null;
   if (supabase) {
-    userNode = await findUserNodeByTelegramId(supabase, String(chatId));
+    const { data, error } = await supabase
+      .from('organization_nodes')
+      .select('id, company_id, role_type, name')
+      .eq('telegram_id', String(message.chat.id))
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Ошибка Supabase (organization_nodes): ${error.message}`);
+    }
+
+    userNode = (data as OrganizationNodeAuthRow | null) ?? null;
   }
 
-  // Нормализуем команду для switch/case (отсекаем возможный @bot_username и аргументы у /start)
   const baseCommand = text.split(/\s+/)[0].split('@')[0].toLowerCase();
 
   switch (baseCommand) {
@@ -258,7 +257,7 @@ export async function processTelegramWebhook(
       } else {
         const replyPayload = await sendMessage(
           chatId,
-          `Доступ закрыт. Ваш Telegram ID: ${chatId}. Передайте его руководителю для приглашения в систему.`,
+          '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: ' + chatId,
           undefined,
           { botToken, fetchImpl }
         );
@@ -305,34 +304,47 @@ export async function processTelegramWebhook(
     }
 
     default: {
-      // Обычный текст (Создание задачи): если текст не начинается с '/' и юзер есть в БД
-      if (!text.startsWith('/') && userNode) {
-        const normalizedRole = String(userNode.role_type || '').toUpperCase();
-        if (normalizedRole === 'OBSERVER') {
-          const replyPayload = await sendMessage(
-            chatId,
-            'У вас нет прав на создание задач.',
-            undefined,
-            { botToken, fetchImpl }
-          );
-          return {
-            ok: true,
-            action: 'observer_denied',
-            chatId,
-            replyPayload,
-          };
-        }
+      if (!userNode) {
+        const replyPayload = await sendMessage(
+          chatId,
+          '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: ' + chatId,
+          undefined,
+          { botToken, fetchImpl }
+        );
 
-        if (supabase) {
-          const { error: insertError } = await supabase.from('tasks').insert({
-            title: text,
-            status: 'new',
-            company_id: userNode.company_id,
-          });
+        return {
+          ok: true,
+          action: 'start_unauthorized',
+          chatId,
+          replyPayload,
+        };
+      }
 
-          if (insertError) {
-            console.error('[Supabase Tasks Insert Error]:', insertError);
-          }
+      const normalizedRole = String(userNode.role_type || '').toUpperCase();
+      if (normalizedRole === 'OBSERVER') {
+        const replyPayload = await sendMessage(
+          chatId,
+          'У вас нет прав на создание задач.',
+          undefined,
+          { botToken, fetchImpl }
+        );
+        return {
+          ok: true,
+          action: 'observer_denied',
+          chatId,
+          replyPayload,
+        };
+      }
+
+      if (!text.startsWith('/') && supabase) {
+        const { error: insertError } = await supabase.from('tasks').insert({
+          title: text,
+          status: 'new',
+          company_id: userNode.company_id,
+        });
+
+        if (insertError) {
+          throw new Error(`Ошибка создания задачи (tasks): ${insertError.message}`);
         }
 
         const replyPayload = await sendMessage(
@@ -357,15 +369,124 @@ export async function processTelegramWebhook(
 
 /**
  * Next.js App Router POST Route: app/api/telegram/webhook/route.ts
- * КРИТИЧНО: Всегда возвращает Response('OK', { status: 200 }) и в try, и в catch.
+ * С агрессивным логированием, принудительным пингом и отправкой ошибок прямо в Telegram-чат.
  */
 export async function POST(request: Request): Promise<Response> {
+  let message: TelegramMessage | undefined;
+
   try {
     const body = (await request.json()) as TelegramUpdate;
-    await processTelegramWebhook(body);
+    console.log('[Telegram Webhook Incoming Update]:', JSON.stringify(body));
+
+    message = body?.message;
+
+    if (!message || !message.chat?.id) {
+      console.log('[Telegram Webhook]: Апдейт без message.chat.id, пропускаем.');
+      return new Response('OK', { status: 200 });
+    }
+
+    const chatId = message.chat.id;
+    const text = message.text?.trim() || '';
+
+    // 1. Принудительный пинг перед любыми запросами к БД (доказывает, что связь с ботом работает)
+    await sendMessage(chatId, '🔄 Пинг прошел. Ваш ID: ' + chatId);
+
+    // 2. Инициализация клиента Supabase внутри try, чтобы отловить возможные проблемы с .env
+    const supabase = createServerSupabase();
+
+    // 3. Запрос к Supabase (organization_nodes), ищем telegram_id == String(message.chat.id)
+    const { data: userNode, error: selectError } = await supabase
+      .from('organization_nodes')
+      .select('*')
+      .eq('telegram_id', String(chatId))
+      .maybeSingle();
+
+    if (selectError) {
+      throw new Error(selectError.message);
+    }
+
+    // 4. Если юзер не найден в БД — сообщаем его ID для записи в organization_nodes
+    if (!userNode) {
+      await sendMessage(
+        chatId,
+        '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: ' + chatId
+      );
+      return new Response('OK', { status: 200 });
+    }
+
+    // 5. Если юзер найден в БД — маршрутизируем команду или создаем задачу
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '');
+    const command = text.split(/\s+/)[0].split('@')[0].toLowerCase();
+
+    switch (command) {
+      case '/start': {
+        await sendMessage(
+          chatId,
+          'Добро пожаловать в TedCloud! Рабочее пространство готово.',
+          siteUrl
+            ? [
+                [
+                  {
+                    text: '🚀 Открыть TedCloud',
+                    web_app: { url: siteUrl },
+                  },
+                ],
+              ]
+            : undefined
+        );
+        break;
+      }
+
+      case '/help': {
+        await sendMessage(
+          chatId,
+          'Для создания задачи просто напишите её суть текстом в этот чат, или используйте команду /new.'
+        );
+        break;
+      }
+
+      case '/new': {
+        await sendMessage(
+          chatId,
+          'Напишите суть задачи следующим сообщением:'
+        );
+        break;
+      }
+
+      default: {
+        if (text && !text.startsWith('/')) {
+          const { error: insertError } = await supabase.from('tasks').insert({
+            title: text,
+            status: 'new',
+            company_id: userNode.company_id,
+          });
+
+          if (insertError) {
+            throw new Error(insertError.message);
+          }
+
+          await sendMessage(
+            chatId,
+            '✅ Задача успешно сохранена в системе.'
+          );
+        }
+        break;
+      }
+    }
+
     return new Response('OK', { status: 200 });
-  } catch (error) {
-    console.error('[Telegram Webhook Error]:', error);
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    console.error('[Telegram Webhook Critical Error]:', error);
+
+    if (message?.chat?.id) {
+      await sendMessage(
+        message.chat.id,
+        '❌ Критическая ошибка: ' + errorMessage
+      );
+    }
+
     return new Response('OK', { status: 200 });
   }
 }

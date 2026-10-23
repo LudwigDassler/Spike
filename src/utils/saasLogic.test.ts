@@ -806,7 +806,7 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   assert.equal(unauthStartRes.action, 'start_unauthorized');
   assert.equal(
     sentPayloads[1].text,
-    'Доступ закрыт. Ваш Telegram ID: 999888. Передайте его руководителю для приглашения в систему.'
+    '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: 999888'
   );
 
   // 3. Команда /help
