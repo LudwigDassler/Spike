@@ -12,6 +12,7 @@ import { CrmPipelineView } from './components/CrmPipelineView';
 import { PartnerNetworkView } from './components/PartnerNetworkView';
 import { EnterpriseExitView } from './components/EnterpriseExitView';
 import { CreateTaskModal } from './components/CreateTaskModal';
+import { TelegramAuthProvider } from './components/TelegramAuthProvider';
 import { CurrentRoleProvider } from './context/RoleContext';
 import {
   INITIAL_CLIENT_CYCLES,
@@ -460,7 +461,8 @@ export default function App() {
 
   return (
     <CurrentRoleProvider initialRole="NETWORK_PARTNER">
-      <div id="workspace" className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+      <TelegramAuthProvider>
+        <div id="workspace" className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
         {/* TopBar with TedCloud Wordmark, Hamburger Button & RoleContext Navigation */}
         <TopBar
           activeTab={activeTab}
@@ -647,7 +649,8 @@ export default function App() {
           projects={projectsList}
           preselectedAssignee={preselectedAssignee}
         />
-      </div>
+        </div>
+      </TelegramAuthProvider>
     </CurrentRoleProvider>
   );
 }

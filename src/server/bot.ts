@@ -53,7 +53,8 @@ export interface TelegramSendMessageRequest {
  * Утверждённый текст приветствия при команде /start
  */
 export const TEDCLOUD_START_MESSAGE =
-  'Добро пожаловать в TedCloud! Ваше рабочее пространство готово.';
+  'Добро пожаловать в TedCloud! Ваше корпоративное пространство готово.';
+
 
 /**
  * Формирует payload ответа на команду /start с обязательной InlineKeyboardMarkup

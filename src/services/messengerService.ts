@@ -86,7 +86,8 @@ export interface MessengerDeliveryResult<TPayload> {
  * Приветственный текст бота TedCloud при команде /start.
  */
 export const TEDCLOUD_WELCOME_MARKDOWN =
-  'Добро пожаловать в TedCloud! Ваше рабочее пространство готово.';
+  'Добро пожаловать в TedCloud! Ваше корпоративное пространство готово.';
+
 
 
 /**

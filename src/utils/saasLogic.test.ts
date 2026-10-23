@@ -584,10 +584,12 @@ test('Telegram Deep Integration: /start webhook, initDataUnsafe user/start_param
     'https://app.tedcloud.ru/?startapp=ticket-it-102'
   );
 
-  // 4. Тест серверного модуля bot.ts (команда /start + InlineKeyboardMarkup web_app)
+  // 4. Тест серверного модуля bot.ts (команда /start + InlineKeyboardMarkup web_app) и lib/telegram.ts (sendTaskNotification)
   const { handleTelegramStartCommand, TEDCLOUD_START_MESSAGE } = await import(
     '../server/bot'
   );
+  const { sendTaskNotification } = await import('../lib/telegram');
+
   let botStartBody = '';
   const mockBotFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     botStartBody = String(init?.body || '');
@@ -618,14 +620,183 @@ test('Telegram Deep Integration: /start webhook, initDataUnsafe user/start_param
   const parsedBotStart = JSON.parse(botStartBody);
   assert.equal(
     parsedBotStart.text,
-    'Добро пожаловать в TedCloud! Ваше рабочее пространство готово.'
+    'Добро пожаловать в TedCloud! Ваше корпоративное пространство готово.'
   );
   assert.equal(parsedBotStart.text, TEDCLOUD_START_MESSAGE);
   assert.equal(
     parsedBotStart.reply_markup.inline_keyboard[0][0].web_app.url,
     'https://app.tedcloud.ru'
   );
+
+  let taskNotifyBody = '';
+  const mockTaskNotifyFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    taskNotifyBody = String(init?.body || '');
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 904 } }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  const notifyRes = await sendTaskNotification(
+    11223344,
+    'Новая задача в TedCloud: Продление курса для Екатерины',
+    'task-101',
+    {
+      botToken: '123456:ABC-DEF',
+      webAppBaseUrl: 'https://app.tedcloud.ru',
+      fetchImpl: mockTaskNotifyFetch,
+    }
+  );
+
+  assert.equal(notifyRes.ok, true);
+  const parsedTaskNotify = JSON.parse(taskNotifyBody);
+  assert.equal(
+    parsedTaskNotify.reply_markup.inline_keyboard[0][0].text,
+    'Открыть задачу'
+  );
+  assert.equal(
+    parsedTaskNotify.reply_markup.inline_keyboard[0][0].web_app.url,
+    'https://app.tedcloud.ru/?startapp=task-101'
+  );
 });
+
+test('processTelegramWebhook handles employee /start, guest /start, and guest lead registration in crm_leads', async () => {
+  const { processTelegramWebhook } = await import(
+    '../app/api/telegram/webhook/route'
+  );
+
+  const insertedLeads: Array<Record<string, unknown>> = [];
+  const mockSupabase = {
+    from(table: string) {
+      if (table === 'organization_nodes') {
+        return {
+          select() {
+            return {
+              eq(_col: string, val: string) {
+                return {
+                  async maybeSingle() {
+                    if (val === '500100') {
+                      return {
+                        data: {
+                          id: 'node-1',
+                          name: 'Артём Громов',
+                          role_type: 'NETWORK_PARTNER',
+                        },
+                        error: null,
+                      };
+                    }
+                    return { data: null, error: null };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === 'crm_leads') {
+        return {
+          async insert(payload: Record<string, unknown>) {
+            insertedLeads.push(payload);
+            return { data: payload, error: null };
+          },
+        };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    },
+  };
+
+  const sentPayloads: Array<Record<string, unknown>> = [];
+  const mockFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    sentPayloads.push(JSON.parse(String(init?.body || '{}')));
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  // 1. Сотрудник отправляет /start
+  const empRes = await processTelegramWebhook(
+    {
+      update_id: 1,
+      message: {
+        message_id: 10,
+        chat: { id: 500100, type: 'private' },
+        date: 1729600200,
+        text: '/start',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(empRes.action, 'employee_start');
+  assert.equal(
+    sentPayloads[0].text,
+    '⚡️ С возвращением в TedCloud! Ваше рабочее пространство готово.'
+  );
+
+  // 2. Незнакомец отправляет /start
+  const guestStartRes = await processTelegramWebhook(
+    {
+      update_id: 2,
+      message: {
+        message_id: 11,
+        chat: { id: 999888, type: 'private' },
+        date: 1729600210,
+        text: '/start',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(guestStartRes.action, 'guest_start');
+  assert.equal(
+    sentPayloads[1].text,
+    'Добро пожаловать в TedCloud! Ваш Telegram ID: 999888. Если вы сотрудник, передайте его администратору. Если у вас вопрос — просто напишите его сюда.'
+  );
+
+  // 3. Незнакомец пишет текстовый вопрос -> создаётся запись в crm_leads
+  const leadRes = await processTelegramWebhook(
+    {
+      update_id: 3,
+      message: {
+        message_id: 12,
+        chat: { id: 999888, type: 'private' },
+        date: 1729600220,
+        text: 'Здравствуйте, хочу подключить партнерскую программу TedCloud!',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(leadRes.action, 'lead_created');
+  assert.equal(insertedLeads.length, 1);
+  assert.equal(insertedLeads[0].stage, 'new');
+  assert.equal(insertedLeads[0].full_name, 'Новый контакт из ТГ');
+  assert.equal(insertedLeads[0].telegram_chat_id, '999888');
+  assert.equal(
+    insertedLeads[0].description,
+    'Здравствуйте, хочу подключить партнерскую программу TedCloud!'
+  );
+  assert.equal(
+    sentPayloads[2].text,
+    'Ваша заявка принята! Мы свяжемся с вами в ближайшее время.'
+  );
+});
+
+
 
 
 
