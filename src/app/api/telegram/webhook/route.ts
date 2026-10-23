@@ -8,6 +8,15 @@ export type BotUserRole =
   | 'OBSERVER'
   | string;
 
+export interface TelegramInlineKeyboardButton {
+  text: string;
+  web_app?: { url: string };
+  url?: string;
+  callback_data?: string;
+}
+
+export type TelegramInlineKeyboard = TelegramInlineKeyboardButton[][];
+
 export interface TelegramUpdate {
   update_id?: number;
   message?: {
@@ -31,9 +40,9 @@ export interface TelegramUpdate {
 }
 
 export interface OrganizationNodeAuthRow {
-  id: string;
+  id?: string;
   company_id: string | null;
-  role_type: BotUserRole;
+  role_type?: BotUserRole;
   name?: string;
 }
 
@@ -44,6 +53,7 @@ export interface WebhookProcessOptions {
   fetchImpl?: typeof fetch;
 }
 
+// Инициализация серверного клиента Supabase
 function getServerSupabaseClient(): Pick<SupabaseClient, 'from'> | null {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -62,25 +72,49 @@ function getServerSupabaseClient(): Pick<SupabaseClient, 'from'> | null {
   });
 }
 
-async function sendTelegramMessage(
-  botToken: string,
-  payload: Record<string, unknown>,
-  fetchImpl: typeof fetch = fetch
-): Promise<void> {
-  if (!botToken && fetchImpl === fetch) {
-    return;
+/**
+ * Внутренний хелпер отправки сообщений в Telegram Bot API
+ */
+async function sendMessage(
+  chatId: number | string,
+  text: string,
+  inlineKeyboard?: TelegramInlineKeyboard,
+  options?: {
+    botToken?: string;
+    fetchImpl?: typeof fetch;
   }
-  const endpoint = `https://api.telegram.org/bot${botToken || 'DEMO_BOT_TOKEN'}/sendMessage`;
-  const response = await fetchImpl(endpoint, {
+): Promise<Record<string, unknown>> {
+  const token = options?.botToken ?? process.env.TELEGRAM_BOT_TOKEN ?? '';
+  const fetchFn = options?.fetchImpl ?? fetch;
+
+  const payload: Record<string, unknown> = {
+    chat_id: chatId,
+    text,
+  };
+
+  if (inlineKeyboard) {
+    payload.reply_markup = {
+      inline_keyboard: inlineKeyboard,
+    };
+  }
+
+  if (!token && fetchFn === fetch) {
+    return payload;
+  }
+
+  const endpoint = `https://api.telegram.org/bot${token}/sendMessage`;
+  const response = await fetchFn(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(`Telegram API error (${response.status}): ${errBody}`);
+    const errText = await response.text();
+    console.error(`[Telegram sendMessage Error ${response.status}]:`, errText);
   }
+
+  return payload;
 }
 
 /**
@@ -114,20 +148,41 @@ export function buildDeepLinkedWebAppUrl(
 }
 
 /**
- * Определяет тип маршрута для switch/case обработки входящего сообщения.
+ * Авторизация в Supabase: ищет запись в organization_nodes по telegram_id (с фоллбэком на telegram_chat_id)
  */
-function resolveRouteCommand(
-  rawText: string
-): '/start' | '/help' | '/new' | 'TEXT' {
-  const normalized = rawText.trim().split(/\s+/)[0].split('@')[0].toLowerCase();
-  if (normalized === '/start') return '/start';
-  if (normalized === '/help') return '/help';
-  if (normalized === '/new') return '/new';
-  return 'TEXT';
+async function findUserNodeByTelegramId(
+  supabase: Pick<SupabaseClient, 'from'>,
+  chatIdStr: string
+): Promise<OrganizationNodeAuthRow | null> {
+  // 1. Поиск по полю telegram_id
+  const primaryRes = await supabase
+    .from('organization_nodes')
+    .select('id, company_id, role_type, name')
+    .eq('telegram_id', chatIdStr)
+    .maybeSingle();
+
+  if (!primaryRes.error && primaryRes.data) {
+    return primaryRes.data as OrganizationNodeAuthRow;
+  }
+
+  // 2. Фоллбэк на telegram_chat_id, если в схеме используется это имя колонки
+  if (primaryRes.error) {
+    const fallbackRes = await supabase
+      .from('organization_nodes')
+      .select('id, company_id, role_type, name')
+      .eq('telegram_chat_id', chatIdStr)
+      .maybeSingle();
+
+    if (!fallbackRes.error && fallbackRes.data) {
+      return fallbackRes.data as OrganizationNodeAuthRow;
+    }
+  }
+
+  return null;
 }
 
 /**
- * Основная серверная логика обработки вебхука Telegram и маршрутизации ролей.
+ * Основная серверная логика обработки входящего сообщения Telegram
  */
 export async function processTelegramWebhook(
   update: TelegramUpdate,
@@ -141,16 +196,15 @@ export async function processTelegramWebhook(
     | 'new_task_prompt'
     | 'observer_denied'
     | 'task_saved'
-    | 'unauthorized_text'
     | 'ignored';
   chatId: number | null;
   replyPayload?: Record<string, unknown>;
 }> {
-  const message = update.message;
+  const message = update?.message;
   const chatId = message?.chat?.id ?? null;
-  const rawText = message?.text?.trim() ?? '';
+  const text = message?.text?.trim() ?? '';
 
-  if (!chatId || !rawText) {
+  if (!message || !chatId || !text) {
     return { ok: true, action: 'ignored', chatId };
   }
 
@@ -158,58 +212,43 @@ export async function processTelegramWebhook(
   const siteUrl = (
     options?.siteUrl ??
     process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    'https://app.tedcloud.ru'
+    'https://tedcloud.vercel.app'
   ).replace(/\/$/, '');
   const supabase =
     options?.supabaseClient !== undefined
       ? options.supabaseClient
       : getServerSupabaseClient();
-  const fetchFn = options?.fetchImpl ?? fetch;
+  const fetchImpl = options?.fetchImpl ?? fetch;
 
-  // 1. Авторизация и проверка ролей в таблице organization_nodes
+  // Авторизация (Supabase): ищем пользователя по telegram_id === String(message.chat.id)
   let userNode: OrganizationNodeAuthRow | null = null;
-
   if (supabase) {
-    const { data, error } = await supabase
-      .from('organization_nodes')
-      .select('id, company_id, role_type, name')
-      .eq('telegram_chat_id', String(chatId))
-      .maybeSingle();
-
-    if (!error && data) {
-      userNode = data as OrganizationNodeAuthRow;
-    }
+    userNode = await findUserNodeByTelegramId(supabase, String(chatId));
   }
 
-  const command = resolveRouteCommand(rawText);
+  // Нормализуем команду для switch/case (отсекаем возможный @bot_username и аргументы у /start)
+  const baseCommand = text.split(/\s+/)[0].split('@')[0].toLowerCase();
 
-  // 2. Маршрутизация (switch / case) с учетом ролей
-  switch (command) {
+  switch (baseCommand) {
     case '/start': {
       if (userNode) {
-        const startParam = extractStartAppParam(rawText);
-        const targetWebAppUrl = buildDeepLinkedWebAppUrl(siteUrl, startParam);
+        const startParam = extractStartAppParam(text);
+        const webAppUrl = buildDeepLinkedWebAppUrl(siteUrl, startParam);
 
-        const replyPayload = {
-          chat_id: chatId,
-          text: 'Добро пожаловать в рабочее пространство!',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: '🚀 Открыть TedCloud',
-                  web_app: {
-                    url: targetWebAppUrl,
-                  },
-                },
-              ],
+        const replyPayload = await sendMessage(
+          chatId,
+          'Добро пожаловать в TedCloud! Рабочее пространство готово.',
+          [
+            [
+              {
+                text: '🚀 Открыть TedCloud',
+                web_app: { url: webAppUrl },
+              },
             ],
-          },
-        };
+          ],
+          { botToken, fetchImpl }
+        );
 
-        await sendTelegramMessage(botToken, replyPayload, fetchFn);
         return {
           ok: true,
           action: 'start_authorized',
@@ -217,12 +256,13 @@ export async function processTelegramWebhook(
           replyPayload,
         };
       } else {
-        const replyPayload = {
-          chat_id: chatId,
-          text: `Доступ закрыт. Ваш Telegram ID: ${chatId}. Передайте его руководителю для получения доступа.`,
-        };
+        const replyPayload = await sendMessage(
+          chatId,
+          `Доступ закрыт. Ваш Telegram ID: ${chatId}. Передайте его руководителю для приглашения в систему.`,
+          undefined,
+          { botToken, fetchImpl }
+        );
 
-        await sendTelegramMessage(botToken, replyPayload, fetchFn);
         return {
           ok: true,
           action: 'start_unauthorized',
@@ -233,12 +273,13 @@ export async function processTelegramWebhook(
     }
 
     case '/help': {
-      const replyPayload = {
-        chat_id: chatId,
-        text: 'Отправьте текстовое сообщение или используйте команду /new, чтобы создать задачу. Статус отслеживайте в приложении.',
-      };
+      const replyPayload = await sendMessage(
+        chatId,
+        'Для создания задачи просто напишите её суть текстом в этот чат, или используйте команду /new.',
+        undefined,
+        { botToken, fetchImpl }
+      );
 
-      await sendTelegramMessage(botToken, replyPayload, fetchFn);
       return {
         ok: true,
         action: 'help_sent',
@@ -248,12 +289,13 @@ export async function processTelegramWebhook(
     }
 
     case '/new': {
-      const replyPayload = {
-        chat_id: chatId,
-        text: 'Опишите суть задачи:',
-      };
+      const replyPayload = await sendMessage(
+        chatId,
+        'Напишите суть задачи следующим сообщением:',
+        undefined,
+        { botToken, fetchImpl }
+      );
 
-      await sendTelegramMessage(botToken, replyPayload, fetchFn);
       return {
         ok: true,
         action: 'new_task_prompt',
@@ -262,81 +304,68 @@ export async function processTelegramWebhook(
       };
     }
 
-    case 'TEXT':
     default: {
-      if (!userNode) {
-        const replyPayload = {
-          chat_id: chatId,
-          text: `Доступ закрыт. Ваш Telegram ID: ${chatId}. Передайте его руководителю для получения доступа.`,
-        };
-
-        await sendTelegramMessage(botToken, replyPayload, fetchFn);
-        return {
-          ok: true,
-          action: 'unauthorized_text',
-          chatId,
-          replyPayload,
-        };
-      }
-
-      // Проверка прав: роль OBSERVER не имеет права создавать задачи
-      const normalizedRole = String(userNode.role_type || '').toUpperCase();
-      if (normalizedRole === 'OBSERVER') {
-        const replyPayload = {
-          chat_id: chatId,
-          text: 'У вас нет прав на создание задач.',
-        };
-
-        await sendTelegramMessage(botToken, replyPayload, fetchFn);
-        return {
-          ok: true,
-          action: 'observer_denied',
-          chatId,
-          replyPayload,
-        };
-      }
-
-      // Создание задачи в таблице tasks (SUPERADMIN, TENANT_OWNER, MANAGER, SPECIALIST)
-      if (supabase) {
-        const { error: insertError } = await supabase.from('tasks').insert({
-          title: rawText,
-          company_id: userNode.company_id,
-          status: 'new',
-          created_by: userNode.id,
-        });
-
-        if (insertError) {
-          throw new Error(insertError.message);
+      // Обычный текст (Создание задачи): если текст не начинается с '/' и юзер есть в БД
+      if (!text.startsWith('/') && userNode) {
+        const normalizedRole = String(userNode.role_type || '').toUpperCase();
+        if (normalizedRole === 'OBSERVER') {
+          const replyPayload = await sendMessage(
+            chatId,
+            'У вас нет прав на создание задач.',
+            undefined,
+            { botToken, fetchImpl }
+          );
+          return {
+            ok: true,
+            action: 'observer_denied',
+            chatId,
+            replyPayload,
+          };
         }
+
+        if (supabase) {
+          const { error: insertError } = await supabase.from('tasks').insert({
+            title: text,
+            status: 'new',
+            company_id: userNode.company_id,
+          });
+
+          if (insertError) {
+            console.error('[Supabase Tasks Insert Error]:', insertError);
+          }
+        }
+
+        const replyPayload = await sendMessage(
+          chatId,
+          '✅ Задача успешно сохранена в системе.',
+          undefined,
+          { botToken, fetchImpl }
+        );
+
+        return {
+          ok: true,
+          action: 'task_saved',
+          chatId,
+          replyPayload,
+        };
       }
 
-      const replyPayload = {
-        chat_id: chatId,
-        text: '✅ Задача сохранена в системе.',
-      };
-
-      await sendTelegramMessage(botToken, replyPayload, fetchFn);
-      return {
-        ok: true,
-        action: 'task_saved',
-        chatId,
-        replyPayload,
-      };
+      return { ok: true, action: 'ignored', chatId };
     }
   }
 }
 
 /**
  * Next.js App Router POST Route: app/api/telegram/webhook/route.ts
- * Всегда возвращает Response('OK', { status: 200 }), чтобы Telegram не дублировал вебхуки.
+ * КРИТИЧНО: Всегда возвращает Response('OK', { status: 200 }) и в try, и в catch.
  */
 export async function POST(request: Request): Promise<Response> {
   try {
-    const update = (await request.json()) as TelegramUpdate;
-    await processTelegramWebhook(update);
+    const body = (await request.json()) as TelegramUpdate;
+    await processTelegramWebhook(body);
+    return new Response('OK', { status: 200 });
   } catch (error) {
     console.error('[Telegram Webhook Error]:', error);
+    return new Response('OK', { status: 200 });
   }
-
-  return new Response('OK', { status: 200 });
 }

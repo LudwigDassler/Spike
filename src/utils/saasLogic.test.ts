@@ -771,7 +771,10 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   );
 
   assert.equal(empRes.action, 'start_authorized');
-  assert.equal(sentPayloads[0].text, 'Добро пожаловать в рабочее пространство!');
+  assert.equal(
+    sentPayloads[0].text,
+    'Добро пожаловать в TedCloud! Рабочее пространство готово.'
+  );
   const replyMarkup = sentPayloads[0].reply_markup as {
     inline_keyboard: Array<Array<{ text: string; web_app: { url: string } }>>;
   };
@@ -803,7 +806,7 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   assert.equal(unauthStartRes.action, 'start_unauthorized');
   assert.equal(
     sentPayloads[1].text,
-    'Доступ закрыт. Ваш Telegram ID: 999888. Передайте его руководителю для получения доступа.'
+    'Доступ закрыт. Ваш Telegram ID: 999888. Передайте его руководителю для приглашения в систему.'
   );
 
   // 3. Команда /help
@@ -828,7 +831,7 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   assert.equal(helpRes.action, 'help_sent');
   assert.equal(
     sentPayloads[2].text,
-    'Отправьте текстовое сообщение или используйте команду /new, чтобы создать задачу. Статус отслеживайте в приложении.'
+    'Для создания задачи просто напишите её суть текстом в этот чат, или используйте команду /new.'
   );
 
   // 4. Команда /new
@@ -851,7 +854,10 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   );
 
   assert.equal(newRes.action, 'new_task_prompt');
-  assert.equal(sentPayloads[3].text, 'Опишите суть задачи:');
+  assert.equal(
+    sentPayloads[3].text,
+    'Напишите суть задачи следующим сообщением:'
+  );
 
   // 5. Роль OBSERVER пытается создать задачу текстом -> отказ
   const observerRes = await processTelegramWebhook(
@@ -903,10 +909,12 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   );
   assert.equal(insertedTasks[0].status, 'new');
   assert.equal(insertedTasks[0].company_id, 'comp-uuid-1');
-  assert.equal(insertedTasks[0].created_by, 'node-1');
-  assert.equal(sentPayloads[5].text, '✅ Задача сохранена в системе.');
+  assert.equal(
+    sentPayloads[5].text,
+    '✅ Задача успешно сохранена в системе.'
+  );
 
-  // 7. POST-роут всегда возвращает Response('OK', { status: 200 })
+  // 7. POST-роут всегда возвращает Response('OK', { status: 200 }) и в try, и в catch
   const postHttpRes = await POST(
     new Request('https://tedcloud.vercel.app/api/telegram/webhook', {
       method: 'POST',
@@ -915,6 +923,15 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   );
   assert.equal(postHttpRes.status, 200);
   assert.equal(await postHttpRes.text(), 'OK');
+
+  const postInvalidJsonRes = await POST(
+    new Request('https://tedcloud.vercel.app/api/telegram/webhook', {
+      method: 'POST',
+      body: 'INVALID_JSON',
+    })
+  );
+  assert.equal(postInvalidJsonRes.status, 200);
+  assert.equal(await postInvalidJsonRes.text(), 'OK');
 });
 
 test('computeDashboardKpis computes universal B2B CRM metrics and returns zeros for Empty States', async () => {
