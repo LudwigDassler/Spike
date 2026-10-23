@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { AlertCircle, CheckCircle2, X } from 'lucide-react';
-import { supabase as defaultSupabaseClient } from '../lib/supabaseClient';
+import {
+  createDealAction,
+  createEmployeeAction,
+  createTaskAction,
+} from '../app/actions';
 import {
   CrmLeadRecord,
   OrganizationNode,
@@ -21,7 +24,6 @@ export interface AddRecordModalProps {
   onClose: () => void;
   employees: OrganizationNode[];
   companyIdOverride?: string | null;
-  supabaseClient?: Pick<SupabaseClient, 'from'> | null;
   onLeadCreated?: (lead: CrmLeadRecord) => void;
   onTaskCreated?: (task: TaskRecord) => void;
   onEmployeeCreated?: (employee: OrganizationNode) => void;
@@ -44,18 +46,28 @@ const PRIORITY_OPTIONS: Array<{ value: TaskPriorityType; label: string }> = [
   { value: 'critical', label: 'Критический (Critical)' },
 ];
 
+function triggerSystemAlert(message: string) {
+  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+    try {
+      window.alert(message);
+    } catch {
+      // Игнорируем блокировку window.alert в песочнице iframe
+    }
+  }
+}
+
 export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   isOpen,
   initialTab = 'deal',
   onClose,
   employees,
   companyIdOverride,
-  supabaseClient,
   onLeadCreated,
   onTaskCreated,
   onEmployeeCreated,
 }) => {
-  const { companyId: contextCompanyId, userId: currentUserId } = useTelegramAuth();
+  const { companyId: contextCompanyId, userId: currentUserId } =
+    useTelegramAuth();
   const activeCompanyId =
     companyIdOverride !== undefined ? companyIdOverride : contextCompanyId;
 
@@ -93,9 +105,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     return null;
   }
 
-  const activeSupabase =
-    supabaseClient !== undefined ? supabaseClient : defaultSupabaseClient;
-
   const resetCurrentTabFields = (tab: AddRecordTab) => {
     if (tab === 'deal') {
       setClientName('');
@@ -118,162 +127,93 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     setIsLoading(true);
 
     try {
-      if (!activeSupabase) {
-        throw new Error(
-          'Клиент Supabase не инициализирован. Проверьте переменные NEXT_PUBLIC_SUPABASE_URL и NEXT_PUBLIC_SUPABASE_ANON_KEY.'
-        );
-      }
-
-      // 1. Вкладка "Сделка" -> реальный INSERT в таблицу crm_leads
+      // 1. Вкладка "Сделка" -> вызов Server Action createDealAction (без Optimistic UI)
       if (activeTab === 'deal') {
-        const trimmedClient = clientName.trim();
-        if (!trimmedClient) {
-          throw new Error('Укажите название клиента.');
-        }
+        const result = await createDealAction({
+          company_id: activeCompanyId,
+          owner_node_id: currentUserId || null,
+          full_name: clientName,
+          deal_value: Number(dealAmount) || 0,
+          phone: clientContacts,
+        });
 
-        const numericAmount = Number(dealAmount) || 0;
-        const trimmedContacts = clientContacts.trim() || null;
-
-        const { data, error } = await activeSupabase
-          .from('crm_leads')
-          .insert({
-            company_id: activeCompanyId,
-            owner_node_id: currentUserId || null,
-            full_name: trimmedClient,
-            deal_value: numericAmount,
-            phone: trimmedContacts,
-            stage: 'new',
-          })
-          .select()
-          .single();
-
-        if (error || !data) {
-          throw new Error(
-            error?.message ||
-              'БД не вернула созданную сделку (проверьте политики RLS для crm_leads).'
-          );
+        if (result.success === false) {
+          setStatusMessage({ type: 'error', text: result.error });
+          triggerSystemAlert(result.error);
+          return;
         }
 
         if (onLeadCreated) {
-          onLeadCreated(data as CrmLeadRecord);
+          onLeadCreated(result.data);
         }
 
         setStatusMessage({
           type: 'success',
-          text: 'Успешно: Сделка сохранена в БД (crm_leads).',
+          text: `Успешно: Сделка «${result.data.full_name}» записана в БД (ID: ${result.data.id}).`,
         });
         resetCurrentTabFields('deal');
       }
 
-      // 2. Вкладка "Задача" -> реальный INSERT в таблицу tasks
+      // 2. Вкладка "Задача" -> вызов Server Action createTaskAction (без Optimistic UI)
       if (activeTab === 'task') {
-        const trimmedTitle = taskDescription.trim();
-        if (!trimmedTitle) {
-          throw new Error('Введите описание задачи.');
-        }
+        const result = await createTaskAction({
+          company_id: activeCompanyId,
+          title: taskDescription,
+          priority: taskPriority,
+          assigned_to: taskAssigneeId || null,
+          created_by: currentUserId || null,
+        });
 
-        const resolvedAssignee = taskAssigneeId.trim() || null;
-
-        const { data, error } = await activeSupabase
-          .from('tasks')
-          .insert({
-            company_id: activeCompanyId,
-            title: trimmedTitle,
-            priority: taskPriority,
-            assigned_to: resolvedAssignee,
-            created_by: currentUserId || null,
-            status: 'new',
-            type: 'client',
-          })
-          .select()
-          .single();
-
-        if (error || !data) {
-          throw new Error(
-            error?.message ||
-              'БД не вернула созданную задачу (проверьте политики RLS для tasks).'
-          );
+        if (result.success === false) {
+          setStatusMessage({ type: 'error', text: result.error });
+          triggerSystemAlert(result.error);
+          return;
         }
 
         if (onTaskCreated) {
-          onTaskCreated(data as TaskRecord);
+          onTaskCreated(result.data);
         }
 
         setStatusMessage({
           type: 'success',
-          text: 'Успешно: Задача сохранена в БД (tasks).',
+          text: `Успешно: Задача «${result.data.title}» сохранена в БД (ID: ${result.data.id}).`,
         });
         resetCurrentTabFields('task');
       }
 
-      // 3. Вкладка "Сотрудник" -> реальный INSERT в таблицу organization_nodes без оптимистичного стейта
+      // 3. Вкладка "Сотрудник" -> вызов Server Action createEmployeeAction (без Optimistic UI)
       if (activeTab === 'employee') {
-        const trimmedName = employeeName.trim();
-        if (!trimmedName) {
-          throw new Error('Укажите имя сотрудника.');
+        const result = await createEmployeeAction({
+          company_id: activeCompanyId,
+          name: employeeName,
+          telegram_chat_id: employeeTelegramId,
+          role_type: employeeRole,
+        });
+
+        if (result.success === false) {
+          setStatusMessage({ type: 'error', text: result.error });
+          triggerSystemAlert(result.error);
+          return;
         }
 
-        const trimmedTgId = employeeTelegramId.trim();
-        if (!trimmedTgId) {
-          throw new Error('Укажите Telegram ID сотрудника.');
-        }
-
-        const safePathId =
-          trimmedTgId.replace(/[^a-zA-Z0-9_]/g, '') || Date.now().toString();
-
-        let { data, error } = await activeSupabase
-          .from('organization_nodes')
-          .insert({
-            company_id: activeCompanyId,
-            name: trimmedName,
-            telegram_chat_id: trimmedTgId,
-            role_type: employeeRole,
-            tree_path: `tedcloud.emp_${safePathId}`,
-          })
-          .select()
-          .single();
-
-        // Фоллбэк на случай схемы БД без колонки tree_path
-        if (error && error.message.includes('tree_path')) {
-          const retryRes = await activeSupabase
-            .from('organization_nodes')
-            .insert({
-              company_id: activeCompanyId,
-              name: trimmedName,
-              telegram_chat_id: trimmedTgId,
-              role_type: employeeRole,
-            })
-            .select()
-            .single();
-
-          data = retryRes.data;
-          error = retryRes.error;
-        }
-
-        if (error || !data) {
-          throw new Error(
-            error?.message ||
-              'БД отклонила добавление сотрудника (проверьте политики RLS на INSERT/SELECT в organization_nodes).'
-          );
-        }
-
-        // Только после успешного ответа от Supabase добавляем запись в UI
         if (onEmployeeCreated) {
-          onEmployeeCreated(data as OrganizationNode);
+          onEmployeeCreated(result.data);
         }
 
         setStatusMessage({
           type: 'success',
-          text: `Успешно: Сотрудник «${trimmedName}» записан в БД (ID: ${(data as OrganizationNode).id}).`,
+          text: `Успешно: Сотрудник «${result.data.name}» записан в БД (ID: ${result.data.id}).`,
         });
         resetCurrentTabFields('employee');
       }
-    } catch (error) {
-      const errMsg = (error as Error).message || String(error);
+    } catch (error: any) {
+      const errMsg =
+        error?.message || 'Критическая ошибка при обращении к серверу.';
       setStatusMessage({
         type: 'error',
-        text: `Ошибка записи в БД: ${errMsg}`,
+        text: errMsg,
       });
+      triggerSystemAlert(errMsg);
     } finally {
       setIsLoading(false);
     }
@@ -294,10 +234,10 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               id="add-record-modal-title"
               className="text-base font-semibold tracking-tight text-slate-900"
             >
-              Новая запись TedCloud
+              Новая запись TedCloud (Server Actions)
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Данные автоматически привязываются к вашей компании
+              Строгая серверная запись в Supabase с обходом RLS (без Optimistic UI)
             </p>
           </div>
           <button
@@ -366,10 +306,10 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           </button>
         </div>
 
-        {/* Уведомление об успешной записи или ошибке RLS/Supabase */}
+        {/* Статус ответа от Server Action */}
         {statusMessage && (
           <div
-            role="status"
+            role="alert"
             className={`p-3 rounded-xl border text-xs font-medium flex items-start gap-2.5 ${
               statusMessage.type === 'success'
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
@@ -385,7 +325,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           </div>
         )}
 
-        {/* Динамическая форма (Conditional Rendering по activeTab) */}
+        {/* Динамическая форма по активной вкладке */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {activeTab === 'deal' && (
             <>
@@ -457,7 +397,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   htmlFor="task-description"
                   className="block text-xs font-medium text-slate-700"
                 >
-                  Описание
+                  Описание задачи
                 </label>
                 <textarea
                   id="task-description"
@@ -602,7 +542,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 shadow-xs transition-all duration-200 cursor-pointer"
             >
               {isLoading
-                ? 'Отправка...'
+                ? 'Выполнение Server Action...'
                 : activeTab === 'deal'
                 ? 'Сохранить сделку'
                 : activeTab === 'task'
