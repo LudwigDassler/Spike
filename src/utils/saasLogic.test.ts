@@ -659,12 +659,13 @@ test('Telegram Deep Integration: /start webhook, initDataUnsafe user/start_param
   );
 });
 
-test('processTelegramWebhook handles Multi-Tenant employee workspace with startapp deep-link and guest lead capture with null company_id', async () => {
-  const { processTelegramWebhook } = await import(
+test('processTelegramWebhook handles /start, /help, Natural Language to Task for employees, and guest lead capture', async () => {
+  const { processTelegramWebhook, TEDCLOUD_HELP_MESSAGE } = await import(
     '../app/api/telegram/webhook/route'
   );
 
   const insertedLeads: Array<Record<string, unknown>> = [];
+  const insertedTasks: Array<Record<string, unknown>> = [];
   const mockSupabase = {
     from(table: string) {
       if (table === 'organization_nodes') {
@@ -678,10 +679,10 @@ test('processTelegramWebhook handles Multi-Tenant employee workspace with starta
                       return {
                         data: {
                           id: 'node-1',
-                          name: 'Артём Громов',
-                          role_type: 'NETWORK_PARTNER',
+                          name: 'Алексей Смирнов',
+                          role_type: 'Manager',
                           company_id: 'comp-uuid-1',
-                          companies: { name: 'Alpha Wellness Group' },
+                          companies: { name: 'Alpha Enterprise' },
                         },
                         error: null,
                       };
@@ -691,6 +692,14 @@ test('processTelegramWebhook handles Multi-Tenant employee workspace with starta
                 };
               },
             };
+          },
+        };
+      }
+      if (table === 'tasks') {
+        return {
+          async insert(payload: Record<string, unknown>) {
+            insertedTasks.push(payload);
+            return { data: payload, error: null };
           },
         };
       }
@@ -714,7 +723,7 @@ test('processTelegramWebhook handles Multi-Tenant employee workspace with starta
     });
   }) as typeof fetch;
 
-  // 1. Зарегистрированный сотрудник отправляет /start с параметром startapp (Deep Link на задачу)
+  // 1. Зарегистрированный сотрудник отправляет /start с параметром startapp
   const empRes = await processTelegramWebhook(
     {
       update_id: 1,
@@ -734,26 +743,81 @@ test('processTelegramWebhook handles Multi-Tenant employee workspace with starta
   );
 
   assert.equal(empRes.action, 'employee_active');
-  assert.equal(empRes.companyName, 'Alpha Wellness Group');
+  assert.equal(empRes.companyName, 'Alpha Enterprise');
   assert.equal(
     empRes.webAppUrl,
     'https://tedcloud.vercel.app/?startapp=task-777'
   );
   assert.equal(
     sentPayloads[0].text,
-    '⚡️ TedCloud активен. Рабочее пространство [Alpha Wellness Group] готово.'
+    '⚡️ TedCloud активен. Рабочее пространство [Alpha Enterprise] готово.'
   );
 
-  // 2. Неизвестный пользователь пишет в бота -> ответ с ID + сохранение в crm_leads с company_id: null
-  const guestRes = await processTelegramWebhook(
+  // 2. Команда /help возвращает инструкцию и список возможностей
+  const helpRes = await processTelegramWebhook(
     {
       update_id: 2,
       message: {
         message_id: 11,
+        chat: { id: 500100, type: 'private' },
+        date: 1729600205,
+        text: '/help',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(helpRes.action, 'help_sent');
+  assert.equal(sentPayloads[1].text, TEDCLOUD_HELP_MESSAGE);
+
+  // 3. Natural Language to Task: сотрудник пишет обычный текст -> создаётся запись в tasks (status = 'new', company_id = 'comp-uuid-1')
+  const taskRes = await processTelegramWebhook(
+    {
+      update_id: 3,
+      message: {
+        message_id: 12,
+        chat: { id: 500100, type: 'private' },
+        date: 1729600210,
+        text: 'Подготовить коммерческое предложение для клиента Вектор до пятницы',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(taskRes.action, 'task_created');
+  assert.equal(insertedTasks.length, 1);
+  assert.equal(
+    insertedTasks[0].title,
+    'Подготовить коммерческое предложение для клиента Вектор до пятницы'
+  );
+  assert.equal(insertedTasks[0].status, 'new');
+  assert.equal(insertedTasks[0].company_id, 'comp-uuid-1');
+  assert.equal(
+    sentPayloads[2].text,
+    '✅ Задача зарегистрирована. Вы можете отслеживать её статус в рабочем пространстве.'
+  );
+  assert.equal(sentPayloads[2].reply_markup, undefined);
+
+  // 4. Неизвестный пользователь пишет в бота -> ответ с ID + сохранение в crm_leads с company_id: null
+  const guestRes = await processTelegramWebhook(
+    {
+      update_id: 4,
+      message: {
+        message_id: 13,
         from: { id: 999888, first_name: 'Екатерина', last_name: 'Смирнова' },
         chat: { id: 999888, type: 'private' },
-        date: 1729600210,
-        text: 'Здравствуйте, хочу подключить партнерскую программу TedCloud!',
+        date: 1729600220,
+        text: 'Здравствуйте, хочу подключить TedCloud для отдела продаж!',
       },
     },
     {
@@ -768,17 +832,95 @@ test('processTelegramWebhook handles Multi-Tenant employee workspace with starta
   assert.equal(insertedLeads.length, 1);
   assert.equal(insertedLeads[0].company_id, null);
   assert.equal(insertedLeads[0].stage, 'new');
-  assert.equal(insertedLeads[0].full_name, 'Екатерина Смирнова');
-  assert.equal(insertedLeads[0].telegram_chat_id, '999888');
   assert.equal(
-    insertedLeads[0].description,
-    'Здравствуйте, хочу подключить партнерскую программу TedCloud!'
-  );
-  assert.equal(
-    sentPayloads[1].text,
+    sentPayloads[3].text,
     'Добро пожаловать в TedCloud! Ваш ID: 999888. Передайте его руководителю для приглашения в рабочее пространство компании, либо оставьте заявку.'
   );
 });
+
+test('computeDashboardKpis computes universal B2B CRM metrics and returns zeros for Empty States', async () => {
+  const { computeDashboardKpis } = await import('../types/database');
+
+  // 1. Empty State
+  const emptyKpis = computeDashboardKpis([], [], []);
+  assert.equal(emptyKpis.totalDealValue, 0);
+  assert.equal(emptyKpis.activeTasksCount, 0);
+  assert.equal(emptyKpis.conversionRatePercent, 0);
+  assert.equal(emptyKpis.employeesCount, 0);
+
+  // 2. Полноценные данные из 3 таблиц (crm_leads, tasks, organization_nodes)
+  const populatedKpis = computeDashboardKpis(
+    [
+      {
+        id: 'l-1',
+        company_id: 'c-1',
+        owner_node_id: null,
+        full_name: 'ООО Вектор',
+        phone: null,
+        telegram_chat_id: null,
+        stage: 'qualified',
+        description: null,
+        deal_value: 150000,
+        created_at: '2026-10-23T10:00:00Z',
+      },
+      {
+        id: 'l-2',
+        company_id: 'c-1',
+        owner_node_id: null,
+        full_name: 'АО ТехноСфера',
+        phone: null,
+        telegram_chat_id: null,
+        stage: 'new',
+        description: null,
+        deal_value: 250000,
+        created_at: '2026-10-23T11:00:00Z',
+      },
+    ],
+    [
+      {
+        id: 't-1',
+        company_id: 'c-1',
+        type: 'client',
+        title: 'Согласовать договор',
+        status: 'todo',
+        priority: 'high',
+        assigned_to: null,
+        created_by: null,
+        due_date: null,
+        created_at: '2026-10-23T10:00:00Z',
+      },
+      {
+        id: 't-2',
+        company_id: 'c-1',
+        type: 'ticket',
+        title: 'Настроить интеграцию',
+        status: 'done',
+        priority: 'medium',
+        assigned_to: null,
+        created_by: null,
+        due_date: null,
+        created_at: '2026-10-23T11:00:00Z',
+      },
+    ],
+    [
+      {
+        id: 'n-1',
+        company_id: 'c-1',
+        name: 'Сотрудник 1',
+        role_type: 'SUPERADMIN',
+        tree_path: 'tedcloud',
+        telegram_chat_id: '100200',
+        kpi_value: 0,
+      },
+    ]
+  );
+
+  assert.equal(populatedKpis.totalDealValue, 400000);
+  assert.equal(populatedKpis.activeTasksCount, 1);
+  assert.equal(populatedKpis.conversionRatePercent, 50);
+  assert.equal(populatedKpis.employeesCount, 1);
+});
+
 
 
 

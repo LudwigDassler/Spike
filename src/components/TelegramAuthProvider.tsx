@@ -3,9 +3,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ShieldAlert } from 'lucide-react';
-import { OrganizationNodeRecord, supabase as defaultSupabaseClient } from '../lib/supabaseClient';
-import { useCurrentRole } from '../context/RoleContext';
-import { UserRole } from '../types/saas';
+import { supabase as defaultSupabaseClient } from '../lib/supabaseClient';
+import { Company, OrganizationNode, OrganizationRoleType } from '../types/database';
 
 export interface TelegramWebAppUser {
   id: number;
@@ -35,43 +34,41 @@ declare global {
 export interface TelegramAuthContextValue {
   userId: string;
   userName: string;
-  role: UserRole;
-  role_type: UserRole;
+  role: OrganizationRoleType;
+  role_type: OrganizationRoleType;
+  companyId: string | null;
+  company: Company | null;
   telegramId: string | null;
-  userNode: OrganizationNodeRecord;
+  userNode: OrganizationNode;
   telegramUser: TelegramWebAppUser | null;
   startAppTaskId: string | null;
   isLoading: boolean;
   isUnauthorized: boolean;
-  setRoleType: (role: UserRole) => void;
   clearStartAppTask: () => void;
 }
 
-const DEFAULT_PARTNER_NODE: OrganizationNodeRecord = {
-  id: 'partner-4',
-  name: 'Артём Громов',
-  role_type: 'NETWORK_PARTNER',
-  tree_path: 'tedcloud.network.p_101.p_104',
+const DEFAULT_SYSTEM_NODE: OrganizationNode = {
+  id: 'default-workspace-node',
+  company_id: null,
+  name: 'Администратор',
+  role_type: 'SUPERADMIN',
+  tree_path: 'tedcloud',
   telegram_chat_id: null,
-  kpi_value: 13445,
+  kpi_value: 0,
 };
 
 const TelegramAuthContext = createContext<TelegramAuthContextValue | undefined>(undefined);
 
 /**
- * Шаг 2: Провайдер бесшовной авторизации (Zero-Password Auth) для Telegram Mini App.
- * - Вызывает `Telegram.WebApp.expand()` при монтировании.
- * - Читает `window.Telegram.WebApp.initDataUnsafe.user.id`.
- * - Проверяет пользователя в таблице `organization_nodes` по `telegram_chat_id`.
- * - Если пользователя нет в БД — рендерит экран блокировки:
- *   "Доступ закрыт. Ваш ID: {id}. Передайте его администратору."
+ * Провайдер бесшовной авторизации (Zero-Password Auth) для TedCloud.
+ * Роль и компания пользователя определяются строго из БД Supabase (`organization_nodes` + `companies`).
  */
 export const TelegramAuthProvider: React.FC<{
   children: React.ReactNode;
   supabaseClient?: Pick<SupabaseClient, 'from'> | null;
 }> = ({ children, supabaseClient }) => {
-  const { currentRole, setCurrentRole } = useCurrentRole();
-  const [userNode, setUserNode] = useState<OrganizationNodeRecord>(DEFAULT_PARTNER_NODE);
+  const [userNode, setUserNode] = useState<OrganizationNode>(DEFAULT_SYSTEM_NODE);
+  const [company, setCompany] = useState<Company | null>(null);
   const [telegramUser, setTelegramUser] = useState<TelegramWebAppUser | null>(null);
   const [telegramId, setTelegramId] = useState<string | null>(null);
   const [startAppTaskId, setStartAppTaskId] = useState<string | null>(null);
@@ -81,15 +78,13 @@ export const TelegramAuthProvider: React.FC<{
   useEffect(() => {
     let isMounted = true;
 
-    async function authorizeTelegramUser() {
+    async function authorizeUser() {
       try {
         const tgWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
 
-        // 1. Разворачиваем приложение на весь экран телефона
         tgWebApp?.ready?.();
         tgWebApp?.expand?.();
 
-        // 2. Считываем Deep Link параметр (?startapp=taskId)
         const searchParams =
           typeof window !== 'undefined'
             ? new URLSearchParams(window.location.search)
@@ -104,7 +99,6 @@ export const TelegramAuthProvider: React.FC<{
           setStartAppTaskId(deepLinkParam);
         }
 
-        // 3. Получаем ID пользователя из Telegram WebApp
         const tgUser = tgWebApp?.initDataUnsafe?.user ?? null;
         const resolvedTgId = tgUser?.id ? String(tgUser.id) : null;
 
@@ -116,11 +110,12 @@ export const TelegramAuthProvider: React.FC<{
         const activeSupabase =
           supabaseClient !== undefined ? supabaseClient : defaultSupabaseClient;
 
-        // 4. Запрашиваем данные сотрудника/партнёра в таблице organization_nodes
         if (resolvedTgId && activeSupabase) {
           const { data, error } = await activeSupabase
             .from('organization_nodes')
-            .select('id, name, role_type, tree_path, telegram_chat_id, kpi_value')
+            .select(
+              'id, company_id, name, role_type, tree_path, telegram_chat_id, kpi_value, companies(id, name, subscription_status, created_at)'
+            )
             .eq('telegram_chat_id', resolvedTgId)
             .maybeSingle();
 
@@ -132,9 +127,11 @@ export const TelegramAuthProvider: React.FC<{
           }
 
           if (isMounted) {
-            const resolvedRole = (data.role_type as UserRole) || 'NETWORK_PARTNER';
-            const nodeRecord: OrganizationNodeRecord = {
+            const resolvedRole =
+              (data.role_type as OrganizationRoleType) || 'NETWORK_PARTNER';
+            const nodeRecord: OrganizationNode = {
               id: String(data.id),
+              company_id: data.company_id ? String(data.company_id) : null,
               name: String(data.name),
               role_type: resolvedRole,
               tree_path: String(data.tree_path || 'tedcloud'),
@@ -144,13 +141,20 @@ export const TelegramAuthProvider: React.FC<{
               kpi_value: Number(data.kpi_value) || 0,
             };
 
+            const joinedCompanies = (
+              data as { companies?: Company | Company[] | null }
+            ).companies;
+            const resolvedCompany = Array.isArray(joinedCompanies)
+              ? joinedCompanies[0] ?? null
+              : joinedCompanies ?? null;
+
             setUserNode(nodeRecord);
-            setCurrentRole(resolvedRole);
+            setCompany(resolvedCompany);
             setIsUnauthorized(false);
           }
         }
       } catch {
-        // В локальной веб-среде без подключения к Supabase используем демо-профиль
+        // Fallback в веб-режиме без Telegram WebApp
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -158,52 +162,46 @@ export const TelegramAuthProvider: React.FC<{
       }
     }
 
-    void authorizeTelegramUser();
+    void authorizeUser();
 
     return () => {
       isMounted = false;
     };
-  }, [setCurrentRole, supabaseClient]);
-
-  const setRoleType = (nextRole: UserRole) => {
-    setCurrentRole(nextRole);
-    setUserNode((prev) => ({
-      ...prev,
-      role_type: nextRole,
-    }));
-  };
+  }, [supabaseClient]);
 
   const value = useMemo<TelegramAuthContextValue>(
     () => ({
       userId: userNode.id,
       userName: userNode.name,
-      role: currentRole,
-      role_type: currentRole,
+      role: userNode.role_type,
+      role_type: userNode.role_type,
+      companyId: userNode.company_id,
+      company,
       telegramId,
-      userNode: { ...userNode, role_type: currentRole },
+      userNode,
       telegramUser,
       startAppTaskId,
       isLoading,
       isUnauthorized,
-      setRoleType,
       clearStartAppTask: () => setStartAppTaskId(null),
     }),
-    [userNode, currentRole, telegramId, telegramUser, startAppTaskId, isLoading, isUnauthorized]
+    [userNode, company, telegramId, telegramUser, startAppTaskId, isLoading, isUnauthorized]
   );
 
-  // Если пользователь открыл Mini App, но его Telegram ID отсутствует в organization_nodes
   if (!isLoading && isUnauthorized) {
     return (
       <TelegramAuthContext.Provider value={value}>
-        <div className="min-h-screen w-full flex items-center justify-center bg-slate-50 px-4">
-          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 text-center space-y-4 shadow-xs">
-            <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-rose-700">
+        <div className="min-h-screen w-full font-sans flex items-center justify-center bg-slate-50 px-4">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 text-center space-y-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-rose-600">
               <ShieldAlert className="w-6 h-6" />
             </div>
-            <h1 className="text-lg font-bold text-slate-900">TedCloud</h1>
-            <p className="text-sm font-medium text-slate-700 leading-relaxed">
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900">
+              TedCloud
+            </h1>
+            <p className="text-sm text-slate-600 leading-relaxed">
               Доступ закрыт. Ваш ID:{' '}
-              <span className="font-mono font-bold text-slate-900">
+              <span className="font-semibold text-slate-900">
                 {telegramId ?? 'неизвестен'}
               </span>
               . Передайте его администратору.
