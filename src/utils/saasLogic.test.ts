@@ -659,12 +659,38 @@ test('Telegram Deep Integration: /start webhook, initDataUnsafe user/start_param
   );
 });
 
-test('processTelegramWebhook handles /start, /help, Natural Language to Task for employees, and guest lead capture', async () => {
-  const { processTelegramWebhook, TEDCLOUD_HELP_MESSAGE } = await import(
+test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes /start, /help, /new, OBSERVER guard, and NLP to Task', async () => {
+  const { registerTelegramWebhook } = await import(
+    '../app/api/telegram/setup/route'
+  );
+  const { processTelegramWebhook, POST } = await import(
     '../app/api/telegram/webhook/route'
   );
 
-  const insertedLeads: Array<Record<string, unknown>> = [];
+  // 0. Проверка авто-регистрации Webhook (app/api/telegram/setup/route.ts)
+  let capturedSetWebhookUrl = '';
+  const setupRes = await registerTelegramWebhook({
+    botToken: '123456:BOT_SECRET',
+    siteUrl: 'https://tedcloud.vercel.app/',
+    fetchImpl: (async (url: string | URL | Request) => {
+      capturedSetWebhookUrl = String(url);
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: true,
+          description: 'Webhook was set',
+        }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+
+  assert.equal(setupRes.ok, true);
+  assert.equal(
+    capturedSetWebhookUrl,
+    'https://api.telegram.org/bot123456:BOT_SECRET/setWebhook?url=https%3A%2F%2Ftedcloud.vercel.app%2Fapi%2Ftelegram%2Fwebhook'
+  );
+
   const insertedTasks: Array<Record<string, unknown>> = [];
   const mockSupabase = {
     from(table: string) {
@@ -680,9 +706,19 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
                         data: {
                           id: 'node-1',
                           name: 'Алексей Смирнов',
-                          role_type: 'Manager',
+                          role_type: 'MANAGER',
                           company_id: 'comp-uuid-1',
-                          companies: { name: 'Alpha Enterprise' },
+                        },
+                        error: null,
+                      };
+                    }
+                    if (val === '700200') {
+                      return {
+                        data: {
+                          id: 'node-observer',
+                          name: 'Наблюдатель Аудит',
+                          role_type: 'OBSERVER',
+                          company_id: 'comp-uuid-1',
                         },
                         error: null,
                       };
@@ -703,14 +739,6 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
           },
         };
       }
-      if (table === 'crm_leads') {
-        return {
-          async insert(payload: Record<string, unknown>) {
-            insertedLeads.push(payload);
-            return { data: payload, error: null };
-          },
-        };
-      }
       throw new Error(`Unexpected table: ${table}`);
     },
   };
@@ -723,7 +751,7 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
     });
   }) as typeof fetch;
 
-  // 1. Зарегистрированный сотрудник отправляет /start с параметром startapp
+  // 1. Зарегистрированный сотрудник отправляет /start
   const empRes = await processTelegramWebhook(
     {
       update_id: 1,
@@ -731,7 +759,7 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
         message_id: 10,
         chat: { id: 500100, type: 'private' },
         date: 1729600200,
-        text: '/start task-777',
+        text: '/start',
       },
     },
     {
@@ -742,23 +770,48 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
     }
   );
 
-  assert.equal(empRes.action, 'employee_active');
-  assert.equal(empRes.companyName, 'Alpha Enterprise');
+  assert.equal(empRes.action, 'start_authorized');
+  assert.equal(sentPayloads[0].text, 'Добро пожаловать в рабочее пространство!');
+  const replyMarkup = sentPayloads[0].reply_markup as {
+    inline_keyboard: Array<Array<{ text: string; web_app: { url: string } }>>;
+  };
+  assert.equal(replyMarkup.inline_keyboard[0][0].text, '🚀 Открыть TedCloud');
   assert.equal(
-    empRes.webAppUrl,
-    'https://tedcloud.vercel.app/?startapp=task-777'
-  );
-  assert.equal(
-    sentPayloads[0].text,
-    '⚡️ TedCloud активен. Рабочее пространство [Alpha Enterprise] готово.'
+    replyMarkup.inline_keyboard[0][0].web_app.url,
+    'https://tedcloud.vercel.app'
   );
 
-  // 2. Команда /help возвращает инструкцию и список возможностей
-  const helpRes = await processTelegramWebhook(
+  // 2. Незарегистрированный пользователь отправляет /start
+  const unauthStartRes = await processTelegramWebhook(
     {
       update_id: 2,
       message: {
         message_id: 11,
+        chat: { id: 999888, type: 'private' },
+        date: 1729600202,
+        text: '/start',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(unauthStartRes.action, 'start_unauthorized');
+  assert.equal(
+    sentPayloads[1].text,
+    'Доступ закрыт. Ваш Telegram ID: 999888. Передайте его руководителю для получения доступа.'
+  );
+
+  // 3. Команда /help
+  const helpRes = await processTelegramWebhook(
+    {
+      update_id: 3,
+      message: {
+        message_id: 12,
         chat: { id: 500100, type: 'private' },
         date: 1729600205,
         text: '/help',
@@ -773,14 +826,62 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
   );
 
   assert.equal(helpRes.action, 'help_sent');
-  assert.equal(sentPayloads[1].text, TEDCLOUD_HELP_MESSAGE);
+  assert.equal(
+    sentPayloads[2].text,
+    'Отправьте текстовое сообщение или используйте команду /new, чтобы создать задачу. Статус отслеживайте в приложении.'
+  );
 
-  // 3. Natural Language to Task: сотрудник пишет обычный текст -> создаётся запись в tasks (status = 'new', company_id = 'comp-uuid-1')
+  // 4. Команда /new
+  const newRes = await processTelegramWebhook(
+    {
+      update_id: 4,
+      message: {
+        message_id: 13,
+        chat: { id: 500100, type: 'private' },
+        date: 1729600208,
+        text: '/new',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(newRes.action, 'new_task_prompt');
+  assert.equal(sentPayloads[3].text, 'Опишите суть задачи:');
+
+  // 5. Роль OBSERVER пытается создать задачу текстом -> отказ
+  const observerRes = await processTelegramWebhook(
+    {
+      update_id: 5,
+      message: {
+        message_id: 14,
+        chat: { id: 700200, type: 'private' },
+        date: 1729600209,
+        text: 'Проверить финансовый отчет',
+      },
+    },
+    {
+      botToken: '123456:BOT',
+      siteUrl: 'https://tedcloud.vercel.app',
+      supabaseClient: mockSupabase as never,
+      fetchImpl: mockFetch,
+    }
+  );
+
+  assert.equal(observerRes.action, 'observer_denied');
+  assert.equal(insertedTasks.length, 0);
+  assert.equal(sentPayloads[4].text, 'У вас нет прав на создание задач.');
+
+  // 6. Роль MANAGER отправляет обычный текст (NLP to Task) -> создается запись в tasks
   const taskRes = await processTelegramWebhook(
     {
-      update_id: 3,
+      update_id: 6,
       message: {
-        message_id: 12,
+        message_id: 15,
         chat: { id: 500100, type: 'private' },
         date: 1729600210,
         text: 'Подготовить коммерческое предложение для клиента Вектор до пятницы',
@@ -794,7 +895,7 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
     }
   );
 
-  assert.equal(taskRes.action, 'task_created');
+  assert.equal(taskRes.action, 'task_saved');
   assert.equal(insertedTasks.length, 1);
   assert.equal(
     insertedTasks[0].title,
@@ -802,40 +903,18 @@ test('processTelegramWebhook handles /start, /help, Natural Language to Task for
   );
   assert.equal(insertedTasks[0].status, 'new');
   assert.equal(insertedTasks[0].company_id, 'comp-uuid-1');
-  assert.equal(
-    sentPayloads[2].text,
-    '✅ Задача зарегистрирована. Вы можете отслеживать её статус в рабочем пространстве.'
-  );
-  assert.equal(sentPayloads[2].reply_markup, undefined);
+  assert.equal(insertedTasks[0].created_by, 'node-1');
+  assert.equal(sentPayloads[5].text, '✅ Задача сохранена в системе.');
 
-  // 4. Неизвестный пользователь пишет в бота -> ответ с ID + сохранение в crm_leads с company_id: null
-  const guestRes = await processTelegramWebhook(
-    {
-      update_id: 4,
-      message: {
-        message_id: 13,
-        from: { id: 999888, first_name: 'Екатерина', last_name: 'Смирнова' },
-        chat: { id: 999888, type: 'private' },
-        date: 1729600220,
-        text: 'Здравствуйте, хочу подключить TedCloud для отдела продаж!',
-      },
-    },
-    {
-      botToken: '123456:BOT',
-      siteUrl: 'https://tedcloud.vercel.app',
-      supabaseClient: mockSupabase as never,
-      fetchImpl: mockFetch,
-    }
+  // 7. POST-роут всегда возвращает Response('OK', { status: 200 })
+  const postHttpRes = await POST(
+    new Request('https://tedcloud.vercel.app/api/telegram/webhook', {
+      method: 'POST',
+      body: JSON.stringify({ update_id: 99 }),
+    })
   );
-
-  assert.equal(guestRes.action, 'guest_lead_captured');
-  assert.equal(insertedLeads.length, 1);
-  assert.equal(insertedLeads[0].company_id, null);
-  assert.equal(insertedLeads[0].stage, 'new');
-  assert.equal(
-    sentPayloads[3].text,
-    'Добро пожаловать в TedCloud! Ваш ID: 999888. Передайте его руководителю для приглашения в рабочее пространство компании, либо оставьте заявку.'
-  );
+  assert.equal(postHttpRes.status, 200);
+  assert.equal(await postHttpRes.text(), 'OK');
 });
 
 test('computeDashboardKpis computes universal B2B CRM metrics and returns zeros for Empty States', async () => {
