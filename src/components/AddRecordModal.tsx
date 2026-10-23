@@ -118,7 +118,13 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Вкладка "Сделка" -> таблица crm_leads
+      if (!activeSupabase) {
+        throw new Error(
+          'Клиент Supabase не инициализирован. Проверьте переменные NEXT_PUBLIC_SUPABASE_URL и NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+        );
+      }
+
+      // 1. Вкладка "Сделка" -> реальный INSERT в таблицу crm_leads
       if (activeTab === 'deal') {
         const trimmedClient = clientName.trim();
         if (!trimmedClient) {
@@ -128,40 +134,28 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         const numericAmount = Number(dealAmount) || 0;
         const trimmedContacts = clientContacts.trim() || null;
 
-        if (activeSupabase) {
-          const { data, error } = await activeSupabase
-            .from('crm_leads')
-            .insert({
-              company_id: activeCompanyId,
-              owner_node_id: currentUserId || null,
-              full_name: trimmedClient,
-              deal_value: numericAmount,
-              phone: trimmedContacts,
-              stage: 'new',
-            })
-            .select()
-            .single();
-
-          if (error) {
-            throw new Error(error.message);
-          }
-
-          if (data && onLeadCreated) {
-            onLeadCreated(data as CrmLeadRecord);
-          }
-        } else if (onLeadCreated) {
-          onLeadCreated({
-            id: crypto.randomUUID(),
+        const { data, error } = await activeSupabase
+          .from('crm_leads')
+          .insert({
             company_id: activeCompanyId,
             owner_node_id: currentUserId || null,
             full_name: trimmedClient,
             deal_value: numericAmount,
             phone: trimmedContacts,
-            telegram_chat_id: null,
             stage: 'new',
-            description: null,
-            created_at: new Date().toISOString(),
-          });
+          })
+          .select()
+          .single();
+
+        if (error || !data) {
+          throw new Error(
+            error?.message ||
+              'БД не вернула созданную сделку (проверьте политики RLS для crm_leads).'
+          );
+        }
+
+        if (onLeadCreated) {
+          onLeadCreated(data as CrmLeadRecord);
         }
 
         setStatusMessage({
@@ -171,7 +165,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         resetCurrentTabFields('deal');
       }
 
-      // 2. Вкладка "Задача" -> таблица tasks
+      // 2. Вкладка "Задача" -> реальный INSERT в таблицу tasks
       if (activeTab === 'task') {
         const trimmedTitle = taskDescription.trim();
         if (!trimmedTitle) {
@@ -180,41 +174,29 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
         const resolvedAssignee = taskAssigneeId.trim() || null;
 
-        if (activeSupabase) {
-          const { data, error } = await activeSupabase
-            .from('tasks')
-            .insert({
-              company_id: activeCompanyId,
-              title: trimmedTitle,
-              priority: taskPriority,
-              assigned_to: resolvedAssignee,
-              created_by: currentUserId || null,
-              status: 'new',
-              type: 'client',
-            })
-            .select()
-            .single();
-
-          if (error) {
-            throw new Error(error.message);
-          }
-
-          if (data && onTaskCreated) {
-            onTaskCreated(data as TaskRecord);
-          }
-        } else if (onTaskCreated) {
-          onTaskCreated({
-            id: crypto.randomUUID(),
+        const { data, error } = await activeSupabase
+          .from('tasks')
+          .insert({
             company_id: activeCompanyId,
-            type: 'client',
             title: trimmedTitle,
-            status: 'new',
             priority: taskPriority,
             assigned_to: resolvedAssignee,
             created_by: currentUserId || null,
-            due_date: null,
-            created_at: new Date().toISOString(),
-          });
+            status: 'new',
+            type: 'client',
+          })
+          .select()
+          .single();
+
+        if (error || !data) {
+          throw new Error(
+            error?.message ||
+              'БД не вернула созданную задачу (проверьте политики RLS для tasks).'
+          );
+        }
+
+        if (onTaskCreated) {
+          onTaskCreated(data as TaskRecord);
         }
 
         setStatusMessage({
@@ -224,58 +206,73 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         resetCurrentTabFields('task');
       }
 
-      // 3. Вкладка "Сотрудник" -> таблица organization_nodes
+      // 3. Вкладка "Сотрудник" -> реальный INSERT в таблицу organization_nodes без оптимистичного стейта
       if (activeTab === 'employee') {
         const trimmedName = employeeName.trim();
         if (!trimmedName) {
           throw new Error('Укажите имя сотрудника.');
         }
 
-        const trimmedTgId = employeeTelegramId.trim() || null;
+        const trimmedTgId = employeeTelegramId.trim();
+        if (!trimmedTgId) {
+          throw new Error('Укажите Telegram ID сотрудника.');
+        }
 
-        if (activeSupabase) {
-          const { data, error } = await activeSupabase
+        const safePathId =
+          trimmedTgId.replace(/[^a-zA-Z0-9_]/g, '') || Date.now().toString();
+
+        let { data, error } = await activeSupabase
+          .from('organization_nodes')
+          .insert({
+            company_id: activeCompanyId,
+            name: trimmedName,
+            telegram_chat_id: trimmedTgId,
+            role_type: employeeRole,
+            tree_path: `tedcloud.emp_${safePathId}`,
+          })
+          .select()
+          .single();
+
+        // Фоллбэк на случай схемы БД без колонки tree_path
+        if (error && error.message.includes('tree_path')) {
+          const retryRes = await activeSupabase
             .from('organization_nodes')
             .insert({
               company_id: activeCompanyId,
               name: trimmedName,
               telegram_chat_id: trimmedTgId,
               role_type: employeeRole,
-              tree_path: 'tedcloud',
             })
             .select()
             .single();
 
-          if (error) {
-            throw new Error(error.message);
-          }
+          data = retryRes.data;
+          error = retryRes.error;
+        }
 
-          if (data && onEmployeeCreated) {
-            onEmployeeCreated(data as OrganizationNode);
-          }
-        } else if (onEmployeeCreated) {
-          onEmployeeCreated({
-            id: crypto.randomUUID(),
-            company_id: activeCompanyId,
-            name: trimmedName,
-            role_type: employeeRole,
-            tree_path: 'tedcloud',
-            telegram_chat_id: trimmedTgId,
-            kpi_value: 0,
-            created_at: new Date().toISOString(),
-          });
+        if (error || !data) {
+          throw new Error(
+            error?.message ||
+              'БД отклонила добавление сотрудника (проверьте политики RLS на INSERT/SELECT в organization_nodes).'
+          );
+        }
+
+        // Только после успешного ответа от Supabase добавляем запись в UI
+        if (onEmployeeCreated) {
+          onEmployeeCreated(data as OrganizationNode);
         }
 
         setStatusMessage({
           type: 'success',
-          text: 'Успешно: Пользователь добавлен в БД (organization_nodes).',
+          text: `Успешно: Сотрудник «${trimmedName}» записан в БД (ID: ${(data as OrganizationNode).id}).`,
         });
         resetCurrentTabFields('employee');
       }
     } catch (error) {
+      const errMsg = (error as Error).message || String(error);
       setStatusMessage({
         type: 'error',
-        text: `Ошибка записи в БД: ${(error as Error).message}`,
+        text: `Ошибка записи в БД: ${errMsg}`,
       });
     } finally {
       setIsLoading(false);

@@ -70,15 +70,22 @@ function WorkspaceContent() {
       if (!companiesRes.error && companiesRes.data?.[0]) {
         setCompany(companiesRes.data[0] as Company);
       }
-      if (!nodesRes.error && nodesRes.data) {
-        setNodes(nodesRes.data as OrganizationNode[]);
+      if (nodesRes.error) {
+        throw new Error(
+          `Ошибка чтения organization_nodes: ${nodesRes.error.message}`
+        );
       }
-      if (!leadsRes.error && leadsRes.data) {
-        setLeads(leadsRes.data as CrmLeadRecord[]);
+      setNodes((nodesRes.data as OrganizationNode[]) || []);
+
+      if (leadsRes.error) {
+        throw new Error(`Ошибка чтения crm_leads: ${leadsRes.error.message}`);
       }
-      if (!tasksRes.error && tasksRes.data) {
-        setTasks(tasksRes.data as TaskRecord[]);
+      setLeads((leadsRes.data as CrmLeadRecord[]) || []);
+
+      if (tasksRes.error) {
+        throw new Error(`Ошибка чтения tasks: ${tasksRes.error.message}`);
       }
+      setTasks((tasksRes.data as TaskRecord[]) || []);
     } catch (error) {
       setFeedbackBanner({
         type: 'error',
@@ -101,13 +108,15 @@ function WorkspaceContent() {
 
   const handleUpdateLeadStage = async (leadId: string, nextStage: LeadStage) => {
     try {
-      if (supabase) {
-        const { error } = await supabase
-          .from('crm_leads')
-          .update({ stage: nextStage })
-          .eq('id', leadId);
-        if (error) throw new Error(error.message);
+      if (!supabase) {
+        throw new Error('Клиент Supabase не инициализирован.');
       }
+      const { error } = await supabase
+        .from('crm_leads')
+        .update({ stage: nextStage })
+        .eq('id', leadId);
+      if (error) throw new Error(error.message);
+
       setLeads((prev) =>
         prev.map((l) => (l.id === leadId ? { ...l, stage: nextStage } : l))
       );
@@ -121,13 +130,15 @@ function WorkspaceContent() {
 
   const handleDeleteLead = async (leadId: string) => {
     try {
-      if (supabase) {
-        const { error } = await supabase
-          .from('crm_leads')
-          .delete()
-          .eq('id', leadId);
-        if (error) throw new Error(error.message);
+      if (!supabase) {
+        throw new Error('Клиент Supabase не инициализирован.');
       }
+      const { error } = await supabase
+        .from('crm_leads')
+        .delete()
+        .eq('id', leadId);
+      if (error) throw new Error(error.message);
+
       setLeads((prev) => prev.filter((l) => l.id !== leadId));
     } catch (error) {
       setFeedbackBanner({
@@ -140,13 +151,15 @@ function WorkspaceContent() {
   const handleToggleTaskDone = async (task: TaskRecord) => {
     const nextStatus = task.status === 'done' ? 'new' : 'done';
     try {
-      if (supabase) {
-        const { error } = await supabase
-          .from('tasks')
-          .update({ status: nextStatus })
-          .eq('id', task.id);
-        if (error) throw new Error(error.message);
+      if (!supabase) {
+        throw new Error('Клиент Supabase не инициализирован.');
       }
+      const { error } = await supabase
+        .from('tasks')
+        .update({ status: nextStatus })
+        .eq('id', task.id);
+      if (error) throw new Error(error.message);
+
       setTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus } : t))
       );
@@ -160,13 +173,15 @@ function WorkspaceContent() {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      if (supabase) {
-        const { error } = await supabase
-          .from('tasks')
-          .delete()
-          .eq('id', taskId);
-        if (error) throw new Error(error.message);
+      if (!supabase) {
+        throw new Error('Клиент Supabase не инициализирован.');
       }
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+      if (error) throw new Error(error.message);
+
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
     } catch (error) {
       setFeedbackBanner({
@@ -178,13 +193,15 @@ function WorkspaceContent() {
 
   const handleDeleteNode = async (nodeId: string) => {
     try {
-      if (supabase) {
-        const { error } = await supabase
-          .from('organization_nodes')
-          .delete()
-          .eq('id', nodeId);
-        if (error) throw new Error(error.message);
+      if (!supabase) {
+        throw new Error('Клиент Supabase не инициализирован.');
       }
+      const { error } = await supabase
+        .from('organization_nodes')
+        .delete()
+        .eq('id', nodeId);
+      if (error) throw new Error(error.message);
+
       setNodes((prev) => prev.filter((n) => n.id !== nodeId));
     } catch (error) {
       setFeedbackBanner({
@@ -218,6 +235,7 @@ function WorkspaceContent() {
         onCloseCreateModal={() => setCreateModalTarget(null)}
         onLeadCreated={(lead) => {
           setLeads((prev) => [lead, ...prev]);
+          void fetchDatabaseEntities();
           setFeedbackBanner({
             type: 'success',
             text: 'Успешно: Сделка добавлена в БД',
@@ -227,6 +245,7 @@ function WorkspaceContent() {
         onDeleteLead={handleDeleteLead}
         onTaskCreated={(task) => {
           setTasks((prev) => [task, ...prev]);
+          void fetchDatabaseEntities();
           setFeedbackBanner({
             type: 'success',
             text: 'Успешно: Задача добавлена в БД',
@@ -236,9 +255,10 @@ function WorkspaceContent() {
         onDeleteTask={handleDeleteTask}
         onEmployeeCreated={(employee) => {
           setNodes((prev) => [employee, ...prev]);
+          void fetchDatabaseEntities();
           setFeedbackBanner({
             type: 'success',
-            text: 'Успешно: Пользователь добавлен в БД',
+            text: 'Успешно: Сотрудник добавлен в БД (organization_nodes)',
           });
         }}
         onDeleteNode={handleDeleteNode}
