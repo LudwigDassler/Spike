@@ -806,7 +806,7 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   assert.equal(unauthStartRes.action, 'start_unauthorized');
   assert.equal(
     sentPayloads[1].text,
-    '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: 999888'
+    '⚠️ Вас нет в базе. Впишите этот ID в колонку telegram_chat_id: 999888'
   );
 
   // 3. Команда /help
@@ -909,10 +909,7 @@ test('registerTelegramWebhook calls setWebhook and processTelegramWebhook routes
   );
   assert.equal(insertedTasks[0].status, 'new');
   assert.equal(insertedTasks[0].company_id, 'comp-uuid-1');
-  assert.equal(
-    sentPayloads[5].text,
-    '✅ Задача успешно сохранена в системе.'
-  );
+  assert.equal(sentPayloads[5].text, '✅ Задача создана');
 
   // 7. POST-роут всегда возвращает Response('OK', { status: 200 }) и в try, и в catch
   const postHttpRes = await POST(

@@ -53,11 +53,10 @@ export interface WebhookProcessOptions {
   siteUrl?: string;
   supabaseClient?: Pick<SupabaseClient, 'from'> | null;
   fetchImpl?: typeof fetch;
-  enableDebugPing?: boolean;
 }
 
 /**
- * 100% надежная функция отправки сообщений через нативный fetch к Telegram Bot API.
+ * Хелпер отправки сообщений через нативный fetch к Telegram Bot API
  */
 export async function sendMessage(
   chatId: number | string,
@@ -83,7 +82,7 @@ export async function sendMessage(
   }
 
   if (!token && fetchFn === fetch) {
-    console.error('[Telegram Debug]: TELEGRAM_BOT_TOKEN не задан в .env!');
+    console.error('[Telegram Webhook]: TELEGRAM_BOT_TOKEN не задан в .env');
     return payload;
   }
 
@@ -97,13 +96,15 @@ export async function sendMessage(
       }
     );
 
-    const responseText = await response.text();
-    console.log(
-      `[Telegram sendMessage -> chat_id=${chatId} status=${response.status}]:`,
-      responseText
-    );
-  } catch (networkErr) {
-    console.error('[Telegram sendMessage Network Error]:', networkErr);
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(
+        `[Telegram sendMessage Error ${response.status}]:`,
+        errText
+      );
+    }
+  } catch (networkError) {
+    console.error('[Telegram sendMessage Network Error]:', networkError);
   }
 
   return payload;
@@ -139,9 +140,6 @@ export function buildDeepLinkedWebAppUrl(
   return `${normalizedBase}/?startapp=${encodeURIComponent(startAppParam)}`;
 }
 
-/**
- * Инициализация Supabase ВНУТРИ обработчика (чтобы отсутствие env-переменных не роняло файл до старта POST)
- */
 function createServerSupabase(): Pick<SupabaseClient, 'from'> {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
@@ -153,7 +151,7 @@ function createServerSupabase(): Pick<SupabaseClient, 'from'> {
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error(
-      'Не найдены переменные NEXT_PUBLIC_SUPABASE_URL или NEXT_PUBLIC_SUPABASE_ANON_KEY (SUPABASE_SERVICE_ROLE_KEY) в окружении Vercel.'
+      'Не заданы переменные NEXT_PUBLIC_SUPABASE_URL или NEXT_PUBLIC_SUPABASE_ANON_KEY в .env'
     );
   }
 
@@ -163,7 +161,7 @@ function createServerSupabase(): Pick<SupabaseClient, 'from'> {
 }
 
 /**
- * Тестируемое ядро обработки вебхука
+ * Основное ядро обработки вебхука с проверкой telegram_chat_id
  */
 export async function processTelegramWebhook(
   update: TelegramUpdate,
@@ -177,6 +175,7 @@ export async function processTelegramWebhook(
     | 'new_task_prompt'
     | 'observer_denied'
     | 'task_saved'
+    | 'task_error'
     | 'ignored';
   chatId: number | null;
   replyPayload?: Record<string, unknown>;
@@ -197,293 +196,264 @@ export async function processTelegramWebhook(
   ).replace(/\/$/, '');
   const fetchImpl = options?.fetchImpl ?? fetch;
 
-  if (options?.enableDebugPing) {
-    await sendMessage(
-      message.chat.id,
-      '🔄 Пинг прошел. Ваш ID: ' + message.chat.id,
-      undefined,
-      { botToken, fetchImpl }
-    );
-  }
-
   const supabase =
     options?.supabaseClient !== undefined
       ? options.supabaseClient
       : createServerSupabase();
 
-  let userNode: OrganizationNodeAuthRow | null = null;
+  // Поиск юзера в таблице organization_nodes по колонке telegram_chat_id
+  let user: OrganizationNodeAuthRow | null = null;
+  let lookupError: { message: string } | null = null;
+
   if (supabase) {
-    const { data, error } = await supabase
+    const queryBuilder = supabase
       .from('organization_nodes')
-      .select('id, company_id, role_type, name')
-      .eq('telegram_id', String(message.chat.id))
-      .maybeSingle();
+      .select('company_id, role_type, id, name')
+      .eq('telegram_chat_id', String(chatId));
 
-    if (error) {
-      throw new Error(`Ошибка Supabase (organization_nodes): ${error.message}`);
-    }
+    const result =
+      typeof queryBuilder.single === 'function'
+        ? await queryBuilder.single()
+        : await queryBuilder.maybeSingle();
 
-    userNode = (data as OrganizationNodeAuthRow | null) ?? null;
+    user = (result.data as OrganizationNodeAuthRow | null) ?? null;
+    lookupError = result.error;
   }
 
-  const baseCommand = text.split(/\s+/)[0].split('@')[0].toLowerCase();
+  // Если юзер НЕ найден (или вернулась ошибка поиска)
+  if (!user || lookupError) {
+    const replyPayload = await sendMessage(
+      chatId,
+      '⚠️ Вас нет в базе. Впишите этот ID в колонку telegram_chat_id: ' + chatId,
+      undefined,
+      { botToken, fetchImpl }
+    );
 
-  switch (baseCommand) {
-    case '/start': {
-      if (userNode) {
-        const startParam = extractStartAppParam(text);
-        const webAppUrl = buildDeepLinkedWebAppUrl(siteUrl, startParam);
+    return {
+      ok: true,
+      action: 'start_unauthorized',
+      chatId,
+      replyPayload,
+    };
+  }
 
-        const replyPayload = await sendMessage(
-          chatId,
-          'Добро пожаловать в TedCloud! Рабочее пространство готово.',
-          [
-            [
-              {
-                text: '🚀 Открыть TedCloud',
-                web_app: { url: webAppUrl },
-              },
-            ],
-          ],
-          { botToken, fetchImpl }
-        );
+  const command = text.split(/\s+/)[0].split('@')[0].toLowerCase();
 
-        return {
-          ok: true,
-          action: 'start_authorized',
-          chatId,
-          replyPayload,
-        };
-      } else {
-        const replyPayload = await sendMessage(
-          chatId,
-          '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: ' + chatId,
-          undefined,
-          { botToken, fetchImpl }
-        );
+  if (command === '/start') {
+    const startParam = extractStartAppParam(text);
+    const webAppUrl = buildDeepLinkedWebAppUrl(siteUrl, startParam);
 
-        return {
-          ok: true,
-          action: 'start_unauthorized',
-          chatId,
-          replyPayload,
-        };
-      }
-    }
+    const replyPayload = await sendMessage(
+      chatId,
+      'Добро пожаловать в TedCloud! Рабочее пространство готово.',
+      [
+        [
+          {
+            text: '🚀 Открыть TedCloud',
+            web_app: { url: webAppUrl },
+          },
+        ],
+      ],
+      { botToken, fetchImpl }
+    );
 
-    case '/help': {
+    return {
+      ok: true,
+      action: 'start_authorized',
+      chatId,
+      replyPayload,
+    };
+  }
+
+  if (command === '/help') {
+    const replyPayload = await sendMessage(
+      chatId,
+      'Для создания задачи просто напишите её суть текстом в этот чат, или используйте команду /new.',
+      undefined,
+      { botToken, fetchImpl }
+    );
+
+    return {
+      ok: true,
+      action: 'help_sent',
+      chatId,
+      replyPayload,
+    };
+  }
+
+  if (command === '/new') {
+    const replyPayload = await sendMessage(
+      chatId,
+      'Напишите суть задачи следующим сообщением:',
+      undefined,
+      { botToken, fetchImpl }
+    );
+
+    return {
+      ok: true,
+      action: 'new_task_prompt',
+      chatId,
+      replyPayload,
+    };
+  }
+
+  // Обычный текст -> создание задачи в таблице tasks
+  if (!text.startsWith('/')) {
+    const normalizedRole = String(user.role_type || '').toUpperCase();
+    if (normalizedRole === 'OBSERVER') {
       const replyPayload = await sendMessage(
         chatId,
-        'Для создания задачи просто напишите её суть текстом в этот чат, или используйте команду /new.',
+        'У вас нет прав на создание задач.',
         undefined,
         { botToken, fetchImpl }
       );
-
       return {
         ok: true,
-        action: 'help_sent',
+        action: 'observer_denied',
         chatId,
         replyPayload,
       };
     }
 
-    case '/new': {
-      const replyPayload = await sendMessage(
-        chatId,
-        'Напишите суть задачи следующим сообщением:',
-        undefined,
-        { botToken, fetchImpl }
-      );
+    if (supabase) {
+      const { error: insertError } = await supabase.from('tasks').insert({
+        title: text,
+        status: 'new',
+        company_id: user.company_id,
+      });
 
-      return {
-        ok: true,
-        action: 'new_task_prompt',
-        chatId,
-        replyPayload,
-      };
+      if (insertError) {
+        const errorReply = await sendMessage(
+          chatId,
+          '❌ Ошибка: ' + insertError.message,
+          undefined,
+          { botToken, fetchImpl }
+        );
+        return {
+          ok: false,
+          action: 'task_error',
+          chatId,
+          replyPayload: errorReply,
+        };
+      }
     }
 
-    default: {
-      if (!userNode) {
-        const replyPayload = await sendMessage(
-          chatId,
-          '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: ' + chatId,
-          undefined,
-          { botToken, fetchImpl }
-        );
+    const replyPayload = await sendMessage(
+      chatId,
+      '✅ Задача создана',
+      undefined,
+      { botToken, fetchImpl }
+    );
 
-        return {
-          ok: true,
-          action: 'start_unauthorized',
-          chatId,
-          replyPayload,
-        };
-      }
-
-      const normalizedRole = String(userNode.role_type || '').toUpperCase();
-      if (normalizedRole === 'OBSERVER') {
-        const replyPayload = await sendMessage(
-          chatId,
-          'У вас нет прав на создание задач.',
-          undefined,
-          { botToken, fetchImpl }
-        );
-        return {
-          ok: true,
-          action: 'observer_denied',
-          chatId,
-          replyPayload,
-        };
-      }
-
-      if (!text.startsWith('/') && supabase) {
-        const { error: insertError } = await supabase.from('tasks').insert({
-          title: text,
-          status: 'new',
-          company_id: userNode.company_id,
-        });
-
-        if (insertError) {
-          throw new Error(`Ошибка создания задачи (tasks): ${insertError.message}`);
-        }
-
-        const replyPayload = await sendMessage(
-          chatId,
-          '✅ Задача успешно сохранена в системе.',
-          undefined,
-          { botToken, fetchImpl }
-        );
-
-        return {
-          ok: true,
-          action: 'task_saved',
-          chatId,
-          replyPayload,
-        };
-      }
-
-      return { ok: true, action: 'ignored', chatId };
-    }
+    return {
+      ok: true,
+      action: 'task_saved',
+      chatId,
+      replyPayload,
+    };
   }
+
+  return { ok: true, action: 'ignored', chatId };
 }
 
 /**
  * Next.js App Router POST Route: app/api/telegram/webhook/route.ts
- * С агрессивным логированием, принудительным пингом и отправкой ошибок прямо в Telegram-чат.
+ * Всегда возвращает Response('OK', { status: 200 }) в конце.
  */
 export async function POST(request: Request): Promise<Response> {
-  let message: TelegramMessage | undefined;
+  let chatId: number | string | undefined;
 
   try {
     const body = (await request.json()) as TelegramUpdate;
-    console.log('[Telegram Webhook Incoming Update]:', JSON.stringify(body));
+    const message = body?.message;
+    chatId = message?.chat?.id;
+    const text = message?.text?.trim() || '';
 
-    message = body?.message;
-
-    if (!message || !message.chat?.id) {
-      console.log('[Telegram Webhook]: Апдейт без message.chat.id, пропускаем.');
+    if (!chatId || !text) {
       return new Response('OK', { status: 200 });
     }
 
-    const chatId = message.chat.id;
-    const text = message.text?.trim() || '';
-
-    // 1. Принудительный пинг перед любыми запросами к БД (доказывает, что связь с ботом работает)
-    await sendMessage(chatId, '🔄 Пинг прошел. Ваш ID: ' + chatId);
-
-    // 2. Инициализация клиента Supabase внутри try, чтобы отловить возможные проблемы с .env
     const supabase = createServerSupabase();
 
-    // 3. Запрос к Supabase (organization_nodes), ищем telegram_id == String(message.chat.id)
-    const { data: userNode, error: selectError } = await supabase
+    // Главное исправление: ищем по колонке telegram_chat_id
+    const { data: user, error } = await supabase
       .from('organization_nodes')
-      .select('*')
-      .eq('telegram_id', String(chatId))
-      .maybeSingle();
+      .select('company_id')
+      .eq('telegram_chat_id', String(chatId))
+      .single();
 
-    if (selectError) {
-      throw new Error(selectError.message);
-    }
-
-    // 4. Если юзер не найден в БД — сообщаем его ID для записи в organization_nodes
-    if (!userNode) {
+    // Если юзер НЕ найден (или вернулась ошибка поиска)
+    if (error || !user) {
       await sendMessage(
         chatId,
-        '⚠️ Вас нет в базе. Запишите свой ID в organization_nodes: ' + chatId
+        '⚠️ Вас нет в базе. Впишите этот ID в колонку telegram_chat_id: ' +
+          chatId
       );
       return new Response('OK', { status: 200 });
     }
 
-    // 5. Если юзер найден в БД — маршрутизируем команду или создаем задачу
     const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '');
     const command = text.split(/\s+/)[0].split('@')[0].toLowerCase();
 
-    switch (command) {
-      case '/start': {
+    // Если юзер найден и пришла команда /start
+    if (command === '/start') {
+      await sendMessage(
+        chatId,
+        'Добро пожаловать в TedCloud! Рабочее пространство готово.',
+        siteUrl
+          ? [
+              [
+                {
+                  text: '🚀 Открыть TedCloud',
+                  web_app: { url: siteUrl },
+                },
+              ],
+            ]
+          : undefined
+      );
+      return new Response('OK', { status: 200 });
+    }
+
+    if (command === '/help') {
+      await sendMessage(
+        chatId,
+        'Для создания задачи просто напишите её суть текстом в этот чат, или используйте команду /new.'
+      );
+      return new Response('OK', { status: 200 });
+    }
+
+    if (command === '/new') {
+      await sendMessage(chatId, 'Напишите суть задачи следующим сообщением:');
+      return new Response('OK', { status: 200 });
+    }
+
+    // Если юзер найден и пришел обычный текст — INSERT в таблицу tasks
+    if (!text.startsWith('/')) {
+      const { error: insertError } = await supabase.from('tasks').insert({
+        title: text,
+        status: 'new',
+        company_id: user.company_id,
+      });
+
+      if (insertError) {
         await sendMessage(
           chatId,
-          'Добро пожаловать в TedCloud! Рабочее пространство готово.',
-          siteUrl
-            ? [
-                [
-                  {
-                    text: '🚀 Открыть TedCloud',
-                    web_app: { url: siteUrl },
-                  },
-                ],
-              ]
-            : undefined
+          '❌ Ошибка создания задачи (RLS/DB): ' + insertError.message
         );
-        break;
+        return new Response('OK', { status: 200 });
       }
 
-      case '/help': {
-        await sendMessage(
-          chatId,
-          'Для создания задачи просто напишите её суть текстом в этот чат, или используйте команду /new.'
-        );
-        break;
-      }
-
-      case '/new': {
-        await sendMessage(
-          chatId,
-          'Напишите суть задачи следующим сообщением:'
-        );
-        break;
-      }
-
-      default: {
-        if (text && !text.startsWith('/')) {
-          const { error: insertError } = await supabase.from('tasks').insert({
-            title: text,
-            status: 'new',
-            company_id: userNode.company_id,
-          });
-
-          if (insertError) {
-            throw new Error(insertError.message);
-          }
-
-          await sendMessage(
-            chatId,
-            '✅ Задача успешно сохранена в системе.'
-          );
-        }
-        break;
-      }
+      await sendMessage(chatId, '✅ Задача создана');
     }
 
     return new Response('OK', { status: 200 });
-  } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
-    console.error('[Telegram Webhook Critical Error]:', error);
+  } catch (error: any) {
+    console.error('[Telegram Webhook Error]:', error);
 
-    if (message?.chat?.id) {
+    if (chatId) {
       await sendMessage(
-        message.chat.id,
-        '❌ Критическая ошибка: ' + errorMessage
+        chatId,
+        '❌ Ошибка: ' + (error?.message || String(error))
       );
     }
 
