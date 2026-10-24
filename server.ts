@@ -395,17 +395,7 @@ async function startServer() {
     }
   });
 
-  // Автоматический запуск поллинга /start, если задан TELEGRAM_BOT_TOKEN без активного Webhook
-  if (process.env.TELEGRAM_BOT_TOKEN) {
-    const { startTelegramLongPolling } = await import('./src/server/bot');
-    void startTelegramLongPolling({
-      botToken: process.env.TELEGRAM_BOT_TOKEN,
-      webAppUrl:
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.APP_URL ||
-        'https://app.tedcloud.ru',
-    });
-  }
+  // Вся обработка сообщений Telegram идет строго через серверный вебхук /api/telegram/webhook
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

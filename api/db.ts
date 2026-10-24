@@ -1,55 +1,495 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
 
-interface LocalServerStore {
-  companies: Array<Record<string, any>>;
-  nodes: Array<Record<string, any>>;
-  leads: Array<Record<string, any>>;
-  tasks: Array<Record<string, any>>;
+export const dynamic = 'force-dynamic';
+
+const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
+  companies: ['name', 'plan', 'payment_region'],
+  tasks: [
+    'title',
+    'type',
+    'priority',
+    'status',
+    'assigned_to',
+    'owner_node_id',
+    'company_id',
+    'created_by',
+  ],
+  organization_nodes: [
+    'name',
+    'role_type',
+    'telegram_chat_id',
+    'email',
+    'department',
+    'invite_code',
+    'access_level',
+    'permissions',
+    'company_id',
+    'user_id',
+    'parent_id',
+    'tree_path',
+  ],
+  crm_leads: [
+    'title',
+    'client_name',
+    'amount',
+    'contact',
+    'status',
+    'owner_node_id',
+    'company_id',
+    'full_name',
+    'deal_value',
+    'phone',
+    'stage',
+    'source',
+  ],
+};
+
+function sanitizeByWhitelist(table: string, rawPayload: Record<string, any>): Record<string, any> {
+  const whitelist = ALLOWED_COLUMNS[table];
+  const clean: Record<string, any> = {};
+  const keys = whitelist || Object.keys(rawPayload);
+  for (const key of keys) {
+    if (rawPayload[key] !== undefined) {
+      clean[key] = rawPayload[key];
+    }
+  }
+  return clean;
 }
 
-const localStore: LocalServerStore = {
+function extractMissingColumnName(error: any): string | null {
+  const msg = String(error?.message || error?.details || '');
+  const matchCache = msg.match(/Could not find the '([^']+)' column/i);
+  if (matchCache && matchCache[1]) return matchCache[1];
+  const matchPg = msg.match(/column "([^"]+)" of relation/i);
+  if (matchPg && matchPg[1]) return matchPg[1];
+  return null;
+}
+
+async function safeSupabaseInsert(
+  supabase: SupabaseClient,
+  table: string,
+  rawPayload: Record<string, any>
+): Promise<{ data: any; error: any; strippedColumns: string[] }> {
+  const payload = sanitizeByWhitelist(table, rawPayload);
+  const strippedColumns: string[] = [];
+
+  for (let attempt = 0; attempt < 14; attempt++) {
+    const { data, error } = await supabase.from(table).insert([payload]).select().single();
+    if (!error) {
+      return { data, error: null, strippedColumns };
+    }
+
+    const missingCol = extractMissingColumnName(error);
+    if (
+      (error.code === 'PGRST204' || error.code === '42703' || missingCol) &&
+      missingCol &&
+      missingCol in payload
+    ) {
+      console.warn(
+        `[API /api/db] Schema Cache Safe: stripping unknown column "${missingCol}" from INSERT into "${table}"`
+      );
+      delete payload[missingCol];
+      strippedColumns.push(missingCol);
+      continue;
+    }
+
+    // Если колонка tree_path имеет специфический тип или ограничение в конкретной инсталляции
+    if (
+      'tree_path' in payload &&
+      String(error?.message || '').toLowerCase().includes('tree_path')
+    ) {
+      delete payload.tree_path;
+      strippedColumns.push('tree_path');
+      continue;
+    }
+
+    return { data: null, error, strippedColumns };
+  }
+
+  return {
+    data: null,
+    error: new Error(`Safe insert exceeded maximum column fallback attempts for table ${table}`),
+    strippedColumns,
+  };
+}
+
+async function safeSupabaseUpdate(
+  supabase: SupabaseClient,
+  table: string,
+  id: string,
+  rawUpdates: Record<string, any>
+): Promise<{ data: any; error: any; strippedColumns: string[] }> {
+  const payload = sanitizeByWhitelist(table, rawUpdates);
+  const strippedColumns: string[] = [];
+
+  for (let attempt = 0; attempt < 14; attempt++) {
+    if (Object.keys(payload).length === 0) {
+      const { data: existing, error: fetchErr } = await supabase
+        .from(table)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      return { data: existing || { id, ...rawUpdates }, error: fetchErr, strippedColumns };
+    }
+
+    const { data, error } = await supabase
+      .from(table)
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error) {
+      return { data, error: null, strippedColumns };
+    }
+
+    const missingCol = extractMissingColumnName(error);
+    if (
+      (error.code === 'PGRST204' || error.code === '42703' || missingCol) &&
+      missingCol &&
+      missingCol in payload
+    ) {
+      console.warn(
+        `[API /api/db] Schema Cache Safe: stripping unknown column "${missingCol}" from UPDATE on "${table}"`
+      );
+      delete payload[missingCol];
+      strippedColumns.push(missingCol);
+      continue;
+    }
+
+    return { data: null, error, strippedColumns };
+  }
+
+  return {
+    data: null,
+    error: new Error(`Safe update exceeded maximum column fallback attempts for table ${table}`),
+    strippedColumns,
+  };
+}
+
+async function safeSelectTable(
+  supabase: SupabaseClient,
+  table: string,
+  ascending = false,
+  limitCount?: number
+): Promise<{ data: any[]; error: any }> {
+  let query = supabase.from(table).select('*').order('created_at', { ascending });
+  if (limitCount) {
+    query = query.limit(limitCount);
+  }
+  const firstRes = await query;
+  if (!firstRes.error) {
+    return { data: firstRes.data || [], error: null };
+  }
+
+  // Fallback если колонка created_at отсутствует
+  let fallbackQuery = supabase.from(table).select('*');
+  if (limitCount) {
+    fallbackQuery = fallbackQuery.limit(limitCount);
+  }
+  const secondRes = await fallbackQuery;
+  return { data: secondRes.data || [], error: secondRes.error };
+}
+
+function generateInviteCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 4; i++) {
+    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `TC-${suffix}`;
+}
+
+function getDefaultPermissions(accessLevel?: string) {
+  switch (accessLevel) {
+    case 'root':
+      return {
+        canAssignTasks: true,
+        canManageCrm: true,
+        canManageTeam: true,
+        canDeleteAndSettings: true,
+      };
+    case 'manager':
+      return {
+        canAssignTasks: true,
+        canManageCrm: true,
+        canManageTeam: true,
+        canDeleteAndSettings: false,
+      };
+    case 'viewer':
+      return {
+        canAssignTasks: false,
+        canManageCrm: false,
+        canManageTeam: false,
+        canDeleteAndSettings: false,
+      };
+    case 'member':
+    default:
+      return {
+        canAssignTasks: true,
+        canManageCrm: true,
+        canManageTeam: false,
+        canDeleteAndSettings: false,
+      };
+  }
+}
+
+interface InMemoryStore {
+  companies: Record<string, any>[];
+  organization_nodes: Record<string, any>[];
+  tasks: Record<string, any>[];
+  crm_leads: Record<string, any>[];
+}
+
+const localStore: InMemoryStore = {
   companies: [],
-  nodes: [],
-  leads: [],
+  organization_nodes: [],
   tasks: [],
+  crm_leads: [],
 };
 
 function getAdminSupabaseOrNull(): SupabaseClient | null {
-  const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    '';
+    process.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !supabaseKey) {
+  if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('placeholder')) {
     return null;
   }
 
   return createClient(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
 }
 
-function normalizeLeadRecord(raw: Record<string, any>): Record<string, any> {
-  const clientName = raw.client_name ?? raw.full_name ?? 'Без названия';
-  const amount =
-    raw.amount !== undefined && raw.amount !== null
-      ? Number(raw.amount) || 0
-      : Number(raw.deal_value) || 0;
-  const contact = raw.contact ?? raw.phone ?? raw.description ?? null;
-  const status = raw.status ?? raw.stage ?? 'lead';
+async function resolveDefaultCompanyId(
+  supabase: SupabaseClient | null,
+  preferredName = 'Корпоративное пространство'
+): Promise<string> {
+  if (!supabase) {
+    if (localStore.companies.length > 0) {
+      return localStore.companies[0].id;
+    }
+    const createdCompany = {
+      id: crypto.randomUUID(),
+      name: preferredName,
+      plan: 'Business',
+      payment_region: 'RU',
+      created_at: new Date().toISOString(),
+    };
+    localStore.companies.push(createdCompany);
+    return createdCompany.id;
+  }
+
+  const { data: existing } = await supabase
+    .from('companies')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+
+  if (existing?.id) return existing.id;
+
+  const { data: created, error: createError } = await safeSupabaseInsert(supabase, 'companies', {
+    name: preferredName,
+    plan: 'Business',
+    payment_region: 'RU',
+  });
+
+  if (createError || !created?.id) {
+    return crypto.randomUUID();
+  }
+
+  return created.id;
+}
+
+async function resolveFallbackOwnerNodeId(
+  supabase: SupabaseClient | null,
+  companyId?: string
+): Promise<string | null> {
+  if (!supabase) {
+    const found = companyId
+      ? localStore.organization_nodes.find((n) => n.company_id === companyId)
+      : localStore.organization_nodes[0];
+    return found?.id || localStore.organization_nodes[0]?.id || null;
+  }
+
+  if (companyId) {
+    const { data: companyNode } = await supabase
+      .from('organization_nodes')
+      .select('id')
+      .eq('company_id', companyId)
+      .limit(1)
+      .maybeSingle();
+    if (companyNode?.id) return companyNode.id;
+  }
+
+  const { data: anyNode } = await supabase
+    .from('organization_nodes')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+
+  return anyNode?.id || null;
+}
+
+async function sendTelegramTaskPush(params: {
+  supabase: SupabaseClient | null;
+  assignedToId: string | null | undefined;
+  taskId?: string;
+  taskTitle: string;
+  taskPriority: string;
+  taskType?: string;
+}): Promise<{ pushed: boolean; reason?: string }> {
+  const { supabase, assignedToId, taskId, taskTitle, taskPriority, taskType } = params;
+  if (!assignedToId) {
+    return { pushed: false, reason: 'no_assignee' };
+  }
+
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    return { pushed: false, reason: 'missing_bot_token' };
+  }
+
+  let employeeName = 'Сотрудник';
+  let employeeRole = '';
+  let telegramChatId: string | null = null;
+
+  if (supabase) {
+    const { data: node } = await supabase
+      .from('organization_nodes')
+      .select('id, name, role_type, telegram_chat_id')
+      .eq('id', assignedToId)
+      .maybeSingle();
+
+    if (node) {
+      employeeName = node.name || employeeName;
+      employeeRole = node.role_type || '';
+      telegramChatId = node.telegram_chat_id ? String(node.telegram_chat_id).trim() : null;
+    }
+  } else {
+    const node = localStore.organization_nodes.find((n) => n.id === assignedToId);
+    if (node) {
+      employeeName = node.name || employeeName;
+      employeeRole = node.role_type || '';
+      telegramChatId = node.telegram_chat_id ? String(node.telegram_chat_id).trim() : null;
+    }
+  }
+
+  if (!telegramChatId) {
+    return { pushed: false, reason: 'missing_telegram_chat_id' };
+  }
+
+  const siteUrl = (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.APP_URL ||
+    'https://tedcloud.vercel.app'
+  ).replace(/\/$/, '');
+
+  const notificationHtml = [
+    '<b>УВЕДОМЛЕНИЕ TEDCLOUD</b>',
+    'Назначена новая корпоративная задача.',
+    '',
+    `<b>Исполнитель:</b> ${employeeName}${employeeRole ? ` (${employeeRole})` : ''}`,
+    `<b>Задача:</b> ${taskTitle}`,
+    `<b>Категория:</b> ${taskType || 'Task'}`,
+    `<b>Приоритет:</b> ${taskPriority || 'Medium'}`,
+  ].join('\n');
+
+  const inlineKeyboard: any[][] = [];
+  if (taskId) {
+    inlineKeyboard.push([
+      { text: 'Принять в работу', callback_data: `task_progress:${taskId}` },
+      { text: 'Завершить задачу', callback_data: `task_done:${taskId}` },
+    ]);
+  }
+  inlineKeyboard.push([
+    { text: 'Открыть панель TedCloud', url: `${siteUrl}/?chatId=${telegramChatId}` },
+  ]);
+
+  try {
+    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: telegramChatId,
+        text: notificationHtml,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: inlineKeyboard },
+      }),
+    });
+
+    if (!tgRes.ok) {
+      const errBody = await tgRes.text();
+      console.error('[API /api/db] Telegram Push API non-200:', errBody);
+      return { pushed: false, reason: 'telegram_api_error' };
+    }
+
+    return { pushed: true };
+  } catch (err: any) {
+    console.error('[API /api/db] Telegram Push network error:', err);
+    return { pushed: false, reason: err?.message || 'network_error' };
+  }
+}
+
+function normalizeTaskRow(row: any) {
+  return {
+    ...row,
+    type: row.type || 'Task',
+    priority: row.priority || 'Medium',
+    status: row.status || 'Todo',
+    assigned_to: row.assigned_to ?? row.owner_node_id ?? null,
+    owner_node_id: row.owner_node_id ?? row.assigned_to ?? null,
+    created_by: row.created_by ?? row.owner_node_id ?? null,
+  };
+}
+
+function normalizeNodeRow(row: any) {
+  const accessLevel =
+    row.access_level && ['root', 'manager', 'member', 'viewer'].includes(row.access_level)
+      ? row.access_level
+      : row.role_type === 'Superadmin' || row.tree_path === 'root'
+      ? 'root'
+      : 'member';
+
+  let permissions = row.permissions;
+  if (typeof permissions === 'string') {
+    try {
+      permissions = JSON.parse(permissions);
+    } catch {
+      permissions = null;
+    }
+  }
+  if (!permissions || typeof permissions !== 'object') {
+    permissions = getDefaultPermissions(accessLevel);
+  }
 
   return {
-    ...raw,
+    ...row,
+    role_type: row.role_type || 'Специалист',
+    department: row.department || null,
+    email: row.email || null,
+    telegram_chat_id:
+      row.telegram_chat_id !== undefined && row.telegram_chat_id !== null
+        ? String(row.telegram_chat_id).trim()
+        : null,
+    invite_code: row.invite_code || `TC-${String(row.id || '0000').slice(0, 4).toUpperCase()}`,
+    access_level: accessLevel,
+    permissions,
+    tree_path: row.tree_path || 'root',
+  };
+}
+
+function normalizeLeadRow(row: any) {
+  const clientName = row.client_name || row.full_name || row.title || 'Контрагент';
+  const title = row.title || clientName;
+  const amount = Number(row.amount ?? row.deal_value ?? 0);
+  const contact = row.contact ?? row.phone ?? null;
+  const status = row.status || row.stage || 'New';
+
+  return {
+    ...row,
+    title,
     client_name: clientName,
     full_name: clientName,
     amount,
@@ -61,801 +501,681 @@ function normalizeLeadRecord(raw: Record<string, any>): Record<string, any> {
   };
 }
 
-async function ensureCompanyId(
-  supabase: SupabaseClient | null,
-  providedCompanyId?: string | null
-): Promise<string> {
-  if (providedCompanyId && String(providedCompanyId).trim()) {
-    return String(providedCompanyId).trim();
-  }
+function findMatchingNodeByInput(nodes: any[], rawInput: string): any | null {
+  const q = String(rawInput || '').trim().toLowerCase();
+  if (!q) return null;
 
-  if (!supabase) {
-    if (localStore.companies.length === 0) {
-      localStore.companies.push({
-        id: crypto.randomUUID(),
-        name: 'TedCloud Workspace',
-        subscription_status: 'active',
-        created_at: new Date().toISOString(),
-      });
-    }
-    return String(localStore.companies[0].id);
-  }
-
-  const { data: existingCompany, error: findError } = await supabase
-    .from('companies')
-    .select('id')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (findError) {
-    throw new Error(`Ошибка чтения таблицы companies: ${findError.message}`);
-  }
-
-  if (existingCompany?.id) {
-    return String(existingCompany.id);
-  }
-
-  const { data: createdCompany, error: createError } = await supabase
-    .from('companies')
-    .insert({ name: 'TedCloud Workspace' })
-    .select('id')
-    .single();
-
-  if (createError || !createdCompany) {
-    throw new Error(
-      `Не удалось автоматически создать запись в companies: ${
-        createError?.message || 'Нет данных'
-      }`
-    );
-  }
-
-  return String(createdCompany.id);
-}
-
-/**
- * Киллер-фича: Отправка Telegram Push-уведомления сотруднику при назначении задачи
- * с инлайн-кнопками [⚡️ В работу] и [✅ Выполнено].
- */
-async function sendTaskAssignmentPush(
-  supabase: SupabaseClient | null,
-  task: { id: string; title: string; priority?: string | null; assigned_to?: string | null }
-) {
-  const assignedToId = task.assigned_to ? String(task.assigned_to).trim() : '';
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-
-  if (!assignedToId || !botToken) {
-    return;
-  }
-
-  try {
-    let telegramChatId: string | null = null;
-
-    if (!supabase) {
-      const localAssignee = localStore.nodes.find((n) => n.id === assignedToId);
-      telegramChatId = localAssignee?.telegram_chat_id
-        ? String(localAssignee.telegram_chat_id)
-        : null;
-    } else {
-      const { data: assigneeNode } = await supabase
-        .from('organization_nodes')
-        .select('id, name, telegram_chat_id')
-        .eq('id', assignedToId)
-        .maybeSingle();
-
-      telegramChatId = assigneeNode?.telegram_chat_id
-        ? String(assigneeNode.telegram_chat_id).trim()
-        : null;
-    }
-
-    if (!telegramChatId) {
-      return;
-    }
-
-    const priorityLabel = task.priority || 'Medium';
-    const messageText =
-      '🔔 Вам назначена новая задача!\n\n📌 ' +
-      task.title +
-      '\n⚡ Приоритет: ' +
-      priorityLabel;
-
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: telegramChatId,
-        text: messageText,
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '⚡️ В работу',
-                callback_data: 'task_progress_' + task.id,
-              },
-              {
-                text: '✅ Выполнено',
-                callback_data: 'task_done_' + task.id,
-              },
-            ],
-          ],
-        },
-      }),
-    });
-  } catch (pushError) {
-    console.error('[API /api/db] Ошибка отправки Telegram Push исполнителю:', pushError);
-  }
+  return (
+    nodes.find(
+      (node: any) =>
+        String(node.telegram_chat_id || '').trim().toLowerCase() === q ||
+        String(node.invite_code || '').trim().toLowerCase() === q ||
+        String(node.email || '').trim().toLowerCase() === q ||
+        String(node.name || '').trim().toLowerCase() === q
+    ) || null
+  );
 }
 
 export default async function handler(req: any, res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader(
-    'Access-Control-Allow-Methods',
-    'GET, POST, PATCH, DELETE, OPTIONS'
-  );
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
   try {
     const supabase = getAdminSupabaseOrNull();
+    const method = (req.method || 'GET').toUpperCase();
 
-    // =========================================================================
-    // 1. GET: Получение списков tasks, organization_nodes, crm_leads, companies
-    // =========================================================================
-    if (req.method === 'GET') {
-      const telegramChatId = req.query?.telegram_chat_id;
+    if (method === 'GET') {
+      const chatId = req.query?.chatId ? String(req.query.chatId).trim() : null;
+      const profileId = req.query?.profileId ? String(req.query.profileId).trim() : null;
 
       if (!supabase) {
-        if (telegramChatId) {
-          const foundNode =
-            localStore.nodes.find(
-              (n) => String(n.telegram_chat_id) === String(telegramChatId)
-            ) || null;
-          const foundCompany = foundNode
-            ? localStore.companies.find((c) => c.id === foundNode.company_id) ||
-              localStore.companies[0] ||
-              null
-            : null;
-          return res
-            .status(200)
-            .json({ ok: true, node: foundNode, company: foundCompany });
+        const nodes = localStore.organization_nodes.map(normalizeNodeRow);
+        let currentProfile = null;
+        if (profileId) {
+          currentProfile = nodes.find((n) => n.id === profileId) || null;
+        } else if (chatId) {
+          currentProfile = findMatchingNodeByInput(nodes, chatId);
         }
 
         return res.status(200).json({
           ok: true,
+          mode: 'local_empty',
           company: localStore.companies[0] || null,
-          companies: localStore.companies,
-          nodes: localStore.nodes,
-          leads: localStore.leads.map(normalizeLeadRecord),
-          tasks: localStore.tasks,
+          currentProfile,
+          nodes,
+          tasks: localStore.tasks.map(normalizeTaskRow),
+          leads: localStore.crm_leads.map(normalizeLeadRow),
         });
       }
 
-      if (telegramChatId) {
-        const { data: node, error: nodeErr } = await supabase
-          .from('organization_nodes')
-          .select('*')
-          .eq('telegram_chat_id', String(telegramChatId))
-          .maybeSingle();
-
-        if (nodeErr) {
-          console.error('[API /api/db GET telegram_chat_id] Error:', nodeErr);
-          return res.status(400).json({ ok: false, error: nodeErr.message });
-        }
-
-        let company = null;
-        if (node?.company_id) {
-          const { data: compData } = await supabase
-            .from('companies')
-            .select('*')
-            .eq('id', node.company_id)
-            .maybeSingle();
-          company = compData || null;
-        }
-
-        return res.status(200).json({ ok: true, node: node || null, company });
-      }
-
-      const [companiesRes, nodesRes, leadsRes, tasksRes] = await Promise.all([
-        supabase
-          .from('companies')
-          .select('*')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('organization_nodes')
-          .select('*')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('crm_leads')
-          .select('*')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('tasks')
-          .select('*')
-          .order('created_at', { ascending: false }),
+      const [companiesRes, nodesRes, tasksRes, leadsRes] = await Promise.all([
+        safeSelectTable(supabase, 'companies', false, 1),
+        safeSelectTable(supabase, 'organization_nodes', true),
+        safeSelectTable(supabase, 'tasks', false),
+        safeSelectTable(supabase, 'crm_leads', false),
       ]);
 
-      const firstError =
-        companiesRes.error ||
-        nodesRes.error ||
-        leadsRes.error ||
-        tasksRes.error;
-
-      if (firstError) {
-        console.error('[API /api/db GET] Database Error:', firstError);
-        return res.status(400).json({ ok: false, error: firstError.message });
+      if (nodesRes.error) {
+        throw new Error(`[organization_nodes] ${nodesRes.error.message}`);
       }
 
-      const companies = companiesRes.data || [];
+      const rawNodes = (nodesRes.data || []).map(normalizeNodeRow);
+      const rawTasks = (tasksRes.data || []).map(normalizeTaskRow);
+      const rawLeads = (leadsRes.data || []).map(normalizeLeadRow);
+
+      let currentProfile = null;
+      if (profileId) {
+        currentProfile = rawNodes.find((n: any) => n.id === profileId) || null;
+      } else if (chatId) {
+        currentProfile = findMatchingNodeByInput(rawNodes, chatId);
+      }
+
       return res.status(200).json({
         ok: true,
-        company: companies[0] || null,
-        companies,
-        nodes: nodesRes.data || [],
-        leads: (leadsRes.data || []).map(normalizeLeadRecord),
-        tasks: tasksRes.data || [],
+        mode: 'supabase',
+        company: companiesRes.data?.[0] || null,
+        currentProfile,
+        nodes: rawNodes,
+        tasks: rawTasks,
+        leads: rawLeads,
       });
     }
 
-    // =========================================================================
-    // 2. PATCH: Обновление status, priority, assigned_to у задач и status у сделок
-    // =========================================================================
-    if (req.method === 'PATCH') {
-      const body =
-        typeof req.body === 'string'
-          ? JSON.parse(req.body || '{}')
-          : req.body || {};
+    if (method === 'POST') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
 
-      const table = body.table || body.entity || '';
-      const id = body.id || body.payload?.id;
-      const updates = body.updates || body.payload || body;
+      // Вход сотрудника по любому из 4 полей (telegram_chat_id, invite_code, email, name)
+      if (body.action === 'login') {
+        const q = String(body.input || body.identifier || '').trim().toLowerCase();
+        if (!q) {
+          return res.status(400).json({ error: 'Введите идентификатор для входа.' });
+        }
 
-      if (!id) {
-        return res
-          .status(400)
-          .json({ ok: false, error: 'Не указан id записи для PATCH.' });
-      }
-
-      // 2.1. Обновление задачи в таблице tasks
-      if (table === 'tasks' || table === 'task') {
-        const patchFields: Record<string, any> = {};
-        if (updates.status !== undefined) patchFields.status = updates.status;
-        if (updates.priority !== undefined)
-          patchFields.priority = updates.priority;
-        if (updates.assigned_to !== undefined)
-          patchFields.assigned_to = updates.assigned_to || null;
-        if (updates.title !== undefined) patchFields.title = updates.title;
+        let nodes: any[] = [];
+        let company: any = null;
 
         if (!supabase) {
-          localStore.tasks = localStore.tasks.map((t) =>
-            t.id === id ? { ...t, ...patchFields } : t
-          );
-          const updated = localStore.tasks.find((t) => t.id === id) || null;
-          if (patchFields.assigned_to && updated) {
-            await sendTaskAssignmentPush(null, updated as any);
+          nodes = localStore.organization_nodes.map(normalizeNodeRow);
+          company = localStore.companies[0] || null;
+        } else {
+          const [nodesRes, companiesRes] = await Promise.all([
+            safeSelectTable(supabase, 'organization_nodes', true),
+            safeSelectTable(supabase, 'companies', false, 1),
+          ]);
+          if (nodesRes.error) {
+            return res.status(400).json({ error: nodesRes.error.message });
           }
-          return res.status(200).json({ ok: true, data: updated });
+          nodes = (nodesRes.data || []).map(normalizeNodeRow);
+          company = companiesRes.data?.[0] || null;
         }
 
-        let { data, error } = await supabase
-          .from('tasks')
-          .update(patchFields)
-          .eq('id', id)
-          .select('*')
-          .single();
+        const matched = nodes.find(
+          (node: any) =>
+            String(node.telegram_chat_id || '').trim().toLowerCase() === q ||
+            String(node.invite_code || '').trim().toLowerCase() === q ||
+            String(node.email || '').trim().toLowerCase() === q ||
+            String(node.name || '').trim().toLowerCase() === q
+        );
 
-        // Фоллбэк регистра priority ('High' -> 'high'), если в БД lowercase CHECK constraint
-        if (
-          error &&
-          patchFields.priority &&
-          error.message?.toLowerCase().includes('priority')
-        ) {
-          const retryRes = await supabase
-            .from('tasks')
-            .update({
-              ...patchFields,
-              priority: String(patchFields.priority).toLowerCase(),
-            })
-            .eq('id', id)
-            .select('*')
-            .single();
-          data = retryRes.data;
-          error = retryRes.error;
-        }
-
-        if (error) {
-          console.error('[API /api/db PATCH tasks] Error:', error);
-          return res.status(400).json({ ok: false, error: error.message });
-        }
-
-        if (patchFields.assigned_to && data) {
-          await sendTaskAssignmentPush(supabase, data);
-        }
-
-        return res.status(200).json({ ok: true, data });
-      }
-
-      // 2.2. Обновление статуса сделки в таблице crm_leads
-      if (table === 'crm_leads' || table === 'deal' || table === 'lead') {
-        const nextStatus = updates.status ?? updates.stage;
-        if (!nextStatus) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Не передан новый статус сделки (status).',
+        if (!matched) {
+          return res.status(404).json({
+            error:
+              'Профиль сотрудника не найден. Проверьте персональный код доступа (TC-XXXX), корпоративный Email, ФИО или Telegram ID.',
           });
         }
 
-        if (!supabase) {
-          localStore.leads = localStore.leads.map((l) =>
-            l.id === id
-              ? normalizeLeadRecord({ ...l, status: nextStatus, stage: nextStatus })
-              : l
-          );
-          const updated = localStore.leads.find((l) => l.id === id) || null;
-          return res.status(200).json({ ok: true, data: updated });
-        }
-
-        // Сначала пробуем обновить колонку status (новая схема crm_leads)
-        let { data, error } = await supabase
-          .from('crm_leads')
-          .update({ status: nextStatus })
-          .eq('id', id)
-          .select('*')
-          .single();
-
-        // Если в БД колонка называется stage — делаем автоматический фоллбэк
-        if (error) {
-          const legacyStageMap: Record<string, string> = {
-            lead: 'new',
-            negotiation: 'trial_marathon',
-            qualified: 'qualified',
-            won: 'partner_ready',
-          };
-          const mappedStage = legacyStageMap[nextStatus] || nextStatus;
-          const retryStage = await supabase
-            .from('crm_leads')
-            .update({ stage: mappedStage })
-            .eq('id', id)
+        if (matched.company_id && supabase) {
+          const { data: matchedCompany } = await supabase
+            .from('companies')
             .select('*')
-            .single();
-
-          if (!retryStage.error) {
-            data = retryStage.data;
-            error = null;
+            .eq('id', matched.company_id)
+            .maybeSingle();
+          if (matchedCompany) {
+            company = matchedCompany;
           }
         }
 
-        if (error) {
-          console.error('[API /api/db PATCH crm_leads] Error:', error);
-          return res.status(400).json({ ok: false, error: error.message });
-        }
-
-        return res
-          .status(200)
-          .json({ ok: true, data: normalizeLeadRecord(data || {}) });
-      }
-
-      return res.status(400).json({
-        ok: false,
-        error: `Неподдерживаемая таблица для PATCH: "${table}"`,
-      });
-    }
-
-    // =========================================================================
-    // 3. DELETE: Удаление записи по id и table
-    // =========================================================================
-    if (req.method === 'DELETE') {
-      const body =
-        typeof req.body === 'string' && req.body
-          ? JSON.parse(req.body)
-          : req.body || {};
-
-      const table =
-        req.query?.table || body.table || body.entity || '';
-      const id = req.query?.id || body.id || body.payload?.id;
-
-      if (!table || !id) {
-        return res.status(400).json({
-          ok: false,
-          error: 'Для DELETE необходимо передать параметры table и id.',
+        return res.status(200).json({
+          ok: true,
+          profile: matched,
+          company,
         });
       }
 
-      const resolvedTable =
-        table === 'task'
-          ? 'tasks'
-          : table === 'deal' || table === 'lead'
-          ? 'crm_leads'
-          : table === 'employee' || table === 'node'
-          ? 'organization_nodes'
-          : table;
+      // Регистрация новой компании и корневого руководителя
+      if (body.action === 'register_workspace' || body.action === 'register') {
+        const companyName = String(body.companyName || '').trim();
+        const leaderName = String(body.leaderName || '').trim();
+        const leaderTitle = String(body.leaderTitle || body.role_type || 'Генеральный директор').trim();
+        const leaderDepartment = String(body.leaderDepartment || 'Дирекция').trim();
+        const leaderEmail = body.leaderEmail ? String(body.leaderEmail).trim() : null;
+        const leaderTelegramChatId = body.telegram_chat_id
+          ? String(body.telegram_chat_id).trim()
+          : null;
 
-      if (!supabase) {
-        if (resolvedTable === 'tasks') {
-          localStore.tasks = localStore.tasks.filter((t) => t.id !== id);
-        } else if (resolvedTable === 'crm_leads') {
-          localStore.leads = localStore.leads.filter((l) => l.id !== id);
-        } else if (resolvedTable === 'organization_nodes') {
-          localStore.nodes = localStore.nodes.filter((n) => n.id !== id);
+        if (!companyName || !leaderName) {
+          return res.status(400).json({
+            error: 'Укажите название организации и ФИО руководителя.',
+          });
         }
-        return res.status(200).json({ ok: true, id, table: resolvedTable });
-      }
 
-      const { error } = await supabase
-        .from(resolvedTable)
-        .delete()
-        .eq('id', id);
+        const rootInviteCode = generateInviteCode();
+        const rootPermissions = getDefaultPermissions('root');
 
-      if (error) {
-        console.error(`[API /api/db DELETE ${resolvedTable}] Error:`, error);
-        return res.status(400).json({ ok: false, error: error.message });
-      }
+        if (!supabase) {
+          const newCompany = {
+            id: crypto.randomUUID(),
+            name: companyName,
+            plan: 'Business',
+            payment_region: 'RU',
+            created_at: new Date().toISOString(),
+          };
+          localStore.companies.unshift(newCompany);
 
-      return res.status(200).json({ ok: true, id, table: resolvedTable });
-    }
+          const rootNode = {
+            id: crypto.randomUUID(),
+            company_id: newCompany.id,
+            user_id: `root_${Date.now()}`,
+            name: leaderName,
+            role_type: leaderTitle,
+            department: leaderDepartment || null,
+            email: leaderEmail,
+            telegram_chat_id: leaderTelegramChatId,
+            invite_code: rootInviteCode,
+            access_level: 'root',
+            permissions: rootPermissions,
+            parent_id: null,
+            tree_path: 'root',
+            created_at: new Date().toISOString(),
+          };
+          localStore.organization_nodes.push(rootNode);
 
-    // =========================================================================
-    // 4. POST: Создание записей (tasks + Telegram Push, crm_leads, organization_nodes)
-    // =========================================================================
-    if (req.method === 'POST') {
-      const body =
-        typeof req.body === 'string'
-          ? JSON.parse(req.body || '{}')
-          : req.body || {};
+          return res.status(200).json({
+            ok: true,
+            company: newCompany,
+            profile: normalizeNodeRow(rootNode),
+          });
+        }
 
-      const action = body.action || 'create';
-      const entity = body.entity || body.table || '';
-      const payload = body.payload || body.data || body;
+        const { data: createdCompany, error: compErr } = await safeSupabaseInsert(
+          supabase,
+          'companies',
+          {
+            name: companyName,
+            plan: 'Business',
+            payment_region: 'RU',
+          }
+        );
 
-      // Обратная совместимость для POST-экшенов обновления/удаления
-      if (action === 'update_lead_stage') {
-        req.method = 'PATCH';
-        req.body = {
-          table: 'crm_leads',
-          id: payload.id,
-          status: payload.status || payload.stage,
+        if (compErr || !createdCompany) {
+          return res.status(400).json({
+            error: compErr?.message || 'Не удалось создать организацию в БД.',
+          });
+        }
+
+        const rawRootNode = {
+          company_id: createdCompany.id,
+          user_id: `root_${Date.now()}`,
+          name: leaderName,
+          role_type: leaderTitle,
+          department: leaderDepartment || null,
+          email: leaderEmail,
+          telegram_chat_id: leaderTelegramChatId,
+          invite_code: rootInviteCode,
+          access_level: 'root',
+          permissions: rootPermissions,
+          parent_id: null,
+          tree_path: 'root',
         };
-        return handler(req, res);
-      }
-      if (action === 'toggle_task') {
-        req.method = 'PATCH';
-        req.body = {
-          table: 'tasks',
-          id: payload.id,
-          status: payload.status,
-        };
-        return handler(req, res);
-      }
-      if (
-        action === 'delete_lead' ||
-        action === 'delete_task' ||
-        action === 'delete_node'
-      ) {
-        req.method = 'DELETE';
-        req.body = {
-          table:
-            action === 'delete_lead'
-              ? 'crm_leads'
-              : action === 'delete_task'
-              ? 'tasks'
-              : 'organization_nodes',
-          id: payload.id,
-        };
-        return handler(req, res);
+
+        const { data: createdNode, error: nodeErr } = await safeSupabaseInsert(
+          supabase,
+          'organization_nodes',
+          rawRootNode
+        );
+
+        if (nodeErr || !createdNode) {
+          return res.status(400).json({
+            error: nodeErr?.message || 'Не удалось создать корневой профиль руководителя.',
+          });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          company: createdCompany,
+          profile: normalizeNodeRow({ ...rawRootNode, ...createdNode }),
+        });
       }
 
-      // 4.1. Создание задачи (tasks) + Telegram Push при назначении assigned_to
-      if (entity === 'task' || entity === 'tasks') {
+      const { table, payload } = body;
+
+      if (!table || !payload) {
+        return res.status(400).json({
+          error: 'В теле POST-запроса обязательны поля "table" и "payload".',
+        });
+      }
+
+      const companyId = payload.company_id || (await resolveDefaultCompanyId(supabase));
+
+      if (table === 'tasks') {
         const title = String(payload.title || '').trim();
         if (!title) {
-          return res
-            .status(400)
-            .json({ ok: false, error: 'Введите описание задачи.' });
+          return res.status(400).json({ error: 'Поле "title" обязательно для создания задачи.' });
         }
 
-        const companyId = await ensureCompanyId(supabase, payload.company_id);
-        const assignedTo = payload.assigned_to
-          ? String(payload.assigned_to).trim()
-          : null;
-        const priority = payload.priority || 'Medium';
-        const status = payload.status || 'new';
+        const fallbackNodeId = await resolveFallbackOwnerNodeId(supabase, companyId);
+        const resolvedOwnerNodeId =
+          payload.owner_node_id ||
+          payload.assigned_to ||
+          payload.created_by ||
+          fallbackNodeId ||
+          null;
+
+        const rawInsertPayload: Record<string, any> = {
+          company_id: companyId,
+          title,
+          type: payload.type || 'Task',
+          priority: payload.priority || 'Medium',
+          status: payload.status || 'Todo',
+          assigned_to: payload.assigned_to || resolvedOwnerNodeId || null,
+          owner_node_id: resolvedOwnerNodeId,
+          created_by: payload.created_by || resolvedOwnerNodeId || null,
+        };
+
+        let savedTask: any;
 
         if (!supabase) {
-          const newTask = {
+          savedTask = {
             id: crypto.randomUUID(),
-            company_id: companyId,
-            title,
-            priority,
-            assigned_to: assignedTo,
-            created_by: payload.created_by || null,
-            status,
-            type: payload.type || 'client',
+            ...rawInsertPayload,
             created_at: new Date().toISOString(),
           };
-          localStore.tasks.unshift(newTask);
-
-          if (assignedTo) {
-            await sendTaskAssignmentPush(null, newTask);
+          localStore.tasks.unshift(savedTask);
+        } else {
+          const { data, error } = await safeSupabaseInsert(supabase, 'tasks', rawInsertPayload);
+          if (error) {
+            console.error('[API /api/db] Supabase INSERT error in tasks:', error);
+            return res.status(400).json({ error: error.message, details: error });
           }
-
-          return res.status(200).json({ ok: true, data: newTask });
+          savedTask = { ...rawInsertPayload, ...data };
         }
 
-        let { data: newTask, error } = await supabase
-          .from('tasks')
-          .insert({
-            company_id: companyId,
-            title,
-            priority,
-            assigned_to: assignedTo,
-            created_by: payload.created_by || null,
-            status,
-            type: payload.type || 'client',
-          })
-          .select('*')
-          .single();
+        const pushStatus = await sendTelegramTaskPush({
+          supabase,
+          assignedToId: savedTask.assigned_to || rawInsertPayload.assigned_to,
+          taskId: savedTask.id,
+          taskTitle: savedTask.title,
+          taskPriority: savedTask.priority || rawInsertPayload.priority,
+          taskType: savedTask.type || rawInsertPayload.type,
+        });
 
-        // Фоллбэк: если в таблице tasks нет колонки type или created_by, либо priority ожидает lowercase
-        if (error) {
-          const minimalTaskInsert = await supabase
-            .from('tasks')
-            .insert({
-              company_id: companyId,
-              title,
-              priority: String(priority).toLowerCase(),
-              assigned_to: assignedTo,
-              status,
-            })
-            .select('*')
-            .single();
-
-          if (!minimalTaskInsert.error) {
-            newTask = minimalTaskInsert.data;
-            error = null;
-          }
-        }
-
-        if (error || !newTask) {
-          console.error('[API /api/db create task] Error:', error);
-          return res.status(400).json({
-            ok: false,
-            error: error?.message || 'Ошибка создания задачи в таблице tasks.',
-          });
-        }
-
-        // Киллер-фича: если указан assigned_to, отправляем Telegram Push с инлайн-кнопками
-        if (assignedTo) {
-          await sendTaskAssignmentPush(supabase, {
-            id: String(newTask.id),
-            title: String(newTask.title || title),
-            priority: String(newTask.priority || priority),
-            assigned_to: assignedTo,
-          });
-        }
-
-        return res.status(200).json({ ok: true, data: newTask });
+        return res.status(200).json({
+          ok: true,
+          data: normalizeTaskRow(savedTask),
+          telegramPush: pushStatus,
+        });
       }
 
-      // 4.2. Создание сотрудника (organization_nodes)
-      if (entity === 'employee' || entity === 'organization_nodes') {
-        const name = String(payload.name || '').trim();
-        const telegramChatId = String(payload.telegram_chat_id || '').trim();
-        const requestedRole = payload.role_type || 'Specialist';
+      if (table === 'organization_nodes') {
+        const generatedInviteCode = payload.invite_code
+          ? String(payload.invite_code).trim().toUpperCase()
+          : generateInviteCode();
 
-        if (!name || !telegramChatId) {
+        const accessLevel = payload.access_level || 'member';
+        const permissions = payload.permissions || getDefaultPermissions(accessLevel);
+
+        const rawInsertPayload: Record<string, any> = {
+          company_id: companyId,
+          user_id: payload.user_id || `emp_${Date.now()}`,
+          name: String(payload.name || '').trim(),
+          role_type: String(payload.role_type || 'Специалист').trim(),
+          telegram_chat_id: payload.telegram_chat_id
+            ? String(payload.telegram_chat_id).trim()
+            : null,
+          email: payload.email ? String(payload.email).trim() : null,
+          department: payload.department ? String(payload.department).trim() : null,
+          invite_code: generatedInviteCode,
+          access_level: accessLevel,
+          permissions,
+          parent_id: payload.parent_id || null,
+          tree_path: payload.tree_path || 'root',
+        };
+
+        if (!rawInsertPayload.name) {
           return res.status(400).json({
-            ok: false,
-            error: 'Имя сотрудника и Telegram ID обязательны.',
+            error: 'Поле "name" обязательно для добавления сотрудника.',
           });
         }
-
-        const companyId = await ensureCompanyId(supabase, payload.company_id);
-        const safePathId =
-          telegramChatId.replace(/[^a-zA-Z0-9_]/g, '') ||
-          Date.now().toString();
 
         if (!supabase) {
-          const created = {
+          const newRecord = {
             id: crypto.randomUUID(),
-            company_id: companyId,
-            name,
-            telegram_chat_id: telegramChatId,
-            role_type: requestedRole,
-            tree_path: `tedcloud.emp_${safePathId}`,
-            kpi_value: 0,
+            ...rawInsertPayload,
             created_at: new Date().toISOString(),
           };
-          localStore.nodes.unshift(created);
-          return res.status(200).json({ ok: true, data: created });
+          localStore.organization_nodes.push(newRecord);
+          return res.status(200).json({ ok: true, data: normalizeNodeRow(newRecord) });
         }
 
-        let { data, error } = await supabase
-          .from('organization_nodes')
-          .insert({
-            company_id: companyId,
-            name,
-            telegram_chat_id: telegramChatId,
-            role_type: requestedRole,
-            tree_path: `tedcloud.emp_${safePathId}`,
-          })
-          .select('*')
-          .single();
-
-        if (error && error.message?.includes('tree_path')) {
-          const retryRes = await supabase
-            .from('organization_nodes')
-            .insert({
-              company_id: companyId,
-              name,
-              telegram_chat_id: telegramChatId,
-              role_type: requestedRole,
-            })
-            .select('*')
-            .single();
-
-          data = retryRes.data;
-          error = retryRes.error;
-        }
+        const { data, error } = await safeSupabaseInsert(
+          supabase,
+          'organization_nodes',
+          rawInsertPayload
+        );
 
         if (error) {
-          console.error('[API /api/db create employee] Error:', error);
-          return res.status(400).json({ ok: false, error: error.message });
+          console.error('[API /api/db] Supabase INSERT error in organization_nodes:', error);
+          return res.status(400).json({ error: error.message, details: error });
         }
 
-        return res.status(200).json({ ok: true, data });
+        return res.status(200).json({
+          ok: true,
+          data: normalizeNodeRow({ ...rawInsertPayload, ...data }),
+        });
       }
 
-      // 4.3. Создание сделки (crm_leads: поддержка client_name, amount, contact, status)
-      if (entity === 'deal' || entity === 'lead' || entity === 'crm_leads') {
+      if (table === 'crm_leads') {
         const clientName = String(
-          payload.client_name || payload.full_name || ''
+          payload.client_name || payload.full_name || payload.title || ''
         ).trim();
+        const title = String(payload.title || clientName).trim();
+        const amount = Number(payload.amount ?? payload.deal_value ?? 0);
+        const contact = payload.contact || payload.phone || null;
+        const status = payload.status || payload.stage || 'New';
+
         if (!clientName) {
           return res
             .status(400)
-            .json({ ok: false, error: 'Укажите название клиента.' });
+            .json({ error: 'Поле "client_name" обязательно для создания сделки.' });
         }
 
-        const amount =
-          payload.amount !== undefined
-            ? Number(payload.amount) || 0
-            : Number(payload.deal_value) || 0;
-        const contact =
-          payload.contact !== undefined
-            ? String(payload.contact || '').trim() || null
-            : payload.phone
-            ? String(payload.phone).trim()
-            : null;
-        const status = payload.status || payload.stage || 'lead';
-        const companyId = await ensureCompanyId(supabase, payload.company_id);
+        const fallbackNodeId = await resolveFallbackOwnerNodeId(supabase, companyId);
+
+        const rawInsertPayload: Record<string, any> = {
+          company_id: companyId,
+          owner_node_id: payload.owner_node_id || fallbackNodeId || null,
+          title,
+          client_name: clientName,
+          full_name: clientName,
+          amount,
+          deal_value: amount,
+          contact,
+          phone: contact,
+          status,
+          stage: status,
+          source: payload.source || 'Direct B2B',
+        };
 
         if (!supabase) {
-          const created = normalizeLeadRecord({
+          const newRecord = {
             id: crypto.randomUUID(),
-            company_id: companyId,
-            owner_node_id: payload.owner_node_id || null,
-            client_name: clientName,
-            amount,
-            contact,
-            status,
-            created_at: new Date().toISOString(),
-          });
-          localStore.leads.unshift(created);
-          return res.status(200).json({ ok: true, data: created });
-        }
-
-        // Попытка 1: Вставка с новыми колонками (client_name, amount, contact, status)
-        let { data, error } = await supabase
-          .from('crm_leads')
-          .insert({
-            company_id: companyId,
-            client_name: clientName,
-            amount,
-            contact,
-            status,
-          })
-          .select('*')
-          .single();
-
-        // Попытка 2: Если в БД также обязательна колонка full_name или используется старая схема
-        if (error) {
-          const combinedAttempt = await supabase
-            .from('crm_leads')
-            .insert({
-              company_id: companyId,
-              client_name: clientName,
-              full_name: clientName,
-              amount,
-              deal_value: amount,
-              contact,
-              phone: contact,
-              status,
-              stage: status === 'lead' ? 'new' : status,
-            })
-            .select('*')
-            .single();
-
-          if (!combinedAttempt.error) {
-            data = combinedAttempt.data;
-            error = null;
-          } else {
-            const legacyAttempt = await supabase
-              .from('crm_leads')
-              .insert({
-                company_id: companyId,
-                owner_node_id: payload.owner_node_id || null,
-                full_name: clientName,
-                deal_value: amount,
-                phone: contact,
-                stage: status === 'lead' ? 'new' : status,
-              })
-              .select('*')
-              .single();
-
-            if (!legacyAttempt.error) {
-              data = legacyAttempt.data;
-              error = null;
-            }
-          }
-        }
-
-        if (error || !data) {
-          console.error('[API /api/db create deal] Error:', error);
-          return res.status(400).json({
-            ok: false,
-            error: error?.message || 'Ошибка создания сделки в crm_leads.',
-          });
-        }
-
-        return res
-          .status(200)
-          .json({ ok: true, data: normalizeLeadRecord(data) });
-      }
-
-      // 4.4. Создание компании (companies)
-      if (entity === 'company' || entity === 'companies') {
-        const name = String(payload.name || 'TedCloud Workspace').trim();
-        if (!supabase) {
-          const created = {
-            id: crypto.randomUUID(),
-            name,
-            subscription_status: 'active',
+            ...rawInsertPayload,
             created_at: new Date().toISOString(),
           };
-          localStore.companies.unshift(created);
-          return res.status(200).json({ ok: true, data: created });
+          localStore.crm_leads.unshift(newRecord);
+          return res.status(200).json({ ok: true, data: normalizeLeadRow(newRecord) });
         }
 
-        const { data, error } = await supabase
-          .from('companies')
-          .insert({ name })
-          .select('*')
-          .single();
+        const { data, error } = await safeSupabaseInsert(supabase, 'crm_leads', rawInsertPayload);
 
         if (error) {
-          console.error('[API /api/db create company] Error:', error);
-          return res.status(400).json({ ok: false, error: error.message });
+          console.error('[API /api/db] Supabase INSERT error in crm_leads:', error);
+          return res.status(400).json({ error: error.message, details: error });
         }
 
-        return res.status(200).json({ ok: true, data });
+        return res.status(200).json({
+          ok: true,
+          data: normalizeLeadRow({ ...rawInsertPayload, ...data }),
+        });
       }
 
-      return res.status(400).json({
-        ok: false,
-        error: `Неизвестный тип сущности: entity="${entity}"`,
-      });
+      return res.status(400).json({ error: `Неизвестная таблица: ${table}` });
     }
 
-    return res
-      .status(405)
-      .json({ ok: false, error: `Метод ${req.method} не поддерживается` });
-  } catch (error: any) {
-    console.error('[API /api/db] Fatal Error:', error);
+    if (method === 'PATCH') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+      const { table, id, updates } = body;
+
+      if (!table || !id || !updates || typeof updates !== 'object') {
+        return res.status(400).json({
+          error: 'В теле PATCH-запроса обязательны поля "table", "id" и объект "updates".',
+        });
+      }
+
+      if (table === 'companies') {
+        const rawUpdates: Record<string, any> = {};
+        if (updates.name !== undefined) rawUpdates.name = String(updates.name).trim();
+        if (updates.plan !== undefined) rawUpdates.plan = updates.plan;
+        if (updates.payment_region !== undefined) rawUpdates.payment_region = updates.payment_region;
+
+        if (!supabase) {
+          const idx = localStore.companies.findIndex((c) => c.id === id);
+          if (idx !== -1) {
+            localStore.companies[idx] = { ...localStore.companies[idx], ...rawUpdates };
+            return res.status(200).json({ ok: true, data: localStore.companies[idx] });
+          }
+          return res.status(200).json({ ok: true, data: { id, ...rawUpdates } });
+        }
+
+        const { data, error } = await safeSupabaseUpdate(supabase, 'companies', id, rawUpdates);
+        if (error) {
+          return res.status(400).json({ error: error.message });
+        }
+        return res.status(200).json({ ok: true, data: { id, ...rawUpdates, ...data } });
+      }
+
+      if (table === 'tasks') {
+        const rawUpdates: Record<string, any> = {};
+        if (updates.status !== undefined) rawUpdates.status = updates.status;
+        if (updates.priority !== undefined) rawUpdates.priority = updates.priority;
+        if (updates.assigned_to !== undefined) {
+          rawUpdates.assigned_to = updates.assigned_to || null;
+          if (updates.assigned_to) {
+            rawUpdates.owner_node_id = updates.assigned_to;
+          }
+        }
+        if (updates.owner_node_id !== undefined) {
+          rawUpdates.owner_node_id = updates.owner_node_id;
+        }
+        if (updates.title !== undefined) rawUpdates.title = String(updates.title).trim();
+        if (updates.type !== undefined) rawUpdates.type = updates.type;
+
+        let updatedTask: any = null;
+        let previousAssignee: string | null = null;
+
+        if (!supabase) {
+          const idx = localStore.tasks.findIndex((t) => t.id === id);
+          if (idx === -1) {
+            return res.status(404).json({ error: 'Задача не найдена.' });
+          }
+          previousAssignee = localStore.tasks[idx].assigned_to || null;
+          localStore.tasks[idx] = { ...localStore.tasks[idx], ...rawUpdates };
+          updatedTask = localStore.tasks[idx];
+        } else {
+          const { data: existing } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('id', id)
+            .maybeSingle();
+          previousAssignee = existing?.assigned_to || null;
+
+          const { data, error } = await safeSupabaseUpdate(supabase, 'tasks', id, rawUpdates);
+          if (error) {
+            console.error('[API /api/db] Supabase PATCH error in tasks:', error);
+            return res.status(400).json({ error: error.message, details: error });
+          }
+          updatedTask = { ...existing, ...rawUpdates, ...data };
+        }
+
+        let telegramPush = { pushed: false, reason: 'not_reassigned' };
+        if (rawUpdates.assigned_to && rawUpdates.assigned_to !== previousAssignee) {
+          telegramPush = await sendTelegramTaskPush({
+            supabase,
+            assignedToId: rawUpdates.assigned_to,
+            taskId: updatedTask.id,
+            taskTitle: updatedTask.title,
+            taskPriority: updatedTask.priority || 'Medium',
+            taskType: updatedTask.type || 'Task',
+          });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeTaskRow(updatedTask),
+          telegramPush,
+        });
+      }
+
+      if (table === 'crm_leads') {
+        const rawUpdates: Record<string, any> = {};
+        if (updates.status !== undefined || updates.stage !== undefined) {
+          const nextStatus = updates.status || updates.stage;
+          rawUpdates.status = nextStatus;
+          rawUpdates.stage = nextStatus;
+        }
+        if (updates.client_name !== undefined || updates.full_name !== undefined) {
+          const nextName = String(updates.client_name || updates.full_name).trim();
+          rawUpdates.client_name = nextName;
+          rawUpdates.full_name = nextName;
+        }
+        if (updates.title !== undefined) {
+          rawUpdates.title = String(updates.title).trim();
+        }
+        if (updates.amount !== undefined || updates.deal_value !== undefined) {
+          const nextAmount = Number(updates.amount ?? updates.deal_value ?? 0);
+          rawUpdates.amount = nextAmount;
+          rawUpdates.deal_value = nextAmount;
+        }
+        if (updates.contact !== undefined || updates.phone !== undefined) {
+          const nextContact = updates.contact ?? updates.phone ?? null;
+          rawUpdates.contact = nextContact;
+          rawUpdates.phone = nextContact;
+        }
+
+        if (!supabase) {
+          const idx = localStore.crm_leads.findIndex((l) => l.id === id);
+          if (idx === -1) {
+            return res.status(404).json({ error: 'Сделка не найдена.' });
+          }
+          localStore.crm_leads[idx] = { ...localStore.crm_leads[idx], ...rawUpdates };
+          return res.status(200).json({
+            ok: true,
+            data: normalizeLeadRow(localStore.crm_leads[idx]),
+          });
+        }
+
+        const { data, error } = await safeSupabaseUpdate(supabase, 'crm_leads', id, rawUpdates);
+
+        if (error) {
+          console.error('[API /api/db] Supabase PATCH error in crm_leads:', error);
+          return res.status(400).json({ error: error.message, details: error });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeLeadRow({ id, ...rawUpdates, ...data }),
+        });
+      }
+
+      if (table === 'organization_nodes') {
+        const rawUpdates: Record<string, any> = {};
+        if (updates.name !== undefined) rawUpdates.name = String(updates.name).trim();
+        if (updates.role_type !== undefined) rawUpdates.role_type = String(updates.role_type).trim();
+        if (updates.department !== undefined) {
+          rawUpdates.department = updates.department ? String(updates.department).trim() : null;
+        }
+        if (updates.email !== undefined) {
+          rawUpdates.email = updates.email ? String(updates.email).trim() : null;
+        }
+        if (updates.telegram_chat_id !== undefined) {
+          rawUpdates.telegram_chat_id = updates.telegram_chat_id
+            ? String(updates.telegram_chat_id).trim()
+            : null;
+        }
+        if (updates.invite_code !== undefined) {
+          rawUpdates.invite_code = String(updates.invite_code).trim().toUpperCase();
+        }
+        if (updates.access_level !== undefined) {
+          rawUpdates.access_level = updates.access_level;
+        }
+        if (updates.permissions !== undefined) {
+          rawUpdates.permissions = updates.permissions;
+        }
+        if (updates.tree_path !== undefined) {
+          rawUpdates.tree_path = updates.tree_path;
+        }
+
+        if (!supabase) {
+          const idx = localStore.organization_nodes.findIndex((n) => n.id === id);
+          if (idx === -1) {
+            return res.status(404).json({ error: 'Сотрудник не найден.' });
+          }
+          localStore.organization_nodes[idx] = {
+            ...localStore.organization_nodes[idx],
+            ...rawUpdates,
+          };
+          return res.status(200).json({
+            ok: true,
+            data: normalizeNodeRow(localStore.organization_nodes[idx]),
+          });
+        }
+
+        const { data, error } = await safeSupabaseUpdate(
+          supabase,
+          'organization_nodes',
+          id,
+          rawUpdates
+        );
+
+        if (error) {
+          console.error('[API /api/db] Supabase PATCH error in organization_nodes:', error);
+          return res.status(400).json({ error: error.message, details: error });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeNodeRow({ id, ...rawUpdates, ...data }),
+        });
+      }
+
+      return res.status(400).json({ error: `Таблица ${table} не поддерживает PATCH.` });
+    }
+
+    if (method === 'DELETE') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+      const table = body.table || req.query?.table;
+      const id = body.id || req.query?.id;
+
+      if (!table || !id) {
+        return res.status(400).json({
+          error: 'Для DELETE-запроса обязательны параметры "table" и "id".',
+        });
+      }
+
+      if (!['tasks', 'crm_leads', 'organization_nodes'].includes(table)) {
+        return res.status(400).json({ error: `Удаление из таблицы ${table} запрещено.` });
+      }
+
+      if (!supabase) {
+        const list = (localStore as any)[table] as Record<string, any>[];
+        const idx = list.findIndex((item) => item.id === id);
+        if (idx !== -1) {
+          list.splice(idx, 1);
+        }
+        return res.status(200).json({ ok: true, deletedId: id, table });
+      }
+
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) {
+        console.error(`[API /api/db] Supabase DELETE error in ${table}:`, error);
+        return res.status(400).json({ error: error.message, details: error });
+      }
+
+      return res.status(200).json({ ok: true, deletedId: id, table });
+    }
+
+    return res.status(405).json({ error: `Method ${method} Not Allowed` });
+  } catch (err: any) {
+    console.error('[API /api/db] Fatal Error:', err);
     return res.status(400).json({
-      ok: false,
-      error: error?.message || 'Внутренняя ошибка сервера в /api/db',
+      error: err?.message || 'Internal Server Error in /api/db',
     });
   }
 }

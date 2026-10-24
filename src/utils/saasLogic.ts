@@ -361,7 +361,7 @@ export function buildEmpatheticRefillScript(
 ): string {
   const daysWord =
     daysRemaining === 1 ? '1 день' : daysRemaining <= 4 ? `${daysRemaining} дня` : `${daysRemaining} дней`;
-  return `${clientFirstName}, привет! 🌿 Смотрю по нашему дневнику, твоя баночка «${productName}» подходит к концу примерно через ${daysWord}. Как твоё самочувствие и лёгкость по утрам? Давай закажем свежую заранее, чтобы не прерывать твой ритм, или попробуем новый вкус?`;
+  return `${clientFirstName}, привет! Смотрю по нашему дневнику, твоя баночка «${productName}» подходит к концу примерно через ${daysWord}. Как твоё самочувствие и лёгкость по утрам? Давай закажем свежую заранее, чтобы не прерывать твой ритм, или попробуем новый вкус?`;
 }
 
 /**
@@ -460,7 +460,7 @@ export const UNIVERSAL_PLAYBOOK_GRAPH: import('../types/saas').PlaybookStateGrap
       stepId: 'step_1_warm_touch',
       title: 'Шаг 1/3: Мягкое касание за 3 дня до конца цикла',
       scriptTemplate:
-        '{{clientName}}, привет! 🌿 Смотрю по нашему трекеру, «{{productName}}» скоро заканчивается. Как твоя динамика и самочувствие на этой неделе?',
+        '{{clientName}}, привет! Смотрю по нашему трекеру, «{{productName}}» скоро заканчивается. Как твоя динамика и самочувствие на этой неделе?',
       kpiValue: 25,
       transitions: {
         success: 'step_2_taste_check',

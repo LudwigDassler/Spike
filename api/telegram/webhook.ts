@@ -1,515 +1,543 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-interface InlineButton {
-  text: string;
-  callback_data?: string;
-  web_app?: { url: string };
+export const dynamic = 'force-dynamic';
+
+const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
+  tasks: [
+    'title',
+    'type',
+    'priority',
+    'status',
+    'assigned_to',
+    'owner_node_id',
+    'company_id',
+    'created_by',
+  ],
+  organization_nodes: [
+    'name',
+    'role_type',
+    'telegram_chat_id',
+    'email',
+    'department',
+    'invite_code',
+    'access_level',
+    'permissions',
+    'company_id',
+    'user_id',
+    'tree_path',
+  ],
+};
+
+function sanitizeByWhitelist(table: string, rawPayload: Record<string, any>): Record<string, any> {
+  const whitelist = ALLOWED_COLUMNS[table];
+  const clean: Record<string, any> = {};
+  const keys = whitelist || Object.keys(rawPayload);
+  for (const key of keys) {
+    if (rawPayload[key] !== undefined) {
+      clean[key] = rawPayload[key];
+    }
+  }
+  return clean;
 }
 
-async function callTelegramApi(
-  method: string,
-  payload: Record<string, unknown>
-) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    console.warn(`[Telegram Webhook] Пропуск ${method}: не задан TELEGRAM_BOT_TOKEN`);
-    return;
-  }
-
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    console.error(`[Telegram Webhook] Ошибка вызова ${method}:`, err);
-  }
+function extractMissingColumnName(error: any): string | null {
+  const msg = String(error?.message || error?.details || '');
+  const matchCache = msg.match(/Could not find the '([^']+)' column/i);
+  if (matchCache && matchCache[1]) return matchCache[1];
+  const matchPg = msg.match(/column "([^"]+)" of relation/i);
+  if (matchPg && matchPg[1]) return matchPg[1];
+  return null;
 }
 
-async function sendTelegramMessage(
-  chatId: string | number,
-  text: string,
-  inlineKeyboard?: InlineButton[][]
-) {
-  if (!chatId) return;
+async function safeWebhookInsert(
+  supabase: SupabaseClient,
+  table: string,
+  rawPayload: Record<string, any>
+): Promise<{ data: any; error: any }> {
+  const payload = sanitizeByWhitelist(table, rawPayload);
 
-  const payload: Record<string, unknown> = {
-    chat_id: chatId,
-    text,
+  for (let attempt = 0; attempt < 14; attempt++) {
+    const { data, error } = await supabase.from(table).insert([payload]).select().single();
+    if (!error) return { data, error: null };
+
+    const missingCol = extractMissingColumnName(error);
+    if (
+      (error.code === 'PGRST204' || error.code === '42703' || missingCol) &&
+      missingCol &&
+      missingCol in payload
+    ) {
+      delete payload[missingCol];
+      continue;
+    }
+
+    if (
+      'tree_path' in payload &&
+      String(error?.message || '').toLowerCase().includes('tree_path')
+    ) {
+      delete payload.tree_path;
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return {
+    data: null,
+    error: new Error(`Webhook safe insert exceeded fallback attempts for ${table}`),
   };
+}
 
-  if (inlineKeyboard && inlineKeyboard.length > 0) {
-    payload.reply_markup = {
-      inline_keyboard: inlineKeyboard,
-    };
+async function safeWebhookUpdate(
+  supabase: SupabaseClient,
+  table: string,
+  id: string,
+  rawUpdates: Record<string, any>
+): Promise<{ data: any; error: any }> {
+  const payload = sanitizeByWhitelist(table, rawUpdates);
+
+  for (let attempt = 0; attempt < 14; attempt++) {
+    if (Object.keys(payload).length === 0) {
+      return { data: { id, ...rawUpdates }, error: null };
+    }
+
+    const { data, error } = await supabase
+      .from(table)
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error) return { data, error: null };
+
+    const missingCol = extractMissingColumnName(error);
+    if (
+      (error.code === 'PGRST204' || error.code === '42703' || missingCol) &&
+      missingCol &&
+      missingCol in payload
+    ) {
+      delete payload[missingCol];
+      continue;
+    }
+
+    return { data: null, error };
   }
 
-  await callTelegramApi('sendMessage', payload);
+  return {
+    data: null,
+    error: new Error(`Webhook safe update exceeded fallback attempts for ${table}`),
+  };
+}
+
+function escapeHtml(text: string): string {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function buildWebAppKeyboard(siteUrl: string, chatId: string, extraRows: any[][] = []) {
+  return {
+    inline_keyboard: [
+      ...extraRows,
+      [
+        {
+          text: 'Открыть панель TedCloud',
+          url: `${siteUrl}/?chatId=${chatId}`,
+        },
+      ],
+    ],
+  };
 }
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
-    return res.status(200).json({ ok: true, status: 'Telegram Webhook 2.0 active' });
+    return res.status(200).send('OK');
   }
 
-  let chatId: string | number | undefined;
+  let chatId: string | undefined;
+
+  const sendTelegramMessage = async (
+    targetChatId: string,
+    text: string,
+    extra: Record<string, any> = {}
+  ) => {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      console.error('[WEBHOOK] TELEGRAM_BOT_TOKEN is missing');
+      return;
+    }
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: targetChatId,
+          text,
+          parse_mode: 'HTML',
+          ...extra,
+        }),
+      });
+    } catch (fetchErr) {
+      console.error('[WEBHOOK] Failed to call Telegram sendMessage:', fetchErr);
+    }
+  };
+
+  const answerCallbackQuery = async (callbackQueryId: string, text: string) => {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return;
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: callbackQueryId,
+          text,
+        }),
+      });
+    } catch (err) {
+      console.error('[WEBHOOK] Failed to answerCallbackQuery:', err);
+    }
+  };
 
   try {
-    const body =
-      typeof req.body === 'string'
-        ? JSON.parse(req.body || '{}')
-        : req.body || {};
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
 
-    const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.VITE_SUPABASE_URL ||
-      '';
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const supabaseKey =
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      '';
-
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      '';
-
-    // =========================================================================
-    // 1. Обработка нажатий на Inline-кнопки (body.callback_query)
-    // =========================================================================
-    if (body.callback_query) {
-      const cb = body.callback_query;
-      const callbackId = cb.id;
-      const callbackData: string = typeof cb.data === 'string' ? cb.data : '';
-      const cbMessage = cb.message;
-      chatId = cbMessage?.chat?.id || cb.from?.id;
-
-      if (
-        callbackData.startsWith('task_progress_') ||
-        callbackData.startsWith('task_done_')
-      ) {
-        const isProgress = callbackData.startsWith('task_progress_');
-        const taskId = isProgress
-          ? callbackData.slice('task_progress_'.length)
-          : callbackData.slice('task_done_'.length);
-        const nextStatus = isProgress ? 'in_progress' : 'done';
-        const statusLine = isProgress
-          ? '🔄 Статус: В работе'
-          : '✅ Статус: Выполнено';
-
-        if (!supabaseUrl || !supabaseKey) {
-          await callTelegramApi('answerCallbackQuery', {
-            callback_query_id: callbackId,
-            text: 'Ошибка: не настроены ключи Supabase на сервере',
-            show_alert: true,
-          });
-          return res.status(200).json({ ok: true });
-        }
-
-        const supabase = createClient(supabaseUrl, supabaseKey, {
-          auth: { persistSession: false, autoRefreshToken: false },
-        });
-
-        const { error: updateError } = await supabase
-          .from('tasks')
-          .update({ status: nextStatus })
-          .eq('id', taskId);
-
-        if (updateError) {
-          throw new Error(
-            `Не удалось обновить статус задачи: ${updateError.message}`
-          );
-        }
-
-        // 1.1. Всплывающее уведомление в Telegram
-        await callTelegramApi('answerCallbackQuery', {
-          callback_query_id: callbackId,
-          text: 'Статус обновлен!',
-        });
-
-        // 1.2. Редактирование исходного сообщения с добавлением строки статуса в конец
-        if (cbMessage?.chat?.id && cbMessage?.message_id) {
-          const originalText = String(cbMessage.text || '')
-            .replace(/\n\n(🔄 Статус: В работе|✅ Статус: Выполнено)$/g, '')
-            .trim();
-
-          const updatedText = `${originalText}\n\n${statusLine}`;
-
-          const updatedMarkup = isProgress
-            ? {
-                inline_keyboard: [
-                  [
-                    {
-                      text: '✅ Выполнено',
-                      callback_data: `task_done_${taskId}`,
-                    },
-                  ],
-                ],
-              }
-            : { inline_keyboard: [] };
-
-          await callTelegramApi('editMessageText', {
-            chat_id: cbMessage.chat.id,
-            message_id: cbMessage.message_id,
-            text: updatedText,
-            reply_markup: updatedMarkup,
-          });
-        }
-
-        return res.status(200).json({ ok: true });
-      }
-
-      await callTelegramApi('answerCallbackQuery', {
-        callback_query_id: callbackId,
-      });
-      return res.status(200).json({ ok: true });
-    }
-
-    // =========================================================================
-    // 2. Обработка входящих текстовых сообщений и команд (/start, /tasks, /new, !текст)
-    // =========================================================================
-    const message = body.message || body.edited_message;
-    chatId = message?.chat?.id;
-    const rawText: string =
-      typeof message?.text === 'string' ? message.text.trim() : '';
-
-    if (!chatId) {
-      return res.status(200).json({ ok: true });
-    }
-
-    const chatIdStr = String(chatId);
-    const firstName =
-      message?.from?.first_name || message?.chat?.first_name || 'Superadmin';
-    const lastName = message?.from?.last_name || message?.chat?.last_name || '';
-    const username = message?.from?.username || message?.chat?.username || '';
-    const fullName =
-      [firstName, lastName].filter(Boolean).join(' ').trim() ||
-      username ||
-      'Superadmin';
+      process.env.VITE_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      await sendTelegramMessage(
-        chatId,
-        '❌ Ошибка конфигурации: Не заданы переменные NEXT_PUBLIC_SUPABASE_URL или SUPABASE_SERVICE_ROLE_KEY на сервере Vercel.'
+      throw new Error(
+        'Не заданы переменные окружения NEXT_PUBLIC_SUPABASE_URL и SUPABASE_SERVICE_ROLE_KEY.'
       );
-      return res.status(200).json({ ok: true });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Поиск пользователя по telegram_chat_id
-    const { data: existingUser, error: userSelectError } = await supabase
-      .from('organization_nodes')
-      .select('*')
-      .eq('telegram_chat_id', chatIdStr)
-      .maybeSingle();
+    const siteUrl = (
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.APP_URL ||
+      'https://tedcloud.vercel.app'
+    ).replace(/\/$/, '');
 
-    if (userSelectError) {
-      throw new Error(
-        `Ошибка чтения organization_nodes: ${userSelectError.message}`
-      );
-    }
+    // Обработка inline-кнопок управления задачей
+    if (body?.callback_query) {
+      const cb = body.callback_query;
+      const cbId = cb.id;
+      const cbData = String(cb.data || '');
+      const cbChatId = cb.message?.chat?.id ? String(cb.message.chat.id) : undefined;
+      chatId = cbChatId;
 
-    const webAppButtonRow: InlineButton[][] | undefined = siteUrl
-      ? [[{ text: '🚀 Открыть TedCloud Web App', web_app: { url: siteUrl } }]]
-      : undefined;
+      if (cbData.startsWith('task_progress:') || cbData.startsWith('task_done:')) {
+        const [action, taskId] = cbData.split(':');
+        const nextStatus = action === 'task_done' ? 'Done' : 'In Progress';
+        const statusLabel = action === 'task_done' ? 'Выполнено' : 'В работе';
 
-    // 2.1. Команда /start: авто-создание компании и SUPERADMIN
-    if (rawText === '/start' || rawText.startsWith('/start ')) {
-      if (!existingUser) {
-        let companyId: string | null = null;
-        const { data: existingCompany } = await supabase
-          .from('companies')
-          .select('id, name')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (existingCompany?.id) {
-          companyId = String(existingCompany.id);
-        } else {
-          const { data: newCompany, error: companyError } = await supabase
-            .from('companies')
-            .insert({ name: `${fullName} Organization` })
-            .select('id, name')
-            .single();
-
-          if (companyError || !newCompany) {
-            throw new Error(
-              `Ошибка создания компании в companies: ${
-                companyError?.message || 'Нет данных'
-              }`
-            );
-          }
-          companyId = String(newCompany.id);
+        if (taskId) {
+          await safeWebhookUpdate(supabase, 'tasks', taskId, { status: nextStatus });
         }
 
-        const safePathId =
-          chatIdStr.replace(/[^a-zA-Z0-9_]/g, '') || Date.now().toString();
-
-        let { data: createdNode, error: insertNodeError } = await supabase
-          .from('organization_nodes')
-          .insert({
-            company_id: companyId,
-            name: fullName,
-            telegram_chat_id: chatIdStr,
-            role_type: 'SUPERADMIN',
-            tree_path: `tedcloud.admin_${safePathId}`,
-          })
-          .select('*')
-          .single();
-
-        if (insertNodeError && insertNodeError.message?.includes('tree_path')) {
-          const retryNoTree = await supabase
-            .from('organization_nodes')
-            .insert({
-              company_id: companyId,
-              name: fullName,
-              telegram_chat_id: chatIdStr,
-              role_type: 'SUPERADMIN',
-            })
-            .select('*')
-            .single();
-          createdNode = retryNoTree.data;
-          insertNodeError = retryNoTree.error;
+        if (cbId) {
+          await answerCallbackQuery(cbId, `Статус задачи обновлен: ${statusLabel}`);
         }
 
-        if (insertNodeError && insertNodeError.message?.includes('role_type')) {
-          const retryOwner = await supabase
-            .from('organization_nodes')
-            .insert({
-              company_id: companyId,
-              name: fullName,
-              telegram_chat_id: chatIdStr,
-              role_type: 'Owner',
-            })
-            .select('*')
-            .single();
-          createdNode = retryOwner.data;
-          insertNodeError = retryOwner.error;
-        }
-
-        if (insertNodeError || !createdNode) {
-          throw new Error(
-            `Ошибка регистрации пользователя в organization_nodes: ${
-              insertNodeError?.message || 'Нет данных'
-            }`
+        if (cbChatId) {
+          await sendTelegramMessage(
+            cbChatId,
+            `<b>СТАТУС ЗАДАЧИ ОБНОВЛЕН</b>\nНовое состояние: <b>${statusLabel}</b>`,
+            {
+              reply_markup: buildWebAppKeyboard(siteUrl, cbChatId),
+            }
           );
         }
-
-        await sendTelegramMessage(
-          chatId,
-          `🎉 Добро пожаловать в TedCloud, ${fullName}!\n✅ Ваш профиль активирован (Роль: ${createdNode.role_type}).\n🆔 Ваш Telegram ID: ${chatIdStr}\n\nДоступные возможности:\n• Отправьте любой текст для создания задачи\n• Начните текст с «!» (например: !Срочно оплатить счет) для задачи с высоким приоритетом\n• Отправьте /tasks для просмотра активных задач`,
-          webAppButtonRow
-        );
-        return res.status(200).json({ ok: true });
       }
 
-      await sendTelegramMessage(
-        chatId,
-        `👋 С возвращением, ${existingUser.name} (${existingUser.role_type})!\n🆔 Ваш Telegram ID: ${chatIdStr}\n\n• Отправьте текст задачи (или !текст для высокого приоритета)\n• Команда /tasks — список открытых задач`,
-        webAppButtonRow
-      );
-      return res.status(200).json({ ok: true });
+      return res.status(200).send('OK');
     }
 
-    // 2.2. Команда /help
-    if (rawText === '/help') {
-      await sendTelegramMessage(
-        chatId,
-        `📖 Команды TedCloud Bot 2.0:\n/start — Авторизация и вход в Web App\n/tasks — Список открытых задач с кнопками завершения\n/new <текст> — Создать новую задачу\n!<текст> — Быстрое создание срочной задачи (Приоритет: High)`,
-        webAppButtonRow
-      );
-      return res.status(200).json({ ok: true });
+    const message = body?.message || body?.edited_message;
+    const rawChatId = message?.chat?.id;
+    const rawText: string = (message?.text || '').trim();
+    const firstName: string = message?.from?.first_name || 'Сотрудник';
+
+    if (!rawChatId) {
+      return res.status(200).send('OK');
     }
 
-    // 2.3. Команда /tasks: вывод списка открытых задач с inline-кнопками [✅ Завершить]
-    if (rawText === '/tasks' || rawText.startsWith('/tasks@')) {
-      let query = supabase
-        .from('tasks')
-        .select('id, title, priority, status')
-        .neq('status', 'done')
-        .order('created_at', { ascending: false })
-        .limit(10);
+    chatId = String(rawChatId).trim();
 
-      if (existingUser?.company_id) {
-        query = query.eq('company_id', existingUser.company_id);
-      }
-
-      const { data: openTasks, error: tasksError } = await query;
-
-      if (tasksError) {
-        throw new Error(
-          `Ошибка получения списка задач: ${tasksError.message}`
-        );
-      }
-
-      if (!openTasks || openTasks.length === 0) {
-        await sendTelegramMessage(
-          chatId,
-          '🎉 Все задачи выполнены! В вашем рабочем пространстве нет открытых задач.',
-          webAppButtonRow
-        );
-        return res.status(200).json({ ok: true });
-      }
-
-      for (const task of openTasks) {
-        const statusBadge =
-          task.status === 'in_progress' ? '🔄 В работе' : '🆕 Новая';
-        const prioBadge = task.priority || 'Medium';
-
-        await sendTelegramMessage(
-          chatId,
-          `📌 ${task.title}\n⚡ Приоритет: ${prioBadge} · ${statusBadge}`,
-          [
-            [
-              ...(task.status !== 'in_progress'
-                ? [
-                    {
-                      text: '⚡️ В работу',
-                      callback_data: `task_progress_${task.id}`,
-                    },
-                  ]
-                : []),
-              {
-                text: '✅ Завершить',
-                callback_data: `task_done_${task.id}`,
-              },
-            ],
-          ]
-        );
-      }
-
-      return res.status(200).json({ ok: true });
-    }
-
-    // 2.4. Авто-профиль, если пользователь сразу пишет задачу без предварительного /start
-    let activeUser = existingUser;
-    if (!activeUser) {
-      const { data: firstCompany } = await supabase
+    const resolveCompanyId = async (): Promise<string> => {
+      const { data: existingCompany } = await supabase
         .from('companies')
         .select('id')
         .limit(1)
         .maybeSingle();
 
-      let companyId = firstCompany?.id;
-      if (!companyId) {
-        const { data: createdComp } = await supabase
-          .from('companies')
-          .insert({ name: `${fullName} Organization` })
-          .select('id')
-          .single();
-        companyId = createdComp?.id;
+      if (existingCompany?.id) return existingCompany.id;
+
+      const { data: newCompany, error: createCompanyError } = await supabase
+        .from('companies')
+        .insert([{ name: 'Корпоративное пространство' }])
+        .select('id')
+        .single();
+
+      if (createCompanyError || !newCompany) {
+        throw new Error(
+          `Ошибка создания компании: ${createCompanyError?.message || 'Unknown error'}`
+        );
       }
 
-      const { data: autoNode } = await supabase
+      return newCompany.id;
+    };
+
+    const findOrCreateUserByChatId = async (inviteParam?: string): Promise<any> => {
+      const { data: allNodes, error: nodesErr } = await supabase
         .from('organization_nodes')
-        .insert({
-          company_id: companyId,
-          name: fullName,
-          telegram_chat_id: chatIdStr,
-          role_type: 'SUPERADMIN',
-        })
-        .select('*')
-        .single();
+        .select('*');
 
-      activeUser = autoNode || {
-        id: null,
-        company_id: companyId || null,
+      if (nodesErr) {
+        throw new Error(`Ошибка чтения профилей сотрудников: ${nodesErr.message}`);
+      }
+
+      const list = allNodes || [];
+
+      if (inviteParam) {
+        const cleanInvite = inviteParam.trim().toLowerCase();
+        const invitedNode = list.find(
+          (n: any) => String(n.invite_code || '').trim().toLowerCase() === cleanInvite
+        );
+        if (invitedNode) {
+          const { data: updatedNode } = await safeWebhookUpdate(
+            supabase,
+            'organization_nodes',
+            invitedNode.id,
+            { telegram_chat_id: chatId }
+          );
+          return { ...invitedNode, ...(updatedNode || {}), telegram_chat_id: chatId };
+        }
+      }
+
+      const existingByChat = list.find(
+        (n: any) => String(n.telegram_chat_id || '').trim() === chatId
+      );
+      if (existingByChat) {
+        return existingByChat;
+      }
+
+      const companyId = list[0]?.company_id || (await resolveCompanyId());
+      const isFirstNode = list.length === 0;
+      const roleTitle = isFirstNode ? 'Генеральный директор' : 'Специалист';
+      const inviteCode = isFirstNode
+        ? 'TC-ROOT'
+        : `TC-${String(chatId).slice(-4).padStart(4, '0')}`;
+
+      const rawNewNode = {
+        company_id: companyId,
+        user_id: `tg_${chatId}`,
+        name: firstName,
+        role_type: roleTitle,
+        department: isFirstNode ? 'Дирекция' : 'Основное подразделение',
+        telegram_chat_id: chatId,
+        invite_code: inviteCode,
+        access_level: isFirstNode ? 'root' : 'member',
+        tree_path: 'root',
       };
-    }
 
-    // 2.5. Быстрое создание задач (с поддержкой префикса "!" для приоритета High)
-    const strippedNewCommand = rawText.startsWith('/new')
-      ? rawText.replace(/^\/new\s*/i, '').trim()
-      : rawText;
-
-    if (!strippedNewCommand) {
-      await sendTelegramMessage(
-        chatId,
-        '✏️ Напишите текст задачи после команды /new или отправьте сообщение (начните с ! для высокого приоритета).'
+      const { data: insertedNode, error: insertErr } = await safeWebhookInsert(
+        supabase,
+        'organization_nodes',
+        rawNewNode
       );
-      return res.status(200).json({ ok: true });
+
+      if (insertErr) {
+        if (list[0]) return list[0];
+        throw new Error(`Ошибка регистрации профиля: ${insertErr.message}`);
+      }
+
+      return { ...rawNewNode, ...(insertedNode || {}) };
+    };
+
+    // =========================================================================
+    // 1. КОМАНДА /start [TC-XXXX]
+    // =========================================================================
+    if (rawText === '/start' || rawText.startsWith('/start ') || rawText.startsWith('/start@')) {
+      const parts = rawText.split(/\s+/);
+      const startParam = parts.length > 1 ? parts[1].trim() : '';
+
+      const user = await findOrCreateUserByChatId(startParam);
+      const userName = escapeHtml(user?.name || firstName);
+      const userRole = escapeHtml(user?.role_type || 'Специалист');
+
+      const startHtml = `<b>TEDCLOUD WORKSPACE</b>\nСтатус: Сессия активна\nСотрудник: ${userName} (${userRole})\nTelegram ID: ${chatId}\n\nДоступные команды:\n/tasks — Список активных задач\n/new — Создать задачу`;
+
+      await sendTelegramMessage(chatId, startHtml, {
+        reply_markup: buildWebAppKeyboard(siteUrl, chatId),
+      });
+
+      return res.status(200).send('OK');
     }
 
-    const isUrgent = strippedNewCommand.startsWith('!');
-    const cleanTitle = isUrgent
-      ? strippedNewCommand.replace(/^!+\s*/, '').trim()
-      : strippedNewCommand;
-    const requestedPriority = isUrgent ? 'High' : 'Medium';
+    // =========================================================================
+    // 2. КОМАНДА /tasks — Список активных задач
+    // =========================================================================
+    if (rawText === '/tasks' || rawText.startsWith('/tasks@')) {
+      const user = await findOrCreateUserByChatId();
 
-    if (!cleanTitle) {
-      await sendTelegramMessage(
-        chatId,
-        '✏️ Укажите название задачи после восклицательного знака, например: !Срочно оплатить счет'
-      );
-      return res.status(200).json({ ok: true });
-    }
-
-    let { data: createdTask, error: taskError } = await supabase
-      .from('tasks')
-      .insert({
-        company_id: activeUser.company_id,
-        title: cleanTitle,
-        priority: requestedPriority,
-        status: 'new',
-        assigned_to: activeUser.id || null,
-      })
-      .select('id, title, priority')
-      .single();
-
-    // Фоллбэк: если в БД стоит lowercase CHECK constraint ('high' / 'medium')
-    if (taskError && taskError.message?.toLowerCase().includes('priority')) {
-      const retryLower = await supabase
+      const { data: allTasks, error: tasksErr } = await supabase
         .from('tasks')
-        .insert({
-          company_id: activeUser.company_id,
-          title: cleanTitle,
-          priority: requestedPriority.toLowerCase(),
-          status: 'new',
-          assigned_to: activeUser.id || null,
-        })
-        .select('id, title, priority')
-        .single();
+        .select('*');
 
-      createdTask = retryLower.data;
-      taskError = retryLower.error;
+      if (tasksErr) {
+        throw new Error(`Ошибка загрузки реестра задач: ${tasksErr.message}`);
+      }
+
+      const activeTasks = (allTasks || []).filter(
+        (t: any) =>
+          t.status !== 'Done' &&
+          (t.assigned_to === user.id || t.owner_node_id === user.id)
+      );
+
+      if (activeTasks.length === 0) {
+        await sendTelegramMessage(
+          chatId,
+          `<b>TEDCLOUD WORKSPACE</b>\nСотрудник: ${escapeHtml(user.name)} (${escapeHtml(
+            user.role_type || 'Специалист'
+          )})\nАктивных невыполненных задач не числится.`,
+          {
+            reply_markup: buildWebAppKeyboard(siteUrl, chatId),
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      const lines = activeTasks.map((t: any, index: number) => {
+        const prio =
+          t.priority === 'High' ? 'Высокий' : t.priority === 'Low' ? 'Низкий' : 'Средний';
+        const st = t.status === 'In Progress' ? 'В работе' : 'К выполнению';
+        return `${index + 1}. [${prio} | ${st}] ${escapeHtml(t.title)}`;
+      });
+
+      const firstTask = activeTasks[0];
+      const extraRows: any[][] = [];
+      if (firstTask?.id) {
+        extraRows.push([
+          { text: 'Принять в работу', callback_data: `task_progress:${firstTask.id}` },
+          { text: 'Завершить задачу', callback_data: `task_done:${firstTask.id}` },
+        ]);
+      }
+
+      await sendTelegramMessage(
+        chatId,
+        [
+          `<b>АКТИВНЫЕ ЗАДАЧИ (${activeTasks.length})</b>`,
+          `Сотрудник: ${escapeHtml(user.name)} (${escapeHtml(user.role_type || 'Специалист')})`,
+          '',
+          ...lines,
+        ].join('\n'),
+        {
+          reply_markup: buildWebAppKeyboard(siteUrl, chatId, extraRows),
+        }
+      );
+
+      return res.status(200).send('OK');
     }
 
-    if (taskError || !createdTask) {
-      throw new Error(
-        `Ошибка создания задачи в tasks: ${
-          taskError?.message || 'Нет данных'
-        }`
+    // =========================================================================
+    // 3. КОМАНДА /new ИЛИ ЛЮБОЙ ТЕКСТ ЧАТА — Создание задачи
+    // =========================================================================
+    if (rawText === '/new' || rawText.startsWith('/new@')) {
+      await sendTelegramMessage(
+        chatId,
+        '<b>СОЗДАНИЕ ЗАДАЧИ</b>\nОтправьте текст задачи следующим сообщением. Для высокого приоритета начните сообщение с символа «!».\nПример: <code>!Согласовать коммерческое предложение</code>',
+        {
+          reply_markup: buildWebAppKeyboard(siteUrl, chatId),
+        }
+      );
+      return res.status(200).send('OK');
+    }
+
+    if (rawText.length > 0) {
+      const user = await findOrCreateUserByChatId();
+      const companyId = user.company_id || (await resolveCompanyId());
+
+      const strippedCommandText = rawText.startsWith('/new ')
+        ? rawText.slice(5).trim()
+        : rawText;
+
+      const isUrgent = strippedCommandText.startsWith('!');
+      const cleanTitle = isUrgent ? strippedCommandText.slice(1).trim() : strippedCommandText;
+      const taskPriority = isUrgent ? 'High' : 'Medium';
+      const priorityLabel = isUrgent ? 'Высокий' : 'Средний';
+
+      if (!cleanTitle) {
+        await sendTelegramMessage(
+          chatId,
+          '<b>ОШИБКА ФОРМАТА</b>\nУкажите наименование задачи.',
+          {
+            reply_markup: buildWebAppKeyboard(siteUrl, chatId),
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      const { data: createdTask, error: taskInsertError } = await safeWebhookInsert(
+        supabase,
+        'tasks',
+        {
+          company_id: companyId,
+          title: cleanTitle,
+          type: 'Task',
+          priority: taskPriority,
+          status: 'Todo',
+          owner_node_id: user.id,
+          assigned_to: user.id,
+          created_by: user.id,
+        }
+      );
+
+      if (taskInsertError) {
+        throw new Error(`Ошибка записи задачи в БД: ${taskInsertError.message}`);
+      }
+
+      const extraRows: any[][] = [];
+      if (createdTask?.id) {
+        extraRows.push([
+          { text: 'Принять в работу', callback_data: `task_progress:${createdTask.id}` },
+          { text: 'Завершить задачу', callback_data: `task_done:${createdTask.id}` },
+        ]);
+      }
+
+      await sendTelegramMessage(
+        chatId,
+        [
+          '<b>ЗАДАЧА СОЗДАНА</b>',
+          `Наименование: ${escapeHtml(cleanTitle)}`,
+          `Приоритет: ${priorityLabel}`,
+          'Статус: К выполнению',
+          `Исполнитель: ${escapeHtml(user.name || firstName)} (${escapeHtml(
+            user.role_type || 'Специалист'
+          )})`,
+        ].join('\n'),
+        {
+          reply_markup: buildWebAppKeyboard(siteUrl, chatId, extraRows),
+        }
       );
     }
 
-    await sendTelegramMessage(
-      chatId,
-      `✅ Задача создана!\n\n📌 ${createdTask.title}\n⚡ Приоритет: ${requestedPriority}`,
-      [
-        [
-          {
-            text: '✅ Отметить выполненной',
-            callback_data: `task_done_${createdTask.id}`,
-          },
-        ],
-      ]
-    );
-
-    return res.status(200).json({ ok: true });
+    return res.status(200).send('OK');
   } catch (error: any) {
-    console.error('[Telegram Webhook] Fatal Error:', error);
+    console.error('[WEBHOOK] Critical Failure:', error);
+
     if (chatId) {
       await sendTelegramMessage(
         chatId,
-        '❌ Ошибка бота: ' + (error?.message || String(error))
+        `<b>СИСТЕМНОЕ СООБЩЕНИЕ TEDCLOUD</b>\n${escapeHtml(error?.message || String(error))}`
       );
     }
-    return res.status(200).json({ ok: true });
+
+    return res.status(200).send('OK');
   }
 }

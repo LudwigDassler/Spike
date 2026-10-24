@@ -79,7 +79,7 @@ export function buildStartCommandPayload(
       inline_keyboard: [
         [
           {
-            text: '🚀 Открыть рабочее пространство TedCloud',
+            text: 'Открыть панель TedCloud',
             web_app: {
               url: finalWebAppUrl,
             },

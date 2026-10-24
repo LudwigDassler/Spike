@@ -1,583 +1,653 @@
-import React, { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, X } from 'lucide-react';
-import type {
-  CrmLeadRecord,
+import React, { useState } from 'react';
+import {
+  X,
+  Loader2,
+  UserPlus,
+  CheckSquare,
+  Briefcase,
+  AlertCircle,
+  Copy,
+  Check,
+  KeyRound,
+  ExternalLink,
+  Shield,
+} from 'lucide-react';
+import {
+  AccessLevel,
+  CrmLeadStatus,
+  EmployeePermissions,
   OrganizationNode,
-  OrganizationRoleType,
-  TaskPriorityType,
-  TaskRecord,
+  TaskPriority,
+  TaskStatus,
+  generateCorporateInviteCode,
+  getDefaultPermissionsForAccessLevel,
 } from '../types/database';
-import { useTelegramAuth } from './TelegramAuthProvider';
+import { useLocale } from '../i18n/LocaleContext';
 
-export type AddRecordTab = 'deal' | 'task' | 'employee';
+export type ModalRecordType = 'tasks' | 'organization_nodes' | 'crm_leads' | null;
 
-export interface AddRecordModalProps {
-  isOpen: boolean;
-  initialTab?: AddRecordTab;
+interface AddRecordModalProps {
+  type: ModalRecordType;
+  companyId: string;
+  currentProfileId?: string | null;
+  nodes: OrganizationNode[];
+  botUsername?: string;
   onClose: () => void;
-  employees: OrganizationNode[];
-  companyIdOverride?: string | null;
-  onLeadCreated?: (lead: CrmLeadRecord) => void;
-  onTaskCreated?: (task: TaskRecord) => void;
-  onEmployeeCreated?: (employee: OrganizationNode) => void;
-}
-
-const EMPLOYEE_ROLE_OPTIONS: Array<{
-  value: OrganizationRoleType;
-  label: string;
-}> = [
-  { value: 'SUPERADMIN', label: 'SUPERADMIN (Суперадминистратор)' },
-  { value: 'Owner', label: 'Owner (Владелец компании)' },
-  { value: 'Manager', label: 'Manager (Руководитель направления)' },
-  { value: 'Specialist', label: 'Specialist (Линейный специалист)' },
-  { value: 'Observer', label: 'Observer (Наблюдатель / Аналитик)' },
-];
-
-const PRIORITY_OPTIONS: Array<{ value: TaskPriorityType; label: string }> = [
-  { value: 'Low', label: 'Низкий (Low)' },
-  { value: 'Medium', label: 'Средний (Medium)' },
-  { value: 'High', label: 'Высокий (High)' },
-];
-
-function notifyError(message: string) {
-  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-    try {
-      window.alert(message);
-    } catch {
-      // Игнорируем блокировку window.alert в песочнице iframe
-    }
-  }
+  onSuccess: (pushSent?: boolean) => Promise<void> | void;
 }
 
 export const AddRecordModal: React.FC<AddRecordModalProps> = ({
-  isOpen,
-  initialTab = 'deal',
+  type,
+  companyId,
+  currentProfileId,
+  nodes,
+  botUsername = 'TedCloudEnterpriseBot',
   onClose,
-  employees,
-  companyIdOverride,
-  onLeadCreated,
-  onTaskCreated,
-  onEmployeeCreated,
+  onSuccess,
 }) => {
-  const { companyId: contextCompanyId, userId: currentUserId } =
-    useTelegramAuth();
-  const activeCompanyId =
-    companyIdOverride !== undefined ? companyIdOverride : contextCompanyId;
+  const { t, currency } = useLocale();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<AddRecordTab>(initialTab);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
+  // Task fields
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskType, setTaskType] = useState('Task');
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>('Medium');
+  const [taskStatus, setTaskStatus] = useState<TaskStatus>('Todo');
+  const [taskAssignedTo, setTaskAssignedTo] = useState<string>(
+    currentProfileId || nodes[0]?.id || ''
+  );
+
+  // Employee fields (БЛОК 1: свободная должность + свободный отдел + контур допуска + чекбоксы прав)
+  const [empName, setEmpName] = useState('');
+  const [empRoleTitle, setEmpRoleTitle] = useState('');
+  const [empDepartment, setEmpDepartment] = useState('');
+  const [empAccessLevel, setEmpAccessLevel] = useState<AccessLevel>('member');
+  const [empPermissions, setEmpPermissions] = useState<EmployeePermissions>(() =>
+    getDefaultPermissionsForAccessLevel('member')
+  );
+  const [empEmail, setEmpEmail] = useState('');
+  const [empTelegramId, setEmpTelegramId] = useState('');
+
+  // Created Employee Invite state
+  const [createdEmployeeInvite, setCreatedEmployeeInvite] = useState<{
+    name: string;
+    roleTitle: string;
+    inviteCode: string;
+    deepLink: string;
   } | null>(null);
+  const [copiedField, setCopiedField] = useState<'code' | 'link' | null>(null);
 
-  // Поля вкладки "Сделка" (crm_leads: client_name, amount, contact, status)
-  const [clientName, setClientName] = useState<string>('');
-  const [dealAmount, setDealAmount] = useState<string>('');
-  const [clientContacts, setClientContacts] = useState<string>('');
+  // CRM Lead fields
+  const [leadTitle, setLeadTitle] = useState('');
+  const [leadClientName, setLeadClientName] = useState('');
+  const [leadAmount, setLeadAmount] = useState('');
+  const [leadContact, setLeadContact] = useState('');
+  const [leadStatus, setLeadStatus] = useState<CrmLeadStatus>('New');
 
-  // Поля вкладки "Задача" (tasks: title, priority, assigned_to, status)
-  const [taskDescription, setTaskDescription] = useState<string>('');
-  const [taskPriority, setTaskPriority] = useState<TaskPriorityType>('Medium');
-  const [taskAssigneeId, setTaskAssigneeId] = useState<string>('');
+  if (!type) return null;
 
-  // Поля вкладки "Сотрудник" (organization_nodes: name, telegram_chat_id, role_type)
-  const [employeeName, setEmployeeName] = useState<string>('');
-  const [employeeTelegramId, setEmployeeTelegramId] = useState<string>('');
-  const [employeeRole, setEmployeeRole] =
-    useState<OrganizationRoleType>('Specialist');
-
-  useEffect(() => {
-    if (isOpen) {
-      setActiveTab(initialTab);
-      setStatusMessage(null);
-    }
-  }, [isOpen, initialTab]);
-
-  if (!isOpen) {
-    return null;
-  }
-
-  const resetCurrentTabFields = (tab: AddRecordTab) => {
-    if (tab === 'deal') {
-      setClientName('');
-      setDealAmount('');
-      setClientContacts('');
-    } else if (tab === 'task') {
-      setTaskDescription('');
-      setTaskPriority('Medium');
-      setTaskAssigneeId('');
-    } else if (tab === 'employee') {
-      setEmployeeName('');
-      setEmployeeTelegramId('');
-      setEmployeeRole('Specialist');
-    }
+  const handleAccessLevelChange = (nextLevel: AccessLevel) => {
+    setEmpAccessLevel(nextLevel);
+    setEmpPermissions(getDefaultPermissionsForAccessLevel(nextLevel));
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const togglePermission = (key: keyof EmployeePermissions) => {
+    setEmpPermissions((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const copyText = async (val: string, field: 'code' | 'link') => {
+    try {
+      await navigator.clipboard.writeText(val);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {}
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatusMessage(null);
-    setIsLoading(true);
+    setErrorMessage(null);
+    setIsSubmitting(true);
 
     try {
-      // 1. Вкладка "Сделка" -> POST /api/db (crm_leads)
-      if (activeTab === 'deal') {
-        const response = await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            entity: 'deal',
-            payload: {
-              company_id: activeCompanyId,
-              owner_node_id:
-                currentUserId && currentUserId !== 'default-workspace-node'
-                  ? currentUserId
-                  : null,
-              client_name: clientName.trim(),
-              full_name: clientName.trim(),
-              amount: Number(dealAmount) || 0,
-              deal_value: Number(dealAmount) || 0,
-              contact: clientContacts.trim() || null,
-              phone: clientContacts.trim() || null,
-              status: 'lead',
-            },
-          }),
-        });
+      let payload: Record<string, any> = { company_id: companyId };
 
-        const result = await response.json();
-        if (!response.ok || !result.ok) {
-          const errMsg = result.error || 'Не удалось сохранить сделку.';
-          setStatusMessage({ type: 'error', text: errMsg });
-          notifyError(errMsg);
-          return;
+      if (type === 'tasks') {
+        if (!taskTitle.trim()) {
+          throw new Error(t('modal.taskTitleLabel'));
         }
-
-        if (onLeadCreated && result.data) {
-          onLeadCreated(result.data as CrmLeadRecord);
+        const resolvedAssignee = taskAssignedTo || currentProfileId || nodes[0]?.id || null;
+        payload = {
+          company_id: companyId,
+          title: taskTitle.trim(),
+          type: taskType,
+          priority: taskPriority,
+          status: taskStatus,
+          assigned_to: resolvedAssignee,
+          owner_node_id: resolvedAssignee,
+          created_by: currentProfileId || resolvedAssignee,
+        };
+      } else if (type === 'organization_nodes') {
+        if (!empName.trim() || !empRoleTitle.trim()) {
+          throw new Error(t('modal.empRoleLabel'));
         }
-
-        const savedName =
-          result.data.client_name || result.data.full_name || clientName.trim();
-        setStatusMessage({
-          type: 'success',
-          text: `Сделка «${savedName}» успешно добавлена в воронку.`,
-        });
-        resetCurrentTabFields('deal');
+        const inviteCode = generateCorporateInviteCode();
+        payload = {
+          company_id: companyId,
+          name: empName.trim(),
+          role_type: empRoleTitle.trim(),
+          department: empDepartment.trim() || null,
+          access_level: empAccessLevel,
+          permissions: empPermissions,
+          email: empEmail.trim() || null,
+          telegram_chat_id: empTelegramId.trim() ? String(empTelegramId.trim()) : null,
+          invite_code: inviteCode,
+        };
+      } else if (type === 'crm_leads') {
+        if (!leadClientName.trim()) {
+          throw new Error(t('modal.dealClientLabel'));
+        }
+        payload = {
+          company_id: companyId,
+          owner_node_id: currentProfileId || nodes[0]?.id || null,
+          title: leadTitle.trim() || leadClientName.trim(),
+          client_name: leadClientName.trim(),
+          amount: Number(leadAmount) || 0,
+          contact: leadContact.trim() || null,
+          status: leadStatus,
+        };
       }
 
-      // 2. Вкладка "Задача" -> POST /api/db (tasks + автоматический Telegram Push при назначении)
-      if (activeTab === 'task') {
-        const response = await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            entity: 'task',
-            payload: {
-              company_id: activeCompanyId,
-              title: taskDescription.trim(),
-              priority: taskPriority,
-              assigned_to: taskAssigneeId.trim() || null,
-              created_by:
-                currentUserId && currentUserId !== 'default-workspace-node'
-                  ? currentUserId
-                  : null,
-              status: 'new',
-            },
-          }),
-        });
-
-        const result = await response.json();
-        if (!response.ok || !result.ok) {
-          const errMsg = result.error || 'Не удалось создать задачу.';
-          setStatusMessage({ type: 'error', text: errMsg });
-          notifyError(errMsg);
-          return;
-        }
-
-        if (onTaskCreated && result.data) {
-          onTaskCreated(result.data as TaskRecord);
-        }
-
-        setStatusMessage({
-          type: 'success',
-          text: taskAssigneeId
-            ? `Задача «${result.data.title}» создана и отправлена исполнителю в Telegram.`
-            : `Задача «${result.data.title}» добавлена в рабочее пространство.`,
-        });
-        resetCurrentTabFields('task');
-      }
-
-      // 3. Вкладка "Сотрудник" -> POST /api/db (organization_nodes)
-      if (activeTab === 'employee') {
-        const response = await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            entity: 'employee',
-            payload: {
-              company_id: activeCompanyId,
-              name: employeeName.trim(),
-              telegram_chat_id: employeeTelegramId.trim(),
-              role_type: employeeRole,
-            },
-          }),
-        });
-
-        const result = await response.json();
-        if (!response.ok || !result.ok) {
-          const errMsg = result.error || 'Не удалось добавить сотрудника.';
-          setStatusMessage({ type: 'error', text: errMsg });
-          notifyError(errMsg);
-          return;
-        }
-
-        if (onEmployeeCreated && result.data) {
-          onEmployeeCreated(result.data as OrganizationNode);
-        }
-
-        setStatusMessage({
-          type: 'success',
-          text: `Сотрудник «${result.data.name}» успешно добавлен в команду.`,
-        });
-        resetCurrentTabFields('employee');
-      }
-    } catch (error: any) {
-      const errMsg =
-        error?.message || 'Ошибка соединения с сервером. Повторите попытку.';
-      setStatusMessage({
-        type: 'error',
-        text: errMsg,
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table: type, payload }),
       });
-      notifyError(errMsg);
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+      }
+
+      const pushSent = Boolean(result.telegramPush?.pushed);
+      await onSuccess(pushSent);
+
+      if (type === 'organization_nodes') {
+        const finalCode = result.data?.invite_code || payload.invite_code;
+        const cleanBot = botUsername.replace(/^@/, '').trim() || 'TedCloudEnterpriseBot';
+        setCreatedEmployeeInvite({
+          name: payload.name,
+          roleTitle: payload.role_type,
+          inviteCode: finalCode,
+          deepLink: `https://t.me/${cleanBot}?start=${finalCode}`,
+        });
+        return;
+      }
+
+      onClose();
+    } catch (err: any) {
+      console.error(`[AddRecordModal] Failed to insert into ${type}:`, err);
+      setErrorMessage(err?.message || String(err));
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="add-record-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs font-sans"
-    >
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-xl p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2
-              id="add-record-modal-title"
-              className="text-base font-semibold tracking-tight text-slate-900"
+  if (createdEmployeeInvite) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans">
+        <div className="w-full max-w-lg rounded-xl border border-[#262626] bg-[#121212] shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#262626]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-[#1F1F1F] border border-[#2E2E2E] flex items-center justify-center">
+                <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
+              <h3 className="text-sm font-semibold text-white tracking-tight">
+                {t('invite.modalTitle')}
+              </h3>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-[#8E8E93] hover:text-white transition-colors p-1 rounded-lg hover:bg-[#1F1F1F]"
             >
-              Новая запись TedCloud
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Выберите тип записи для добавления в рабочее пространство
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-4">
+            <p className="text-xs text-[#A1A1AA] leading-relaxed">
+              {t('invite.modalSubtitle')}
             </p>
+
+            <div className="rounded-lg border border-[#262626] bg-[#171717] p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider">
+                  {t('invite.codeLabel')}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white font-semibold bg-[#242424] px-2.5 py-1 rounded border border-[#333333] whitespace-nowrap">
+                    {createdEmployeeInvite.inviteCode}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyText(createdEmployeeInvite.inviteCode, 'code')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#242424] hover:bg-[#2E2E2E] text-xs text-white transition-colors"
+                  >
+                    {copiedField === 'code' ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span>{t('invite.copied')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>{t('invite.copyCode')}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider mb-1.5">
+                  {t('invite.deepLinkLabel')}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={createdEmployeeInvite.deepLink}
+                    className="w-full rounded-lg border border-[#2A2A2A] bg-[#0D0D0D] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => copyText(createdEmployeeInvite.deepLink, 'link')}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white text-black hover:bg-[#E4E4E7] transition-colors whitespace-nowrap"
+                  >
+                    {copiedField === 'link' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{t('invite.copied')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{t('invite.copyLink')}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#262626] bg-[#141414] p-3.5 space-y-1.5 text-xs text-[#A1A1AA]">
+              <p>{t('invite.step1')}</p>
+              <p>{t('invite.step2')}</p>
+              <p className="text-[#E4E4E7] font-medium">{t('invite.step3')}</p>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <a
+                href={createdEmployeeInvite.deepLink}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA] hover:text-white transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Telegram</span>
+              </a>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-white text-black hover:bg-[#E4E4E7] transition-colors"
+              >
+                {t('invite.close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans overflow-y-auto">
+      <div className="w-full max-w-lg rounded-xl border border-[#262626] bg-[#121212] shadow-2xl overflow-hidden my-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#262626]">
+          <div className="flex items-center gap-2.5">
+            {type === 'tasks' && <CheckSquare className="w-4 h-4 text-[#EDEDED]" />}
+            {type === 'organization_nodes' && <UserPlus className="w-4 h-4 text-[#EDEDED]" />}
+            {type === 'crm_leads' && <Briefcase className="w-4 h-4 text-[#EDEDED]" />}
+            <h3 className="text-sm font-semibold text-white tracking-tight">
+              {type === 'tasks' && t('modal.newTaskTitle')}
+              {type === 'organization_nodes' && t('modal.newEmployeeTitle')}
+              {type === 'crm_leads' && t('modal.newDealTitle')}
+            </h3>
           </div>
           <button
-            type="button"
             onClick={onClose}
-            aria-label="Закрыть модальное окно"
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="text-[#8E8E93] hover:text-white transition-colors p-1 rounded-lg hover:bg-[#1F1F1F]"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div
-          role="tablist"
-          aria-label="Тип создаваемой записи"
-          className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl text-xs font-medium"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'deal'}
-            onClick={() => {
-              setActiveTab('deal');
-              setStatusMessage(null);
-            }}
-            className={`py-2 rounded-lg transition-all duration-200 cursor-pointer ${
-              activeTab === 'deal'
-                ? 'bg-white text-slate-900 font-semibold shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Сделка
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'task'}
-            onClick={() => {
-              setActiveTab('task');
-              setStatusMessage(null);
-            }}
-            className={`py-2 rounded-lg transition-all duration-200 cursor-pointer ${
-              activeTab === 'task'
-                ? 'bg-white text-slate-900 font-semibold shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Задача
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'employee'}
-            onClick={() => {
-              setActiveTab('employee');
-              setStatusMessage(null);
-            }}
-            className={`py-2 rounded-lg transition-all duration-200 cursor-pointer ${
-              activeTab === 'employee'
-                ? 'bg-white text-slate-900 font-semibold shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Сотрудник
-          </button>
-        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {errorMessage && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">{errorMessage}</div>
+            </div>
+          )}
 
-        {statusMessage && (
-          <div
-            role="alert"
-            className={`p-3 rounded-xl border text-xs font-medium flex items-start gap-2.5 ${
-              statusMessage.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}
-          >
-            {statusMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            )}
-            <span className="leading-relaxed">{statusMessage.text}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {activeTab === 'deal' && (
+          {type === 'tasks' && (
             <>
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="deal-client-name"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Название клиента
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.taskTitleLabel')}
                 </label>
                 <input
-                  id="deal-client-name"
                   type="text"
                   required
-                  disabled={isLoading}
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  placeholder="Например: ООО ТехноЛогистика"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  placeholder={t('modal.taskTitlePlaceholder')}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="deal-amount"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Сумма сделки (₽)
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.taskTypeLabel')}
+                  </label>
+                  <select
+                    value={taskType}
+                    onChange={(e) => setTaskType(e.target.value)}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                  >
+                    <option value="Task">{t('type.Task')}</option>
+                    <option value="Bug">{t('type.Bug')}</option>
+                    <option value="Epic">{t('type.Epic')}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.taskPriorityLabel')}
+                  </label>
+                  <select
+                    value={taskPriority}
+                    onChange={(e) => setTaskPriority(e.target.value as TaskPriority)}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                  >
+                    <option value="Low">{t('priority.Low')}</option>
+                    <option value="Medium">{t('priority.Medium')}</option>
+                    <option value="High">{t('priority.High')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.taskStatusLabel')}
+                  </label>
+                  <select
+                    value={taskStatus}
+                    onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                  >
+                    <option value="Todo">{t('status.Todo')}</option>
+                    <option value="In Progress">{t('status.In Progress')}</option>
+                    <option value="Done">{t('status.Done')}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.taskAssigneeLabel')}
+                  </label>
+                  <select
+                    value={taskAssignedTo}
+                    onChange={(e) => setTaskAssignedTo(e.target.value)}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                  >
+                    <option value="">{t('tasks.unassigned')}</option>
+                    {nodes.map((node) => (
+                      <option key={node.id} value={node.id}>
+                        {node.name} — {node.role_type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+
+          {type === 'organization_nodes' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.empNameLabel')}
                 </label>
                 <input
-                  id="deal-amount"
-                  type="number"
-                  min="0"
-                  step="any"
+                  type="text"
                   required
-                  disabled={isLoading}
-                  value={dealAmount}
-                  onChange={(e) => setDealAmount(e.target.value)}
-                  placeholder="150000"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
+                  value={empName}
+                  onChange={(e) => setEmpName(e.target.value)}
+                  placeholder={t('modal.empNamePlaceholder')}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="deal-contacts"
-                  className="block text-xs font-medium text-slate-700"
+              {/* Свободный ввод должности и подразделения (БЛОК 1) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.empRoleLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={empRoleTitle}
+                    onChange={(e) => setEmpRoleTitle(e.target.value)}
+                    placeholder={t('modal.empRolePlaceholder')}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.empDeptLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    value={empDepartment}
+                    onChange={(e) => setEmpDepartment(e.target.value)}
+                    placeholder={t('modal.empDeptPlaceholder')}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Уровень системного допуска (access_level) */}
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.empAccessLabel')}
+                </label>
+                <select
+                  value={empAccessLevel}
+                  onChange={(e) => handleAccessLevelChange(e.target.value as AccessLevel)}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
                 >
-                  Контакт клиента
+                  <option value="root">{t('access.root')}</option>
+                  <option value="manager">{t('access.manager')}</option>
+                  <option value="member">{t('access.member')}</option>
+                  <option value="viewer">{t('access.viewer')}</option>
+                </select>
+              </div>
+
+              {/* Интерактивные чекбоксы индивидуальных прав (permissions JSON) */}
+              <div className="rounded-lg border border-[#262626] bg-[#161618] p-3.5 space-y-2.5">
+                <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{t('perm.title')}</span>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  {(
+                    [
+                      ['canAssignTasks', t('perm.canAssignTasks')],
+                      ['canManageCrm', t('perm.canManageCrm')],
+                      ['canManageTeam', t('perm.canManageTeam')],
+                      ['canDeleteAndSettings', t('perm.canDeleteAndSettings')],
+                    ] as [keyof EmployeePermissions, string][]
+                  ).map(([permKey, label]) => (
+                    <label
+                      key={permKey}
+                      className="flex items-center gap-2.5 text-xs text-[#D4D4D8] cursor-pointer select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={empPermissions[permKey]}
+                        onChange={() => togglePermission(permKey)}
+                        className="w-4 h-4 rounded border-[#3F3F46] bg-[#0D0D0F] text-white focus:ring-0"
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.empEmailLabel')}
+                  </label>
+                  <input
+                    type="email"
+                    value={empEmail}
+                    onChange={(e) => setEmpEmail(e.target.value)}
+                    placeholder="user@company.ru"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.empTgLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    value={empTelegramId}
+                    onChange={(e) => setEmpTelegramId(e.target.value)}
+                    placeholder="ID"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {type === 'crm_leads' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.dealClientLabel')}
                 </label>
                 <input
-                  id="deal-contacts"
                   type="text"
                   required
-                  disabled={isLoading}
-                  value={clientContacts}
-                  onChange={(e) => setClientContacts(e.target.value)}
-                  placeholder="+7 (999) 000-00-00 или @telegram_username"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
+                  value={leadClientName}
+                  onChange={(e) => setLeadClientName(e.target.value)}
+                  placeholder={t('modal.dealClientPlaceholder')}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.dealTitleLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={leadTitle}
+                  onChange={(e) => setLeadTitle(e.target.value)}
+                  placeholder={t('modal.dealTitlePlaceholder')}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.dealAmountLabel')} ({currency})
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="1000"
+                    value={leadAmount}
+                    onChange={(e) => setLeadAmount(e.target.value)}
+                    placeholder="500000"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.dealStageLabel')}
+                  </label>
+                  <select
+                    value={leadStatus}
+                    onChange={(e) => setLeadStatus(e.target.value as CrmLeadStatus)}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                  >
+                    <option value="New">{t('stage.New')}</option>
+                    <option value="Negotiation">{t('stage.Negotiation')}</option>
+                    <option value="Won">{t('stage.Won')}</option>
+                    <option value="Lost">{t('stage.Lost')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.dealContactLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={leadContact}
+                  onChange={(e) => setLeadContact(e.target.value)}
+                  placeholder={t('modal.dealContactPlaceholder')}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                 />
               </div>
             </>
           )}
 
-          {activeTab === 'task' && (
-            <>
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="task-description"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Описание задачи
-                </label>
-                <textarea
-                  id="task-description"
-                  rows={3}
-                  required
-                  disabled={isLoading}
-                  value={taskDescription}
-                  onChange={(e) => setTaskDescription(e.target.value)}
-                  placeholder="Опишите задачу, которую необходимо выполнить..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="task-priority"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Приоритет
-                </label>
-                <select
-                  id="task-priority"
-                  disabled={isLoading}
-                  value={taskPriority}
-                  onChange={(e) =>
-                    setTaskPriority(e.target.value as TaskPriorityType)
-                  }
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
-                >
-                  {PRIORITY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="task-assignee"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Исполнитель (отправит Push-уведомление в Telegram)
-                </label>
-                <select
-                  id="task-assignee"
-                  disabled={isLoading}
-                  value={taskAssigneeId}
-                  onChange={(e) => setTaskAssigneeId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
-                >
-                  <option value="">Не назначено (общая очередь)</option>
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.role_type})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
-          )}
-
-          {activeTab === 'employee' && (
-            <>
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="employee-name"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Имя и фамилия
-                </label>
-                <input
-                  id="employee-name"
-                  type="text"
-                  required
-                  disabled={isLoading}
-                  value={employeeName}
-                  onChange={(e) => setEmployeeName(e.target.value)}
-                  placeholder="Введите имя и фамилию сотрудника"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="employee-telegram-id"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Telegram Chat ID
-                </label>
-                <input
-                  id="employee-telegram-id"
-                  type="text"
-                  required
-                  disabled={isLoading}
-                  value={employeeTelegramId}
-                  onChange={(e) => setEmployeeTelegramId(e.target.value)}
-                  placeholder="Например: 123456789"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="employee-role"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Роль в организации
-                </label>
-                <select
-                  id="employee-role"
-                  disabled={isLoading}
-                  value={employeeRole}
-                  onChange={(e) =>
-                    setEmployeeRole(e.target.value as OrganizationRoleType)
-                  }
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
-                >
-                  {EMPLOYEE_ROLE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
-          )}
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2.5 pt-2">
             <button
               type="button"
-              disabled={isLoading}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              disabled={isSubmitting}
+              className="px-3.5 py-2 rounded-lg text-xs font-medium text-[#A1A1AA] hover:text-white hover:bg-[#1F1F1F] transition-colors"
             >
-              Отмена
+              {t('modal.cancel')}
             </button>
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 shadow-xs transition-all duration-200 cursor-pointer"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-white text-black hover:bg-[#E5E5E5] disabled:opacity-50 transition-colors"
             >
-              {isLoading
-                ? 'Сохранение...'
-                : activeTab === 'deal'
-                ? 'Сохранить сделку'
-                : activeTab === 'task'
-                ? 'Создать задачу'
-                : 'Добавить сотрудника'}
+              {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>{isSubmitting ? t('modal.saving') : t('modal.submit')}</span>
             </button>
           </div>
         </form>

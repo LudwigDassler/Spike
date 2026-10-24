@@ -157,7 +157,7 @@ export async function handleTelegramWebhookUpdate(
       inline_keyboard: [
         [
           {
-            text: '🚀 Открыть рабочее пространство',
+            text: 'Открыть рабочее пространство',
             web_app: {
               url: targetWebAppUrl,
             },
