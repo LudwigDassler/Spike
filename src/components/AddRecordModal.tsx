@@ -1,13 +1,6 @@
-'use client';
-
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, X } from 'lucide-react';
-import {
-  createDealAction,
-  createEmployeeAction,
-  createTaskAction,
-} from '../app/actions';
-import {
+import type {
   CrmLeadRecord,
   OrganizationNode,
   OrganizationRoleType,
@@ -33,6 +26,7 @@ const EMPLOYEE_ROLE_OPTIONS: Array<{
   value: OrganizationRoleType;
   label: string;
 }> = [
+  { value: 'SUPERADMIN', label: 'SUPERADMIN (Суперадминистратор)' },
   { value: 'Owner', label: 'Owner (Владелец компании)' },
   { value: 'Manager', label: 'Manager (Руководитель направления)' },
   { value: 'Specialist', label: 'Specialist (Линейный специалист)' },
@@ -46,12 +40,12 @@ const PRIORITY_OPTIONS: Array<{ value: TaskPriorityType; label: string }> = [
   { value: 'critical', label: 'Критический (Critical)' },
 ];
 
-function triggerSystemAlert(message: string) {
+function notifyError(message: string) {
   if (typeof window !== 'undefined' && typeof window.alert === 'function') {
     try {
       window.alert(message);
     } catch {
-      // Игнорируем блокировку window.alert в песочнице iframe
+      // Игнорируем блокировку window.alert в iframe
     }
   }
 }
@@ -127,51 +121,75 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Вкладка "Сделка" -> вызов Server Action createDealAction (без Optimistic UI)
+      // 1. Вкладка "Сделка" -> POST /api/db (entity: 'deal')
       if (activeTab === 'deal') {
-        const result = await createDealAction({
-          company_id: activeCompanyId,
-          owner_node_id: currentUserId || null,
-          full_name: clientName,
-          deal_value: Number(dealAmount) || 0,
-          phone: clientContacts,
+        const response = await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entity: 'deal',
+            payload: {
+              company_id: activeCompanyId,
+              owner_node_id:
+                currentUserId && currentUserId !== 'default-workspace-node'
+                  ? currentUserId
+                  : null,
+              full_name: clientName.trim(),
+              deal_value: Number(dealAmount) || 0,
+              phone: clientContacts.trim() || null,
+            },
+          }),
         });
 
-        if (result.success === false) {
-          setStatusMessage({ type: 'error', text: result.error });
-          triggerSystemAlert(result.error);
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          const errMsg = result.error || 'Не удалось сохранить сделку в БД.';
+          setStatusMessage({ type: 'error', text: errMsg });
+          notifyError(errMsg);
           return;
         }
 
-        if (onLeadCreated) {
-          onLeadCreated(result.data);
+        if (onLeadCreated && result.data) {
+          onLeadCreated(result.data as CrmLeadRecord);
         }
 
         setStatusMessage({
           type: 'success',
-          text: `Успешно: Сделка «${result.data.full_name}» записана в БД (ID: ${result.data.id}).`,
+          text: `Успешно: Сделка «${result.data.full_name}» сохранена в БД (ID: ${result.data.id}).`,
         });
         resetCurrentTabFields('deal');
       }
 
-      // 2. Вкладка "Задача" -> вызов Server Action createTaskAction (без Optimistic UI)
+      // 2. Вкладка "Задача" -> POST /api/db (entity: 'task')
       if (activeTab === 'task') {
-        const result = await createTaskAction({
-          company_id: activeCompanyId,
-          title: taskDescription,
-          priority: taskPriority,
-          assigned_to: taskAssigneeId || null,
-          created_by: currentUserId || null,
+        const response = await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entity: 'task',
+            payload: {
+              company_id: activeCompanyId,
+              title: taskDescription.trim(),
+              priority: taskPriority,
+              assigned_to: taskAssigneeId.trim() || null,
+              created_by:
+                currentUserId && currentUserId !== 'default-workspace-node'
+                  ? currentUserId
+                  : null,
+            },
+          }),
         });
 
-        if (result.success === false) {
-          setStatusMessage({ type: 'error', text: result.error });
-          triggerSystemAlert(result.error);
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          const errMsg = result.error || 'Не удалось сохранить задачу в БД.';
+          setStatusMessage({ type: 'error', text: errMsg });
+          notifyError(errMsg);
           return;
         }
 
-        if (onTaskCreated) {
-          onTaskCreated(result.data);
+        if (onTaskCreated && result.data) {
+          onTaskCreated(result.data as TaskRecord);
         }
 
         setStatusMessage({
@@ -181,23 +199,33 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         resetCurrentTabFields('task');
       }
 
-      // 3. Вкладка "Сотрудник" -> вызов Server Action createEmployeeAction (без Optimistic UI)
+      // 3. Вкладка "Сотрудник" -> POST /api/db (entity: 'employee')
       if (activeTab === 'employee') {
-        const result = await createEmployeeAction({
-          company_id: activeCompanyId,
-          name: employeeName,
-          telegram_chat_id: employeeTelegramId,
-          role_type: employeeRole,
+        const response = await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entity: 'employee',
+            payload: {
+              company_id: activeCompanyId,
+              name: employeeName.trim(),
+              telegram_chat_id: employeeTelegramId.trim(),
+              role_type: employeeRole,
+            },
+          }),
         });
 
-        if (result.success === false) {
-          setStatusMessage({ type: 'error', text: result.error });
-          triggerSystemAlert(result.error);
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          const errMsg =
+            result.error || 'Не удалось добавить сотрудника в БД.';
+          setStatusMessage({ type: 'error', text: errMsg });
+          notifyError(errMsg);
           return;
         }
 
-        if (onEmployeeCreated) {
-          onEmployeeCreated(result.data);
+        if (onEmployeeCreated && result.data) {
+          onEmployeeCreated(result.data as OrganizationNode);
         }
 
         setStatusMessage({
@@ -208,12 +236,12 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       }
     } catch (error: any) {
       const errMsg =
-        error?.message || 'Критическая ошибка при обращении к серверу.';
+        error?.message || 'Ошибка соединения с серверным шлюзом /api/db.';
       setStatusMessage({
         type: 'error',
         text: errMsg,
       });
-      triggerSystemAlert(errMsg);
+      notifyError(errMsg);
     } finally {
       setIsLoading(false);
     }
@@ -227,17 +255,16 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs font-sans"
     >
       <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-md p-6 space-y-5">
-        {/* Шапка модального окна */}
         <div className="flex items-center justify-between">
           <div>
             <h2
               id="add-record-modal-title"
               className="text-base font-semibold tracking-tight text-slate-900"
             >
-              Новая запись TedCloud (Server Actions)
+              Новая запись TedCloud
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Строгая серверная запись в Supabase с обходом RLS (без Optimistic UI)
+              Прямая запись через серверный шлюз /api/db (Vercel Serverless)
             </p>
           </div>
           <button
@@ -250,7 +277,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           </button>
         </div>
 
-        {/* Переключатель вкладок ("Сделка", "Задача", "Сотрудник") */}
         <div
           role="tablist"
           aria-label="Тип создаваемой записи"
@@ -306,7 +332,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           </button>
         </div>
 
-        {/* Статус ответа от Server Action */}
         {statusMessage && (
           <div
             role="alert"
@@ -325,7 +350,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           </div>
         )}
 
-        {/* Динамическая форма по активной вкладке */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {activeTab === 'deal' && (
             <>
@@ -526,7 +550,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
             </>
           )}
 
-          {/* Кнопки действий */}
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
             <button
               type="button"
@@ -542,7 +565,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 shadow-xs transition-all duration-200 cursor-pointer"
             >
               {isLoading
-                ? 'Выполнение Server Action...'
+                ? 'Сохранение в /api/db...'
                 : activeTab === 'deal'
                 ? 'Сохранить сделку'
                 : activeTab === 'task'

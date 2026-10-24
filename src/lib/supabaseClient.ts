@@ -12,24 +12,32 @@ export interface OrganizationNodeRecord {
   updated_at?: string;
 }
 
-const getEnvVar = (viteKey: string, nextKey: string): string => {
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    const val = (import.meta.env as Record<string, string | undefined>)[viteKey] ||
-      (import.meta.env as Record<string, string | undefined>)[nextKey];
-    if (val) return val;
-  }
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env[nextKey] || process.env[viteKey] || '';
-  }
-  return '';
-};
+const supabaseUrl =
+  (typeof import.meta !== 'undefined' &&
+    import.meta.env &&
+    (import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
+      import.meta.env.VITE_SUPABASE_URL)) ||
+  (typeof process !== 'undefined' &&
+    process.env &&
+    (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL)) ||
+  '';
 
-const supabaseUrl = getEnvVar('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY');
+const supabaseAnonKey =
+  (typeof import.meta !== 'undefined' &&
+    import.meta.env &&
+    (import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      import.meta.env.VITE_SUPABASE_ANON_KEY)) ||
+  (typeof process !== 'undefined' &&
+    process.env &&
+    (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.VITE_SUPABASE_ANON_KEY)) ||
+  '';
 
 /**
- * Инициализированный клиент @supabase/supabase-js.
- * Если переменные окружения ещё не заданы, возвращает null для безопасного демо-режима.
+ * Клиентский экземпляр @supabase/supabase-js (использует публичный ключ).
+ * Все критические чтения и записи выполняются через серверный шлюз `/api/db` с SUPABASE_SERVICE_ROLE_KEY.
  */
 export const supabase: SupabaseClient | null =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;

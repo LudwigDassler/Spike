@@ -1,9 +1,6 @@
-'use client';
-
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ShieldAlert } from 'lucide-react';
-import { supabase as defaultSupabaseClient } from '../lib/supabaseClient';
 import { Company, OrganizationNode, OrganizationRoleType } from '../types/database';
 
 export interface TelegramWebAppUser {
@@ -61,7 +58,7 @@ const TelegramAuthContext = createContext<TelegramAuthContextValue | undefined>(
 
 /**
  * Провайдер бесшовной авторизации (Zero-Password Auth) для TedCloud.
- * Роль и компания пользователя определяются строго из БД Supabase (`organization_nodes` + `companies`).
+ * Проверяет пользователя через серверный шлюз `/api/db?telegram_chat_id=...`.
  */
 export const TelegramAuthProvider: React.FC<{
   children: React.ReactNode;
@@ -107,19 +104,52 @@ export const TelegramAuthProvider: React.FC<{
           setTelegramId(resolvedTgId);
         }
 
-        const activeSupabase =
-          supabaseClient !== undefined ? supabaseClient : defaultSupabaseClient;
+        if (resolvedTgId) {
+          if (supabaseClient) {
+            const { data, error } = await supabaseClient
+              .from('organization_nodes')
+              .select(
+                'id, company_id, name, role_type, tree_path, telegram_chat_id, kpi_value, companies(id, name, subscription_status, created_at)'
+              )
+              .eq('telegram_chat_id', resolvedTgId)
+              .maybeSingle();
 
-        if (resolvedTgId && activeSupabase) {
-          const { data, error } = await activeSupabase
-            .from('organization_nodes')
-            .select(
-              'id, company_id, name, role_type, tree_path, telegram_chat_id, kpi_value, companies(id, name, subscription_status, created_at)'
-            )
-            .eq('telegram_chat_id', resolvedTgId)
-            .maybeSingle();
+            if (error || !data) {
+              if (isMounted) setIsUnauthorized(true);
+              return;
+            }
 
-          if (error || !data) {
+            if (isMounted) {
+              const resolvedRole =
+                (data.role_type as OrganizationRoleType) || 'SUPERADMIN';
+              setUserNode({
+                id: String(data.id),
+                company_id: data.company_id ? String(data.company_id) : null,
+                name: String(data.name),
+                role_type: resolvedRole,
+                tree_path: String(data.tree_path || 'tedcloud'),
+                telegram_chat_id: String(data.telegram_chat_id || resolvedTgId),
+                kpi_value: Number(data.kpi_value) || 0,
+              });
+              const joinedCompanies = (
+                data as { companies?: Company | Company[] | null }
+              ).companies;
+              setCompany(
+                Array.isArray(joinedCompanies)
+                  ? joinedCompanies[0] ?? null
+                  : joinedCompanies ?? null
+              );
+              setIsUnauthorized(false);
+            }
+            return;
+          }
+
+          const res = await fetch(
+            `/api/db?telegram_chat_id=${encodeURIComponent(resolvedTgId)}`
+          );
+          const result = await res.json();
+
+          if (!res.ok || !result.ok || !result.node) {
             if (isMounted) {
               setIsUnauthorized(true);
             }
@@ -127,29 +157,18 @@ export const TelegramAuthProvider: React.FC<{
           }
 
           if (isMounted) {
-            const resolvedRole =
-              (data.role_type as OrganizationRoleType) || 'NETWORK_PARTNER';
-            const nodeRecord: OrganizationNode = {
-              id: String(data.id),
-              company_id: data.company_id ? String(data.company_id) : null,
-              name: String(data.name),
-              role_type: resolvedRole,
-              tree_path: String(data.tree_path || 'tedcloud'),
-              telegram_chat_id: data.telegram_chat_id
-                ? String(data.telegram_chat_id)
-                : resolvedTgId,
-              kpi_value: Number(data.kpi_value) || 0,
-            };
-
-            const joinedCompanies = (
-              data as { companies?: Company | Company[] | null }
-            ).companies;
-            const resolvedCompany = Array.isArray(joinedCompanies)
-              ? joinedCompanies[0] ?? null
-              : joinedCompanies ?? null;
-
-            setUserNode(nodeRecord);
-            setCompany(resolvedCompany);
+            const node = result.node;
+            setUserNode({
+              id: String(node.id),
+              company_id: node.company_id ? String(node.company_id) : null,
+              name: String(node.name),
+              role_type:
+                (node.role_type as OrganizationRoleType) || 'SUPERADMIN',
+              tree_path: String(node.tree_path || 'tedcloud'),
+              telegram_chat_id: String(node.telegram_chat_id || resolvedTgId),
+              kpi_value: Number(node.kpi_value) || 0,
+            });
+            setCompany((result.company as Company) || null);
             setIsUnauthorized(false);
           }
         }
@@ -204,7 +223,7 @@ export const TelegramAuthProvider: React.FC<{
               <span className="font-semibold text-slate-900">
                 {telegramId ?? 'неизвестен'}
               </span>
-              . Передайте его администратору.
+              . Нажмите /start в Telegram-боте для регистрации.
             </p>
           </div>
         </div>

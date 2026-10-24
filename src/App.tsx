@@ -10,7 +10,6 @@ import {
   TelegramAuthProvider,
   useTelegramAuth,
 } from './components/TelegramAuthProvider';
-import { supabase } from './lib/supabaseClient';
 import {
   Company,
   CrmLeadRecord,
@@ -38,54 +37,26 @@ function WorkspaceContent() {
   } | null>(null);
 
   const fetchDatabaseEntities = useCallback(async () => {
-    if (!supabase) return;
     setIsLoading(true);
     try {
-      const [companiesRes, nodesRes, leadsRes, tasksRes] = await Promise.all([
-        supabase
-          .from('companies')
-          .select('id, name, subscription_status, created_at')
-          .order('created_at', { ascending: false })
-          .limit(1),
-        supabase
-          .from('organization_nodes')
-          .select(
-            'id, company_id, name, role_type, tree_path, telegram_chat_id, kpi_value, created_at'
-          )
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('crm_leads')
-          .select(
-            'id, company_id, owner_node_id, full_name, phone, telegram_chat_id, stage, description, deal_value, created_at'
-          )
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('tasks')
-          .select(
-            'id, company_id, type, title, status, priority, assigned_to, created_by, due_date, created_at'
-          )
-          .order('created_at', { ascending: false }),
-      ]);
+      const response = await fetch('/api/db', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
 
-      if (!companiesRes.error && companiesRes.data?.[0]) {
-        setCompany(companiesRes.data[0] as Company);
-      }
-      if (nodesRes.error) {
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
         throw new Error(
-          `Ошибка чтения organization_nodes: ${nodesRes.error.message}`
+          result.error || 'Не удалось загрузить данные из /api/db.'
         );
       }
-      setNodes((nodesRes.data as OrganizationNode[]) || []);
 
-      if (leadsRes.error) {
-        throw new Error(`Ошибка чтения crm_leads: ${leadsRes.error.message}`);
+      if (result.company) {
+        setCompany(result.company as Company);
       }
-      setLeads((leadsRes.data as CrmLeadRecord[]) || []);
-
-      if (tasksRes.error) {
-        throw new Error(`Ошибка чтения tasks: ${tasksRes.error.message}`);
-      }
-      setTasks((tasksRes.data as TaskRecord[]) || []);
+      setNodes((result.nodes as OrganizationNode[]) || []);
+      setLeads((result.leads as CrmLeadRecord[]) || []);
+      setTasks((result.tasks as TaskRecord[]) || []);
     } catch (error) {
       setFeedbackBanner({
         type: 'error',
@@ -108,14 +79,18 @@ function WorkspaceContent() {
 
   const handleUpdateLeadStage = async (leadId: string, nextStage: LeadStage) => {
     try {
-      if (!supabase) {
-        throw new Error('Клиент Supabase не инициализирован.');
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_lead_stage',
+          payload: { id: leadId, stage: nextStage },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Ошибка обновления стадии сделки');
       }
-      const { error } = await supabase
-        .from('crm_leads')
-        .update({ stage: nextStage })
-        .eq('id', leadId);
-      if (error) throw new Error(error.message);
 
       setLeads((prev) =>
         prev.map((l) => (l.id === leadId ? { ...l, stage: nextStage } : l))
@@ -130,14 +105,18 @@ function WorkspaceContent() {
 
   const handleDeleteLead = async (leadId: string) => {
     try {
-      if (!supabase) {
-        throw new Error('Клиент Supabase не инициализирован.');
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_lead',
+          payload: { id: leadId },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Ошибка удаления сделки');
       }
-      const { error } = await supabase
-        .from('crm_leads')
-        .delete()
-        .eq('id', leadId);
-      if (error) throw new Error(error.message);
 
       setLeads((prev) => prev.filter((l) => l.id !== leadId));
     } catch (error) {
@@ -151,14 +130,18 @@ function WorkspaceContent() {
   const handleToggleTaskDone = async (task: TaskRecord) => {
     const nextStatus = task.status === 'done' ? 'new' : 'done';
     try {
-      if (!supabase) {
-        throw new Error('Клиент Supabase не инициализирован.');
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle_task',
+          payload: { id: task.id, status: nextStatus },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Ошибка обновления задачи');
       }
-      const { error } = await supabase
-        .from('tasks')
-        .update({ status: nextStatus })
-        .eq('id', task.id);
-      if (error) throw new Error(error.message);
 
       setTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus } : t))
@@ -173,14 +156,18 @@ function WorkspaceContent() {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      if (!supabase) {
-        throw new Error('Клиент Supabase не инициализирован.');
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_task',
+          payload: { id: taskId },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Ошибка удаления задачи');
       }
-      const { error } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', taskId);
-      if (error) throw new Error(error.message);
 
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
     } catch (error) {
@@ -193,14 +180,18 @@ function WorkspaceContent() {
 
   const handleDeleteNode = async (nodeId: string) => {
     try {
-      if (!supabase) {
-        throw new Error('Клиент Supabase не инициализирован.');
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_node',
+          payload: { id: nodeId },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Ошибка удаления сотрудника');
       }
-      const { error } = await supabase
-        .from('organization_nodes')
-        .delete()
-        .eq('id', nodeId);
-      if (error) throw new Error(error.message);
 
       setNodes((prev) => prev.filter((n) => n.id !== nodeId));
     } catch (error) {
@@ -258,7 +249,7 @@ function WorkspaceContent() {
           void fetchDatabaseEntities();
           setFeedbackBanner({
             type: 'success',
-            text: 'Успешно: Сотрудник добавлен в БД (organization_nodes)',
+            text: 'Успешно: Сотрудник добавлен в БД',
           });
         }}
         onDeleteNode={handleDeleteNode}

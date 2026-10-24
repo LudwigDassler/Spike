@@ -345,24 +345,24 @@ async function startServer() {
     }
   });
 
-  // 10. Telegram Webhook (/start) & Mini App Sync & Smart Push Deep Links
+  // 10. Vercel Serverless Function Gateways (/api/db, /api/telegram/webhook, /api/telegram/setup)
+  app.all('/api/db', async (req, res) => {
+    const { default: dbHandler } = await import('./api/db');
+    await dbHandler(req, res);
+  });
+
+  app.all('/api/telegram/setup', async (req, res) => {
+    const { default: setupHandler } = await import('./api/telegram/setup');
+    await setupHandler(req, res);
+  });
+
   const telegramWebhookHandler: express.RequestHandler = async (req, res) => {
-    try {
-      const { handleTelegramWebhookUpdate } = await import('./src/services/messengerService');
-      const result = await handleTelegramWebhookUpdate(req.body, {
-        botToken: process.env.TELEGRAM_BOT_TOKEN,
-        webAppUrl:
-          process.env.NEXT_PUBLIC_APP_URL ||
-          process.env.APP_URL ||
-          'https://app.tedcloud.ru',
-      });
-      res.status(200).json({ ok: true, ...result });
-    } catch (error) {
-      res.status(200).json({ ok: false, error: (error as Error).message });
-    }
+    const { default: webhookHandler } = await import('./api/telegram/webhook');
+    await webhookHandler(req, res);
   };
 
   app.post('/api/telegram/webhook', telegramWebhookHandler);
+  app.get('/api/telegram/webhook', telegramWebhookHandler);
   app.post('/api/webhook', telegramWebhookHandler);
 
   app.post('/api/telegram/sync-node', (req, res) => {
