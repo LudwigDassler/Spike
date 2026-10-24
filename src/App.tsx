@@ -77,23 +77,29 @@ function WorkspaceContent() {
     void fetchDatabaseEntities();
   }, [fetchDatabaseEntities]);
 
+  // PATCH /api/db: Обновление этапа воронки сделки (crm_leads)
   const handleUpdateLeadStage = async (leadId: string, nextStage: LeadStage) => {
     try {
       const response = await fetch('/api/db', {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'update_lead_stage',
-          payload: { id: leadId, stage: nextStage },
+          table: 'crm_leads',
+          id: leadId,
+          updates: { status: nextStage, stage: nextStage },
         }),
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {
-        throw new Error(result.error || 'Ошибка обновления стадии сделки');
+        throw new Error(result.error || 'Ошибка обновления этапа сделки');
       }
 
       setLeads((prev) =>
-        prev.map((l) => (l.id === leadId ? { ...l, stage: nextStage } : l))
+        prev.map((l) =>
+          l.id === leadId
+            ? { ...l, ...(result.data || {}), status: nextStage, stage: nextStage }
+            : l
+        )
       );
     } catch (error) {
       setFeedbackBanner({
@@ -103,14 +109,15 @@ function WorkspaceContent() {
     }
   };
 
+  // DELETE /api/db: Удаление сделки (crm_leads)
   const handleDeleteLead = async (leadId: string) => {
     try {
       const response = await fetch('/api/db', {
-        method: 'POST',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'delete_lead',
-          payload: { id: leadId },
+          table: 'crm_leads',
+          id: leadId,
         }),
       });
       const result = await response.json();
@@ -127,15 +134,19 @@ function WorkspaceContent() {
     }
   };
 
-  const handleToggleTaskDone = async (task: TaskRecord) => {
-    const nextStatus = task.status === 'done' ? 'new' : 'done';
+  // PATCH /api/db: Обновление status, priority или assigned_to у задачи (tasks)
+  const handleUpdateTask = async (
+    taskId: string,
+    updates: Partial<Pick<TaskRecord, 'status' | 'priority' | 'assigned_to'>>
+  ) => {
     try {
       const response = await fetch('/api/db', {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'toggle_task',
-          payload: { id: task.id, status: nextStatus },
+          table: 'tasks',
+          id: taskId,
+          updates,
         }),
       });
       const result = await response.json();
@@ -144,7 +155,9 @@ function WorkspaceContent() {
       }
 
       setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus } : t))
+        prev.map((t) =>
+          t.id === taskId ? { ...t, ...(result.data || updates) } : t
+        )
       );
     } catch (error) {
       setFeedbackBanner({
@@ -154,14 +167,20 @@ function WorkspaceContent() {
     }
   };
 
+  const handleToggleTaskDone = async (task: TaskRecord) => {
+    const nextStatus = task.status === 'done' ? 'new' : 'done';
+    await handleUpdateTask(task.id, { status: nextStatus });
+  };
+
+  // DELETE /api/db: Удаление задачи (tasks)
   const handleDeleteTask = async (taskId: string) => {
     try {
       const response = await fetch('/api/db', {
-        method: 'POST',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'delete_task',
-          payload: { id: taskId },
+          table: 'tasks',
+          id: taskId,
         }),
       });
       const result = await response.json();
@@ -178,14 +197,15 @@ function WorkspaceContent() {
     }
   };
 
+  // DELETE /api/db: Удаление сотрудника (organization_nodes)
   const handleDeleteNode = async (nodeId: string) => {
     try {
       const response = await fetch('/api/db', {
-        method: 'POST',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'delete_node',
-          payload: { id: nodeId },
+          table: 'organization_nodes',
+          id: nodeId,
         }),
       });
       const result = await response.json();
@@ -229,7 +249,7 @@ function WorkspaceContent() {
           void fetchDatabaseEntities();
           setFeedbackBanner({
             type: 'success',
-            text: 'Успешно: Сделка добавлена в БД',
+            text: 'Сделка успешно добавлена в воронку',
           });
         }}
         onUpdateLeadStage={handleUpdateLeadStage}
@@ -239,17 +259,18 @@ function WorkspaceContent() {
           void fetchDatabaseEntities();
           setFeedbackBanner({
             type: 'success',
-            text: 'Успешно: Задача добавлена в БД',
+            text: 'Задача успешно создана',
           });
         }}
         onToggleTaskDone={handleToggleTaskDone}
+        onUpdateTask={handleUpdateTask}
         onDeleteTask={handleDeleteTask}
         onEmployeeCreated={(employee) => {
           setNodes((prev) => [employee, ...prev]);
           void fetchDatabaseEntities();
           setFeedbackBanner({
             type: 'success',
-            text: 'Успешно: Сотрудник добавлен в БД',
+            text: 'Сотрудник успешно добавлен в команду',
           });
         }}
         onDeleteNode={handleDeleteNode}

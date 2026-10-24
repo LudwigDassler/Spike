@@ -100,8 +100,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // - NETWORK_PARTNER: Обзор, Воронка сделок, Задачи
   // - INTERNAL_IT: Обзор, Задачи, Сотрудники
   // - SUPERADMIN: полный доступ ко всем разделам
-  const canViewLeads = role === 'NETWORK_PARTNER' || role === 'SUPERADMIN';
-  const canViewTeam = role === 'INTERNAL_IT' || role === 'SUPERADMIN';
+  const canViewLeads = role !== 'INTERNAL_IT';
+  const canViewTeam = role !== 'NETWORK_PARTNER';
 
   const navItems: Array<{
     id: DashboardSection;

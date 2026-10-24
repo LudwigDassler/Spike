@@ -1,7 +1,5 @@
-'use client';
-
-import React from 'react';
-import { Menu, Plus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Menu, Plus, Send, ShieldCheck } from 'lucide-react';
 import { Company, DashboardSection } from '../types/database';
 import { TedCloudLogoMark } from './Sidebar';
 import { useTelegramAuth } from './TelegramAuthProvider';
@@ -21,22 +19,37 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenCreateModal,
   onOpenMobileSidebar,
 }) => {
-  const { role } = useTelegramAuth();
+  const { role, userName, telegramUser, telegramId } = useTelegramAuth();
+  const [isInsideTelegram, setIsInsideTelegram] = useState(false);
 
-  const canViewLeads = role === 'NETWORK_PARTNER' || role === 'SUPERADMIN';
-  const canViewTeam = role === 'INTERNAL_IT' || role === 'SUPERADMIN';
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+      setIsInsideTelegram(Boolean(window.Telegram.WebApp.initDataUnsafe?.user));
+    }
+  }, [telegramUser]);
+
+  const canViewLeads = role !== 'INTERNAL_IT';
+  const canViewTeam = role !== 'NETWORK_PARTNER';
 
   const navItems: Array<{ id: DashboardSection; label: string }> = [
     { id: 'overview', label: 'Обзор' },
     ...(canViewLeads ? [{ id: 'leads' as const, label: 'Сделки' }] : []),
-    { id: 'tasks', label: 'Активные задачи' },
+    { id: 'tasks', label: 'Задачи' },
     ...(canViewTeam ? [{ id: 'team' as const, label: 'Сотрудники' }] : []),
   ];
 
+  const displayTgName = telegramUser
+    ? [telegramUser.first_name, telegramUser.last_name]
+        .filter(Boolean)
+        .join(' ') ||
+      telegramUser.username ||
+      userName
+    : userName;
+
   return (
-    <header className="font-sans bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <header className="font-sans bg-white/95 backdrop-blur-xs border-b border-slate-200 sticky top-0 z-30">
       <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-4 px-4 md:px-6 py-3">
-        {/* Зона 1: Мобильный Гамбургер + Геометрический SVG логотип TedCloud */}
+        {/* Зона 1: Мобильный Гамбургер + Бренд TedCloud */}
         <div className="flex items-center gap-3 shrink-0">
           <button
             type="button"
@@ -69,10 +82,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Зона 2: Быстрая навигация по разделам (без тестовых кнопок ролей) */}
+        {/* Зона 2: Быстрая навигация в стиле Linear / Vercel */}
         <nav
           aria-label="Навигация рабочего пространства"
-          className="hidden md:flex items-center gap-1.5"
+          className="hidden md:flex items-center gap-1 p-1 bg-slate-100/80 rounded-xl border border-slate-200/60"
         >
           {navItems.map((item) => {
             const isActive = activeSection === item.id;
@@ -81,10 +94,10 @@ export const TopBar: React.FC<TopBarProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => onSelectSection(item.id)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer ${
                   isActive
-                    ? 'bg-emerald-600 text-white font-semibold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {item.label}
@@ -93,8 +106,32 @@ export const TopBar: React.FC<TopBarProps> = ({
           })}
         </nav>
 
-        {/* Зона 3: Универсальное действие "Добавить" */}
+        {/* Зона 3: Бейдж Telegram Mini App профиля + кнопка "Добавить" */}
         <div className="flex items-center gap-2.5 shrink-0">
+          {isInsideTelegram || telegramUser ? (
+            <div
+              title={`Авторизован через Telegram Mini App (ID: ${
+                telegramId || telegramUser?.id || '—'
+              })`}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-xs font-medium"
+            >
+              <Send className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+              <span className="truncate max-w-[140px] font-semibold">
+                {displayTgName}
+              </span>
+              {telegramUser?.username && (
+                <span className="hidden sm:inline text-sky-600">
+                  @{telegramUser.username}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="truncate max-w-[130px]">{userName}</span>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={onOpenCreateModal}

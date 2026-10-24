@@ -34,10 +34,9 @@ const EMPLOYEE_ROLE_OPTIONS: Array<{
 ];
 
 const PRIORITY_OPTIONS: Array<{ value: TaskPriorityType; label: string }> = [
-  { value: 'low', label: 'Низкий (Low)' },
-  { value: 'medium', label: 'Средний (Medium)' },
-  { value: 'high', label: 'Высокий (High)' },
-  { value: 'critical', label: 'Критический (Critical)' },
+  { value: 'Low', label: 'Низкий (Low)' },
+  { value: 'Medium', label: 'Средний (Medium)' },
+  { value: 'High', label: 'Высокий (High)' },
 ];
 
 function notifyError(message: string) {
@@ -45,7 +44,7 @@ function notifyError(message: string) {
     try {
       window.alert(message);
     } catch {
-      // Игнорируем блокировку window.alert в iframe
+      // Игнорируем блокировку window.alert в песочнице iframe
     }
   }
 }
@@ -72,17 +71,17 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     text: string;
   } | null>(null);
 
-  // Поля вкладки "Сделка" (crm_leads)
+  // Поля вкладки "Сделка" (crm_leads: client_name, amount, contact, status)
   const [clientName, setClientName] = useState<string>('');
   const [dealAmount, setDealAmount] = useState<string>('');
   const [clientContacts, setClientContacts] = useState<string>('');
 
-  // Поля вкладки "Задача" (tasks)
+  // Поля вкладки "Задача" (tasks: title, priority, assigned_to, status)
   const [taskDescription, setTaskDescription] = useState<string>('');
-  const [taskPriority, setTaskPriority] = useState<TaskPriorityType>('medium');
+  const [taskPriority, setTaskPriority] = useState<TaskPriorityType>('Medium');
   const [taskAssigneeId, setTaskAssigneeId] = useState<string>('');
 
-  // Поля вкладки "Сотрудник" (organization_nodes)
+  // Поля вкладки "Сотрудник" (organization_nodes: name, telegram_chat_id, role_type)
   const [employeeName, setEmployeeName] = useState<string>('');
   const [employeeTelegramId, setEmployeeTelegramId] = useState<string>('');
   const [employeeRole, setEmployeeRole] =
@@ -106,7 +105,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       setClientContacts('');
     } else if (tab === 'task') {
       setTaskDescription('');
-      setTaskPriority('medium');
+      setTaskPriority('Medium');
       setTaskAssigneeId('');
     } else if (tab === 'employee') {
       setEmployeeName('');
@@ -121,7 +120,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Вкладка "Сделка" -> POST /api/db (entity: 'deal')
+      // 1. Вкладка "Сделка" -> POST /api/db (crm_leads)
       if (activeTab === 'deal') {
         const response = await fetch('/api/db', {
           method: 'POST',
@@ -134,16 +133,20 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 currentUserId && currentUserId !== 'default-workspace-node'
                   ? currentUserId
                   : null,
+              client_name: clientName.trim(),
               full_name: clientName.trim(),
+              amount: Number(dealAmount) || 0,
               deal_value: Number(dealAmount) || 0,
+              contact: clientContacts.trim() || null,
               phone: clientContacts.trim() || null,
+              status: 'lead',
             },
           }),
         });
 
         const result = await response.json();
         if (!response.ok || !result.ok) {
-          const errMsg = result.error || 'Не удалось сохранить сделку в БД.';
+          const errMsg = result.error || 'Не удалось сохранить сделку.';
           setStatusMessage({ type: 'error', text: errMsg });
           notifyError(errMsg);
           return;
@@ -153,14 +156,16 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           onLeadCreated(result.data as CrmLeadRecord);
         }
 
+        const savedName =
+          result.data.client_name || result.data.full_name || clientName.trim();
         setStatusMessage({
           type: 'success',
-          text: `Успешно: Сделка «${result.data.full_name}» сохранена в БД (ID: ${result.data.id}).`,
+          text: `Сделка «${savedName}» успешно добавлена в воронку.`,
         });
         resetCurrentTabFields('deal');
       }
 
-      // 2. Вкладка "Задача" -> POST /api/db (entity: 'task')
+      // 2. Вкладка "Задача" -> POST /api/db (tasks + автоматический Telegram Push при назначении)
       if (activeTab === 'task') {
         const response = await fetch('/api/db', {
           method: 'POST',
@@ -176,13 +181,14 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 currentUserId && currentUserId !== 'default-workspace-node'
                   ? currentUserId
                   : null,
+              status: 'new',
             },
           }),
         });
 
         const result = await response.json();
         if (!response.ok || !result.ok) {
-          const errMsg = result.error || 'Не удалось сохранить задачу в БД.';
+          const errMsg = result.error || 'Не удалось создать задачу.';
           setStatusMessage({ type: 'error', text: errMsg });
           notifyError(errMsg);
           return;
@@ -194,12 +200,14 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
         setStatusMessage({
           type: 'success',
-          text: `Успешно: Задача «${result.data.title}» сохранена в БД (ID: ${result.data.id}).`,
+          text: taskAssigneeId
+            ? `Задача «${result.data.title}» создана и отправлена исполнителю в Telegram.`
+            : `Задача «${result.data.title}» добавлена в рабочее пространство.`,
         });
         resetCurrentTabFields('task');
       }
 
-      // 3. Вкладка "Сотрудник" -> POST /api/db (entity: 'employee')
+      // 3. Вкладка "Сотрудник" -> POST /api/db (organization_nodes)
       if (activeTab === 'employee') {
         const response = await fetch('/api/db', {
           method: 'POST',
@@ -217,8 +225,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
         const result = await response.json();
         if (!response.ok || !result.ok) {
-          const errMsg =
-            result.error || 'Не удалось добавить сотрудника в БД.';
+          const errMsg = result.error || 'Не удалось добавить сотрудника.';
           setStatusMessage({ type: 'error', text: errMsg });
           notifyError(errMsg);
           return;
@@ -230,13 +237,13 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
         setStatusMessage({
           type: 'success',
-          text: `Успешно: Сотрудник «${result.data.name}» записан в БД (ID: ${result.data.id}).`,
+          text: `Сотрудник «${result.data.name}» успешно добавлен в команду.`,
         });
         resetCurrentTabFields('employee');
       }
     } catch (error: any) {
       const errMsg =
-        error?.message || 'Ошибка соединения с серверным шлюзом /api/db.';
+        error?.message || 'Ошибка соединения с сервером. Повторите попытку.';
       setStatusMessage({
         type: 'error',
         text: errMsg,
@@ -252,9 +259,9 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-record-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs font-sans"
     >
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-md p-6 space-y-5">
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-xl p-6 space-y-5">
         <div className="flex items-center justify-between">
           <div>
             <h2
@@ -264,7 +271,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               Новая запись TedCloud
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Прямая запись через серверный шлюз /api/db (Vercel Serverless)
+              Выберите тип записи для добавления в рабочее пространство
             </p>
           </div>
           <button
@@ -377,7 +384,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   htmlFor="deal-amount"
                   className="block text-xs font-medium text-slate-700"
                 >
-                  Сумма (₽)
+                  Сумма сделки (₽)
                 </label>
                 <input
                   id="deal-amount"
@@ -398,7 +405,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   htmlFor="deal-contacts"
                   className="block text-xs font-medium text-slate-700"
                 >
-                  Контакты
+                  Контакт клиента
                 </label>
                 <input
                   id="deal-contacts"
@@ -430,7 +437,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   disabled={isLoading}
                   value={taskDescription}
                   onChange={(e) => setTaskDescription(e.target.value)}
-                  placeholder="Опишите, что необходимо сделать..."
+                  placeholder="Опишите задачу, которую необходимо выполнить..."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 disabled:bg-slate-50"
                 />
               </div>
@@ -464,7 +471,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   htmlFor="task-assignee"
                   className="block text-xs font-medium text-slate-700"
                 >
-                  Назначить на...
+                  Исполнитель (отправит Push-уведомление в Telegram)
                 </label>
                 <select
                   id="task-assignee"
@@ -491,7 +498,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   htmlFor="employee-name"
                   className="block text-xs font-medium text-slate-700"
                 >
-                  Имя
+                  Имя и фамилия
                 </label>
                 <input
                   id="employee-name"
@@ -510,7 +517,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   htmlFor="employee-telegram-id"
                   className="block text-xs font-medium text-slate-700"
                 >
-                  Telegram ID
+                  Telegram Chat ID
                 </label>
                 <input
                   id="employee-telegram-id"
@@ -529,7 +536,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   htmlFor="employee-role"
                   className="block text-xs font-medium text-slate-700"
                 >
-                  Роль
+                  Роль в организации
                 </label>
                 <select
                   id="employee-role"
@@ -557,7 +564,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              Закрыть
+              Отмена
             </button>
             <button
               type="submit"
@@ -565,7 +572,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 shadow-xs transition-all duration-200 cursor-pointer"
             >
               {isLoading
-                ? 'Сохранение в /api/db...'
+                ? 'Сохранение...'
                 : activeTab === 'deal'
                 ? 'Сохранить сделку'
                 : activeTab === 'task'

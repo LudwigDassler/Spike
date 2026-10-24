@@ -1,15 +1,14 @@
-'use client';
-
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  ArrowRight,
   Briefcase,
-  CheckCircle2,
   CheckSquare,
-  Circle,
   Inbox,
   Plus,
+  Search,
   Trash2,
   TrendingUp,
+  UserCheck,
   Users,
   X,
 } from 'lucide-react';
@@ -20,11 +19,19 @@ import {
   LeadStage,
   OrganizationNode,
   OrganizationRoleType,
-  TaskPriorityType,
   TaskRecord,
+  TaskStatusType,
   computeDashboardKpis,
+  getLeadAmount,
+  getLeadClientName,
+  getLeadContact,
+  getLeadStatus,
+  isHighPriority,
+  normalizePriorityLabel,
 } from '../types/database';
 import { AddRecordModal, AddRecordTab } from './AddRecordModal';
+
+export type TaskQuickFilter = 'all' | 'in_progress' | 'high_priority' | 'done';
 
 export interface DashboardProps {
   company: Company | null;
@@ -41,6 +48,10 @@ export interface DashboardProps {
   onDeleteLead: (leadId: string) => Promise<void>;
   onTaskCreated: (task: TaskRecord) => void;
   onToggleTaskDone: (task: TaskRecord) => Promise<void>;
+  onUpdateTask?: (
+    taskId: string,
+    updates: Partial<Pick<TaskRecord, 'status' | 'priority' | 'assigned_to'>>
+  ) => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onEmployeeCreated: (node: OrganizationNode) => void;
   onDeleteNode: (nodeId: string) => Promise<void>;
@@ -49,41 +60,35 @@ export interface DashboardProps {
   onDismissFeedback?: () => void;
 }
 
-const LEAD_STAGE_LABELS: Record<LeadStage, string> = {
-  new: 'Новая заявка',
-  qualified: 'Квалифицирован',
-  trial_marathon: 'Переговоры',
-  repeat_client: 'Повторная сделка',
-  partner_ready: 'Закрыта успешно',
-  archived: 'В архиве',
-};
+const PIPELINE_STEPS: Array<{ value: LeadStage; label: string }> = [
+  { value: 'lead', label: 'Лид' },
+  { value: 'negotiation', label: 'Переговоры' },
+  { value: 'qualified', label: 'Квалифицирован' },
+  { value: 'won', label: 'Закрыта / Оплачена' },
+];
 
-const PRIORITY_LABELS: Record<TaskPriorityType, string> = {
-  low: 'Низкий',
-  medium: 'Средний',
-  high: 'Высокий',
-  critical: 'Критический',
-};
+const TASK_STATUS_STEPS: Array<{ value: TaskStatusType; label: string }> = [
+  { value: 'new', label: 'Новая' },
+  { value: 'in_progress', label: 'В работе' },
+  { value: 'done', label: 'Готово' },
+];
 
 const ROLE_LABELS: Record<OrganizationRoleType, string> = {
   Owner: 'Owner (Владелец)',
   Manager: 'Manager (Руководитель)',
   Specialist: 'Specialist (Специалист)',
   Observer: 'Observer (Наблюдатель)',
-  SUPERADMIN: 'Администратор',
+  SUPERADMIN: 'SUPERADMIN (Суперадмин)',
   INTERNAL_IT: 'Инженер поддержки',
   NETWORK_PARTNER: 'Менеджер по продажам',
 };
 
-/**
- * Универсальный компонент пустого состояния (Empty State)
- */
 export const EmptyStateCard: React.FC<{
   description?: string;
   onAddClick: () => void;
 }> = ({ description, onAddClick }) => (
-  <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-sm flex flex-col items-center justify-center gap-3">
-    <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-300">
+  <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-xs flex flex-col items-center justify-center gap-3">
+    <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400">
       <Inbox className="w-5 h-5" />
     </div>
     <div className="space-y-1 max-w-sm">
@@ -100,7 +105,7 @@ export const EmptyStateCard: React.FC<{
       className="mt-1 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-all duration-200 cursor-pointer"
     >
       <Plus className="w-4 h-4" />
-      <span>Добавить</span>
+      <span>Добавить запись</span>
     </button>
   </div>
 );
@@ -119,6 +124,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onDeleteLead,
   onTaskCreated,
   onToggleTaskDone,
+  onUpdateTask,
   onDeleteTask,
   onEmployeeCreated,
   onDeleteNode,
@@ -127,6 +133,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const kpis = computeDashboardKpis(leads, tasks, nodes);
   const [initialModalTab, setInitialModalTab] = useState<AddRecordTab>('deal');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [taskFilter, setTaskFilter] = useState<TaskQuickFilter>('all');
 
   const openModalFor = (targetSection: DashboardSection) => {
     const mappedTab: AddRecordTab =
@@ -148,21 +156,102 @@ export const Dashboard: React.FC<DashboardProps> = ({
       ? 'deal'
       : initialModalTab;
 
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  // Фильтрация задач по строке поиска и быстрому фильтру (Все | В работе | Высокий приоритет | Завершенные)
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      if (taskFilter === 'in_progress' && task.status !== 'in_progress') {
+        return false;
+      }
+      if (taskFilter === 'high_priority' && !isHighPriority(task.priority)) {
+        return false;
+      }
+      if (taskFilter === 'done' && task.status !== 'done') {
+        return false;
+      }
+
+      if (!normalizedQuery) return true;
+
+      const assigneeName =
+        nodes.find((n) => n.id === task.assigned_to)?.name?.toLowerCase() || '';
+      return (
+        task.title.toLowerCase().includes(normalizedQuery) ||
+        assigneeName.includes(normalizedQuery) ||
+        String(task.priority || '')
+          .toLowerCase()
+          .includes(normalizedQuery)
+      );
+    });
+  }, [tasks, taskFilter, normalizedQuery, nodes]);
+
+  // Фильтрация сделок по строке поиска
+  const filteredLeads = useMemo(() => {
+    if (!normalizedQuery) return leads;
+    return leads.filter((lead) => {
+      const name = getLeadClientName(lead).toLowerCase();
+      const contact = getLeadContact(lead).toLowerCase();
+      return name.includes(normalizedQuery) || contact.includes(normalizedQuery);
+    });
+  }, [leads, normalizedQuery]);
+
+  const handleTaskStatusSelect = async (
+    task: TaskRecord,
+    nextStatus: TaskStatusType
+  ) => {
+    if (task.status === nextStatus) return;
+    if (onUpdateTask) {
+      await onUpdateTask(task.id, { status: nextStatus });
+    } else {
+      await onToggleTaskDone(task);
+    }
+  };
+
+  const handleCycleTaskStatus = async (task: TaskRecord) => {
+    const nextStatus: TaskStatusType =
+      task.status === 'new' || task.status === 'todo'
+        ? 'in_progress'
+        : task.status === 'in_progress'
+        ? 'done'
+        : 'new';
+    await handleTaskStatusSelect(task, nextStatus);
+  };
+
+  const getPriorityBadgeStyle = (priority?: string | null) => {
+    const label = normalizePriorityLabel(priority);
+    if (label === 'High') {
+      return {
+        label: 'High',
+        className: 'bg-rose-50 text-rose-700 border-rose-200',
+      };
+    }
+    if (label === 'Low') {
+      return {
+        label: 'Low',
+        className: 'bg-sky-50 text-sky-700 border-sky-200',
+      };
+    }
+    return {
+      label: 'Medium',
+      className: 'bg-amber-50 text-amber-700 border-amber-200',
+    };
+  };
+
   return (
     <div className="font-sans space-y-6">
-      {/* Заголовок рабочего пространства */}
+      {/* Шапка рабочего пространства */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
             {activeSection === 'overview' && 'Обзор рабочего пространства'}
             {activeSection === 'leads' && 'Воронка сделок'}
-            {activeSection === 'tasks' && 'Активные задачи'}
-            {activeSection === 'team' && 'Сотрудники'}
+            {activeSection === 'tasks' && 'Доска задач'}
+            {activeSection === 'team' && 'Команда организации'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             {company?.name
               ? `Организация: ${company.name}`
-              : 'Универсальная B2B CRM-платформа TedCloud'}
+              : 'Единое B2B-пространство управления продажами, задачами и командой'}
           </p>
         </div>
 
@@ -173,7 +262,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-all duration-200 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Добавить</span>
+            <span>Новая запись</span>
           </button>
         </div>
       </div>
@@ -201,9 +290,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {/* Карточки универсальных B2B метрик */}
+      {/* Карточки KPI в стиле Linear / Vercel */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-2">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Сумма сделок</span>
             <Briefcase className="w-4 h-4 text-emerald-600" />
@@ -216,7 +305,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-2">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Активные задачи</span>
             <CheckSquare className="w-4 h-4 text-emerald-600" />
@@ -225,11 +314,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {kpis.activeTasksCount}
           </div>
           <div className="text-xs text-slate-400">
-            Всего задач в системе: {tasks.length}
+            Выполнено: {tasks.filter((t) => t.status === 'done').length} из{' '}
+            {tasks.length}
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-2">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Конверсия</span>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
@@ -238,11 +328,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {kpis.conversionRatePercent}%
           </div>
           <div className="text-xs text-slate-400">
-            Квалифицированные и закрытые сделки
+            Доля квалифицированных и оплаченных сделок
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-2">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Сотрудники</span>
             <Users className="w-4 h-4 text-emerald-600" />
@@ -251,12 +341,57 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {kpis.employeesCount}
           </div>
           <div className="text-xs text-slate-400">
-            Узлы организации в базе данных
+            Активные участники с Telegram Push
           </div>
         </div>
       </div>
 
-      {/* Секция 1: Воронка сделок (crm_leads) */}
+      {/* Панель быстрого поиска и фильтров */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Быстрый поиск по задачам, клиентам, контактам или исполнителям..."
+            className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-emerald-600 transition-colors"
+          />
+        </div>
+
+        <div
+          role="group"
+          aria-label="Фильтры задач"
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          {(
+            [
+              { id: 'all', label: 'Все' },
+              { id: 'in_progress', label: 'В работе' },
+              { id: 'high_priority', label: 'Высокий приоритет' },
+              { id: 'done', label: 'Завершенные' },
+            ] as Array<{ id: TaskQuickFilter; label: string }>
+          ).map((f) => {
+            const active = taskFilter === f.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setTaskFilter(f.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-150 cursor-pointer ${
+                  active
+                    ? 'bg-slate-900 text-white font-semibold shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                }`}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Секция 1: Воронка сделок (crm_leads) с интерактивным переключателем этапов */}
       {(activeSection === 'overview' || activeSection === 'leads') && (
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -272,75 +407,88 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </button>
           </div>
 
-          {leads.length === 0 ? (
+          {filteredLeads.length === 0 ? (
             <EmptyStateCard
-              description="Создайте первую сделку вручную или примите входящее обращение через Telegram-бота."
+              description="Добавьте первую сделку и переключайте этапы воронки (Лид ➔ Переговоры ➔ Квалифицирован ➔ Закрыта / Оплачена) для автоматического расчёта конверсии."
               onAddClick={() => openModalFor('leads')}
             />
           ) : (
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/70 text-xs font-semibold tracking-tight text-slate-500">
-                      <th className="py-3 px-4">Название клиента</th>
-                      <th className="py-3 px-4">Стадия</th>
+                      <th className="py-3 px-4">Клиент</th>
+                      <th className="py-3 px-4">
+                        Этап воронки (Лид ➔ Переговоры ➔ Квалифицирован ➔ Закрыта)
+                      </th>
                       <th className="py-3 px-4">Сумма</th>
-                      <th className="py-3 px-4">Контакты</th>
+                      <th className="py-3 px-4">Контакт</th>
                       <th className="py-3 px-4 text-right">Действия</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-xs">
-                    {leads.map((lead) => (
-                      <tr
-                        key={lead.id}
-                        className="hover:bg-slate-50/80 transition-colors"
-                      >
-                        <td className="py-3.5 px-4 font-semibold text-slate-900">
-                          {lead.full_name}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <select
-                            aria-label={`Стадия сделки ${lead.full_name}`}
-                            value={lead.stage}
-                            onChange={(e) =>
-                              void onUpdateLeadStage(
-                                lead.id,
-                                e.target.value as LeadStage
-                              )
-                            }
-                            className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:border-emerald-600"
-                          >
-                            {Object.entries(LEAD_STAGE_LABELS).map(
-                              ([val, label]) => (
-                                <option key={val} value={val}>
-                                  {label}
-                                </option>
-                              )
-                            )}
-                          </select>
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-900">
-                          {(Number(lead.deal_value) || 0).toLocaleString(
-                            'ru-RU'
-                          )}{' '}
-                          ₽
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-600">
-                          {lead.phone || lead.description || '—'}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => void onDeleteLead(lead.id)}
-                            aria-label="Удалить сделку"
-                            className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredLeads.map((lead) => {
+                      const currentStage = getLeadStatus(lead);
+                      const amountVal = getLeadAmount(lead);
+                      const clientLabel = getLeadClientName(lead);
+                      const contactLabel = getLeadContact(lead);
+
+                      return (
+                        <tr
+                          key={lead.id}
+                          className="hover:bg-slate-50/80 transition-colors"
+                        >
+                          <td className="py-3.5 px-4 font-semibold text-slate-900">
+                            {clientLabel}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/70">
+                              {PIPELINE_STEPS.map((step) => {
+                                const isCurrent = currentStage === step.value;
+                                return (
+                                  <button
+                                    key={step.value}
+                                    type="button"
+                                    onClick={() =>
+                                      void onUpdateLeadStage(
+                                        lead.id,
+                                        step.value
+                                      )
+                                    }
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                                      isCurrent
+                                        ? step.value === 'won'
+                                          ? 'bg-emerald-600 text-white font-semibold shadow-xs'
+                                          : 'bg-white text-slate-900 font-semibold shadow-xs'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                  >
+                                    {step.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-semibold text-slate-900 whitespace-nowrap">
+                            {amountVal.toLocaleString('ru-RU')} ₽
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-600">
+                            {contactLabel}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => void onDeleteLead(lead.id)}
+                              aria-label="Удалить сделку"
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -349,7 +497,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </section>
       )}
 
-      {/* Секция 2: Активные задачи (tasks) */}
+      {/* Секция 2: Активные задачи (tasks) с Канбан-переключателем статуса, бейджем приоритета и ответственным */}
       {(activeSection === 'overview' || activeSection === 'tasks') && (
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -365,37 +513,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </button>
           </div>
 
-          {tasks.length === 0 ? (
+          {filteredTasks.length === 0 ? (
             <EmptyStateCard
-              description="Запланируйте задачи вручную или отправьте обычное текстовое сообщение в Telegram-бота."
+              description="Создайте задачу в веб-интерфейсе или отправьте сообщение в Telegram-бота (начните с ! для приоритета High)."
               onAddClick={() => openModalFor('tasks')}
             />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {tasks.map((task) => {
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {filteredTasks.map((task) => {
                 const isDone = task.status === 'done';
+                const currentStatus: TaskStatusType =
+                  task.status === 'in_progress'
+                    ? 'in_progress'
+                    : task.status === 'done'
+                    ? 'done'
+                    : 'new';
                 const assignee = nodes.find((n) => n.id === task.assigned_to);
+                const priorityBadge = getPriorityBadgeStyle(task.priority);
+
                 return (
                   <div
                     key={task.id}
-                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-start justify-between gap-3"
+                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col justify-between gap-3.5 hover:border-slate-300 transition-colors"
                   >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => void onToggleTaskDone(task)}
-                        aria-label="Переключить статус выполнения"
-                        className="mt-0.5 text-emerald-600 hover:text-emerald-700 cursor-pointer shrink-0"
-                      >
-                        {isDone ? (
-                          <CheckCircle2 className="w-5 h-5" />
-                        ) : (
-                          <Circle className="w-5 h-5 text-slate-300" />
-                        )}
-                      </button>
-                      <div className="min-w-0 space-y-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1.5 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Бейдж приоритета (High — красный, Medium — янтарный, Low — синий) */}
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold tracking-tight ${priorityBadge.className}`}
+                          >
+                            {priorityBadge.label}
+                          </span>
+
+                          {/* Имя ответственного сотрудника */}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-medium">
+                            <UserCheck className="w-3 h-3 text-slate-500" />
+                            <span>
+                              {assignee ? assignee.name : 'Не назначен'}
+                            </span>
+                          </span>
+                        </div>
+
                         <div
-                          className={`text-sm font-semibold tracking-tight ${
+                          className={`text-sm font-semibold tracking-tight leading-snug ${
                             isDone
                               ? 'line-through text-slate-400'
                               : 'text-slate-900'
@@ -403,25 +564,78 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         >
                           {task.title}
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium">
-                            Приоритет: {PRIORITY_LABELS[task.priority]}
-                          </span>
-                          {assignee && (
-                            <span>Исполнитель: {assignee.name}</span>
-                          )}
-                        </div>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => void onDeleteTask(task.id)}
+                        aria-label="Удалить задачу"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => void onDeleteTask(task.id)}
-                      aria-label="Удалить задачу"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Нижняя панель карточки: Канбан-переключатель статуса (Новая ➔ В работе ➔ Готово) и выбор ответственного */}
+                    <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                      <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/70">
+                        {TASK_STATUS_STEPS.map((step, idx) => {
+                          const isCurrent = currentStatus === step.value;
+                          return (
+                            <React.Fragment key={step.value}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleTaskStatusSelect(task, step.value)
+                                }
+                                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                                  isCurrent
+                                    ? step.value === 'done'
+                                      ? 'bg-emerald-600 text-white font-semibold shadow-xs'
+                                      : step.value === 'in_progress'
+                                      ? 'bg-amber-500 text-white font-semibold shadow-xs'
+                                      : 'bg-white text-slate-900 font-semibold shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                {step.label}
+                              </button>
+                              {idx < TASK_STATUS_STEPS.length - 1 && (
+                                <ArrowRight className="w-3 h-3 text-slate-300 shrink-0" />
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+
+                      {onUpdateTask && nodes.length > 0 ? (
+                        <select
+                          aria-label={`Ответственный за задачу ${task.title}`}
+                          value={task.assigned_to || ''}
+                          onChange={(e) =>
+                            void onUpdateTask(task.id, {
+                              assigned_to: e.target.value || null,
+                            })
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 focus:outline-none focus:border-emerald-600"
+                        >
+                          <option value="">Назначить сотрудника...</option>
+                          {nodes.map((emp) => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void handleCycleTaskStatus(task)}
+                          className="text-xs font-medium text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                        >
+                          Сменить статус ➔
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -448,18 +662,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           {nodes.length === 0 ? (
             <EmptyStateCard
-              description="Зарегистрируйте сотрудников компании и укажите их Telegram ID для бесшовного доступа."
+              description="Добавьте сотрудников и укажите их Telegram Chat ID, чтобы они мгновенно получали Push-уведомления с кнопками [⚡️ В работу] и [✅ Выполнено] при назначении задач."
               onAddClick={() => openModalFor('team')}
             />
           ) : (
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/70 text-xs font-semibold tracking-tight text-slate-500">
                       <th className="py-3 px-4">Имя сотрудника</th>
                       <th className="py-3 px-4">Роль</th>
-                      <th className="py-3 px-4">Telegram ID</th>
+                      <th className="py-3 px-4">Telegram Chat ID</th>
                       <th className="py-3 px-4 text-right">Действия</th>
                     </tr>
                   </thead>
@@ -477,7 +691,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             {ROLE_LABELS[node.role_type] || node.role_type}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-slate-600">
+                        <td className="py-3.5 px-4 text-slate-600 font-mono">
                           {node.telegram_chat_id || 'Не привязан'}
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -500,7 +714,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </section>
       )}
 
-      {/* Динамическая модальная форма (БЛОК 1: AddRecordModal) */}
+      {/* Модальное окно добавления сделки / задачи / сотрудника */}
       <AddRecordModal
         isOpen={Boolean(createModalTarget)}
         initialTab={resolvedModalTab}
