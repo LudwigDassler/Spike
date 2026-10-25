@@ -6,6 +6,8 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
   companies: ['name', 'plan', 'payment_region'],
   tasks: [
     'title',
+    'description',
+    'notes',
     'type',
     'priority',
     'status',
@@ -30,6 +32,8 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
   ],
   crm_leads: [
     'title',
+    'description',
+    'notes',
     'client_name',
     'amount',
     'contact',
@@ -43,6 +47,9 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'source',
   ],
 };
+
+// Оверлей для сохранения рабочих комментариев (notes/description), если в схеме удаленной БД еще не создана колонка
+const recordNotesOverlay = new Map<string, { description?: string | null; notes?: string | null }>();
 
 function sanitizeByWhitelist(table: string, rawPayload: Record<string, any>): Record<string, any> {
   const whitelist = ALLOWED_COLUMNS[table];
@@ -73,7 +80,7 @@ async function safeSupabaseInsert(
   const payload = sanitizeByWhitelist(table, rawPayload);
   const strippedColumns: string[] = [];
 
-  for (let attempt = 0; attempt < 14; attempt++) {
+  for (let attempt = 0; attempt < 16; attempt++) {
     const { data, error } = await supabase.from(table).insert([payload]).select().single();
     if (!error) {
       return { data, error: null, strippedColumns };
@@ -93,7 +100,6 @@ async function safeSupabaseInsert(
       continue;
     }
 
-    // Если колонка tree_path имеет специфический тип или ограничение в конкретной инсталляции
     if (
       'tree_path' in payload &&
       String(error?.message || '').toLowerCase().includes('tree_path')
@@ -122,7 +128,7 @@ async function safeSupabaseUpdate(
   const payload = sanitizeByWhitelist(table, rawUpdates);
   const strippedColumns: string[] = [];
 
-  for (let attempt = 0; attempt < 14; attempt++) {
+  for (let attempt = 0; attempt < 16; attempt++) {
     if (Object.keys(payload).length === 0) {
       const { data: existing, error: fetchErr } = await supabase
         .from(table)
@@ -181,7 +187,6 @@ async function safeSelectTable(
     return { data: firstRes.data || [], error: null };
   }
 
-  // Fallback если колонка created_at отсутствует
   let fallbackQuery = supabase.from(table).select('*');
   if (limitCount) {
     fallbackQuery = fallbackQuery.limit(limitCount);
@@ -199,38 +204,122 @@ function generateInviteCode(): string {
   return `TC-${suffix}`;
 }
 
-function getDefaultPermissions(accessLevel?: string) {
+export interface GranularPermissions {
+  tasks_view_all: boolean;
+  tasks_assign: boolean;
+  crm_view: boolean;
+  crm_edit: boolean;
+  team_manage: boolean;
+  data_export: boolean;
+  billing_admin: boolean;
+  [key: string]: any;
+}
+
+export function normalizeAccessLevel(rawLevel?: string | null, roleType?: string | null): 'root' | 'manager' | 'member' | 'observer' {
+  const roleUpper = String(roleType || '').trim().toUpperCase();
+  if (roleUpper === 'SUPERADMIN' || roleUpper === 'ROOT') {
+    return 'root';
+  }
+  const clean = String(rawLevel || '').trim().toLowerCase();
+  if (clean === 'root' || clean === 'superadmin') return 'root';
+  if (clean === 'manager') return 'manager';
+  if (clean === 'observer' || clean === 'viewer') return 'observer';
+  return 'member';
+}
+
+export function getDefaultPermissions(accessLevel?: string): GranularPermissions {
   switch (accessLevel) {
     case 'root':
       return {
-        canAssignTasks: true,
-        canManageCrm: true,
-        canManageTeam: true,
-        canDeleteAndSettings: true,
+        tasks_view_all: true,
+        tasks_assign: true,
+        crm_view: true,
+        crm_edit: true,
+        team_manage: true,
+        data_export: true,
+        billing_admin: true,
       };
     case 'manager':
       return {
-        canAssignTasks: true,
-        canManageCrm: true,
-        canManageTeam: true,
-        canDeleteAndSettings: false,
+        tasks_view_all: true,
+        tasks_assign: true,
+        crm_view: true,
+        crm_edit: true,
+        team_manage: true,
+        data_export: true,
+        billing_admin: false,
       };
+    case 'observer':
     case 'viewer':
       return {
-        canAssignTasks: false,
-        canManageCrm: false,
-        canManageTeam: false,
-        canDeleteAndSettings: false,
+        tasks_view_all: true,
+        tasks_assign: false,
+        crm_view: true,
+        crm_edit: false,
+        team_manage: false,
+        data_export: true,
+        billing_admin: false,
       };
     case 'member':
     default:
       return {
-        canAssignTasks: true,
-        canManageCrm: true,
-        canManageTeam: false,
-        canDeleteAndSettings: false,
+        tasks_view_all: false,
+        tasks_assign: false,
+        crm_view: false,
+        crm_edit: false,
+        team_manage: false,
+        data_export: false,
+        billing_admin: false,
       };
   }
+}
+
+function normalizePermissionsObject(
+  accessLevel: 'root' | 'manager' | 'member' | 'observer',
+  rawPermissions: any
+): GranularPermissions {
+  if (accessLevel === 'root') {
+    const baseRoot = getDefaultPermissions('root');
+    if (rawPermissions && typeof rawPermissions === 'object' && rawPermissions.pending_delegate_to) {
+      baseRoot.pending_delegate_to = rawPermissions.pending_delegate_to;
+    }
+    return baseRoot;
+  }
+
+  const defaults = getDefaultPermissions(accessLevel);
+  let parsed = rawPermissions;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return defaults;
+  }
+
+  const result: GranularPermissions = {
+    tasks_view_all:
+      typeof parsed.tasks_view_all === 'boolean' ? parsed.tasks_view_all : defaults.tasks_view_all,
+    tasks_assign:
+      typeof parsed.tasks_assign === 'boolean' ? parsed.tasks_assign : defaults.tasks_assign,
+    crm_view: typeof parsed.crm_view === 'boolean' ? parsed.crm_view : defaults.crm_view,
+    crm_edit: typeof parsed.crm_edit === 'boolean' ? parsed.crm_edit : defaults.crm_edit,
+    team_manage:
+      typeof parsed.team_manage === 'boolean' ? parsed.team_manage : defaults.team_manage,
+    data_export:
+      typeof parsed.data_export === 'boolean' ? parsed.data_export : defaults.data_export,
+    billing_admin:
+      typeof parsed.billing_admin === 'boolean' ? parsed.billing_admin : defaults.billing_admin,
+  };
+
+  if (parsed.pending_delegate_to) {
+    result.pending_delegate_to = parsed.pending_delegate_to;
+  }
+
+  return result;
 }
 
 interface InMemoryStore {
@@ -433,8 +522,14 @@ async function sendTelegramTaskPush(params: {
 }
 
 function normalizeTaskRow(row: any) {
+  const overlay = row.id ? recordNotesOverlay.get(`tasks:${row.id}`) : undefined;
+  const noteText =
+    row.description ?? row.notes ?? overlay?.description ?? overlay?.notes ?? null;
+
   return {
     ...row,
+    description: noteText,
+    notes: noteText,
     type: row.type || 'Task',
     priority: row.priority || 'Medium',
     status: row.status || 'Todo',
@@ -445,24 +540,8 @@ function normalizeTaskRow(row: any) {
 }
 
 function normalizeNodeRow(row: any) {
-  const accessLevel =
-    row.access_level && ['root', 'manager', 'member', 'viewer'].includes(row.access_level)
-      ? row.access_level
-      : row.role_type === 'Superadmin' || row.tree_path === 'root'
-      ? 'root'
-      : 'member';
-
-  let permissions = row.permissions;
-  if (typeof permissions === 'string') {
-    try {
-      permissions = JSON.parse(permissions);
-    } catch {
-      permissions = null;
-    }
-  }
-  if (!permissions || typeof permissions !== 'object') {
-    permissions = getDefaultPermissions(accessLevel);
-  }
+  const accessLevel = normalizeAccessLevel(row.access_level, row.role_type);
+  const permissions = normalizePermissionsObject(accessLevel, row.permissions);
 
   return {
     ...row,
@@ -481,6 +560,9 @@ function normalizeNodeRow(row: any) {
 }
 
 function normalizeLeadRow(row: any) {
+  const overlay = row.id ? recordNotesOverlay.get(`crm_leads:${row.id}`) : undefined;
+  const noteText =
+    row.description ?? row.notes ?? overlay?.description ?? overlay?.notes ?? null;
   const clientName = row.client_name || row.full_name || row.title || 'Контрагент';
   const title = row.title || clientName;
   const amount = Number(row.amount ?? row.deal_value ?? 0);
@@ -490,6 +572,8 @@ function normalizeLeadRow(row: any) {
   return {
     ...row,
     title,
+    description: noteText,
+    notes: noteText,
     client_name: clientName,
     full_name: clientName,
     amount,
@@ -643,7 +727,9 @@ export default async function handler(req: any, res: any) {
       if (body.action === 'register_workspace' || body.action === 'register') {
         const companyName = String(body.companyName || '').trim();
         const leaderName = String(body.leaderName || '').trim();
-        const leaderTitle = String(body.leaderTitle || body.role_type || 'Генеральный директор').trim();
+        const leaderTitle = String(
+          body.leaderTitle || body.role_type || 'Генеральный директор'
+        ).trim();
         const leaderDepartment = String(body.leaderDepartment || 'Дирекция').trim();
         const leaderEmail = body.leaderEmail ? String(body.leaderEmail).trim() : null;
         const leaderTelegramChatId = body.telegram_chat_id
@@ -771,6 +857,8 @@ export default async function handler(req: any, res: any) {
         const rawInsertPayload: Record<string, any> = {
           company_id: companyId,
           title,
+          description: payload.description || payload.notes || null,
+          notes: payload.notes || payload.description || null,
           type: payload.type || 'Task',
           priority: payload.priority || 'Medium',
           status: payload.status || 'Todo',
@@ -797,6 +885,13 @@ export default async function handler(req: any, res: any) {
           savedTask = { ...rawInsertPayload, ...data };
         }
 
+        if (savedTask?.id && (rawInsertPayload.description || rawInsertPayload.notes)) {
+          recordNotesOverlay.set(`tasks:${savedTask.id}`, {
+            description: rawInsertPayload.description,
+            notes: rawInsertPayload.notes,
+          });
+        }
+
         const pushStatus = await sendTelegramTaskPush({
           supabase,
           assignedToId: savedTask.assigned_to || rawInsertPayload.assigned_to,
@@ -818,8 +913,8 @@ export default async function handler(req: any, res: any) {
           ? String(payload.invite_code).trim().toUpperCase()
           : generateInviteCode();
 
-        const accessLevel = payload.access_level || 'member';
-        const permissions = payload.permissions || getDefaultPermissions(accessLevel);
+        const accessLevel = normalizeAccessLevel(payload.access_level, payload.role_type);
+        const permissions = normalizePermissionsObject(accessLevel, payload.permissions);
 
         const rawInsertPayload: Record<string, any> = {
           company_id: companyId,
@@ -892,6 +987,8 @@ export default async function handler(req: any, res: any) {
           company_id: companyId,
           owner_node_id: payload.owner_node_id || fallbackNodeId || null,
           title,
+          description: payload.description || payload.notes || null,
+          notes: payload.notes || payload.description || null,
           client_name: clientName,
           full_name: clientName,
           amount,
@@ -920,9 +1017,17 @@ export default async function handler(req: any, res: any) {
           return res.status(400).json({ error: error.message, details: error });
         }
 
+        const savedLead = { ...rawInsertPayload, ...data };
+        if (savedLead?.id && (rawInsertPayload.description || rawInsertPayload.notes)) {
+          recordNotesOverlay.set(`crm_leads:${savedLead.id}`, {
+            description: rawInsertPayload.description,
+            notes: rawInsertPayload.notes,
+          });
+        }
+
         return res.status(200).json({
           ok: true,
-          data: normalizeLeadRow({ ...rawInsertPayload, ...data }),
+          data: normalizeLeadRow(savedLead),
         });
       }
 
@@ -976,6 +1081,13 @@ export default async function handler(req: any, res: any) {
         }
         if (updates.title !== undefined) rawUpdates.title = String(updates.title).trim();
         if (updates.type !== undefined) rawUpdates.type = updates.type;
+        if (updates.description !== undefined || updates.notes !== undefined) {
+          const noteVal =
+            updates.description !== undefined ? updates.description : updates.notes;
+          rawUpdates.description = noteVal;
+          rawUpdates.notes = noteVal;
+          recordNotesOverlay.set(`tasks:${id}`, { description: noteVal, notes: noteVal });
+        }
 
         let updatedTask: any = null;
         let previousAssignee: string | null = null;
@@ -1048,6 +1160,13 @@ export default async function handler(req: any, res: any) {
           rawUpdates.contact = nextContact;
           rawUpdates.phone = nextContact;
         }
+        if (updates.description !== undefined || updates.notes !== undefined) {
+          const noteVal =
+            updates.description !== undefined ? updates.description : updates.notes;
+          rawUpdates.description = noteVal;
+          rawUpdates.notes = noteVal;
+          recordNotesOverlay.set(`crm_leads:${id}`, { description: noteVal, notes: noteVal });
+        }
 
         if (!supabase) {
           const idx = localStore.crm_leads.findIndex((l) => l.id === id);
@@ -1061,6 +1180,12 @@ export default async function handler(req: any, res: any) {
           });
         }
 
+        const { data: existing } = await supabase
+          .from('crm_leads')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
         const { data, error } = await safeSupabaseUpdate(supabase, 'crm_leads', id, rawUpdates);
 
         if (error) {
@@ -1070,7 +1195,7 @@ export default async function handler(req: any, res: any) {
 
         return res.status(200).json({
           ok: true,
-          data: normalizeLeadRow({ id, ...rawUpdates, ...data }),
+          data: normalizeLeadRow({ ...existing, ...rawUpdates, ...data }),
         });
       }
 
@@ -1093,10 +1218,14 @@ export default async function handler(req: any, res: any) {
           rawUpdates.invite_code = String(updates.invite_code).trim().toUpperCase();
         }
         if (updates.access_level !== undefined) {
-          rawUpdates.access_level = updates.access_level;
+          rawUpdates.access_level = normalizeAccessLevel(updates.access_level, updates.role_type);
         }
         if (updates.permissions !== undefined) {
-          rawUpdates.permissions = updates.permissions;
+          const level = normalizeAccessLevel(
+            updates.access_level,
+            updates.role_type
+          );
+          rawUpdates.permissions = normalizePermissionsObject(level, updates.permissions);
         }
         if (updates.tree_path !== undefined) {
           rawUpdates.tree_path = updates.tree_path;
@@ -1117,6 +1246,12 @@ export default async function handler(req: any, res: any) {
           });
         }
 
+        const { data: existing } = await supabase
+          .from('organization_nodes')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
         const { data, error } = await safeSupabaseUpdate(
           supabase,
           'organization_nodes',
@@ -1131,7 +1266,7 @@ export default async function handler(req: any, res: any) {
 
         return res.status(200).json({
           ok: true,
-          data: normalizeNodeRow({ id, ...rawUpdates, ...data }),
+          data: normalizeNodeRow({ ...existing, ...rawUpdates, ...data }),
         });
       }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Loader2,
@@ -17,6 +17,7 @@ import {
   CrmLeadStatus,
   EmployeePermissions,
   OrganizationNode,
+  PERMISSION_KEYS,
   TaskPriority,
   TaskStatus,
   generateCorporateInviteCode,
@@ -30,6 +31,7 @@ interface AddRecordModalProps {
   type: ModalRecordType;
   companyId: string;
   currentProfileId?: string | null;
+  canAssignTasks?: boolean;
   nodes: OrganizationNode[];
   botUsername?: string;
   onClose: () => void;
@@ -40,6 +42,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   type,
   companyId,
   currentProfileId,
+  canAssignTasks = false,
   nodes,
   botUsername = 'TedCloudEnterpriseBot',
   onClose,
@@ -51,6 +54,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
   // Task fields
   const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
   const [taskType, setTaskType] = useState('Task');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('Medium');
   const [taskStatus, setTaskStatus] = useState<TaskStatus>('Todo');
@@ -58,7 +62,13 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     currentProfileId || nodes[0]?.id || ''
   );
 
-  // Employee fields (БЛОК 1: свободная должность + свободный отдел + контур допуска + чекбоксы прав)
+  useEffect(() => {
+    if (currentProfileId) {
+      setTaskAssignedTo(currentProfileId);
+    }
+  }, [currentProfileId, type]);
+
+  // Employee fields
   const [empName, setEmpName] = useState('');
   const [empRoleTitle, setEmpRoleTitle] = useState('');
   const [empDepartment, setEmpDepartment] = useState('');
@@ -83,6 +93,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const [leadClientName, setLeadClientName] = useState('');
   const [leadAmount, setLeadAmount] = useState('');
   const [leadContact, setLeadContact] = useState('');
+  const [leadNotes, setLeadNotes] = useState('');
   const [leadStatus, setLeadStatus] = useState<CrmLeadStatus>('New');
 
   if (!type) return null;
@@ -93,6 +104,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   };
 
   const togglePermission = (key: keyof EmployeePermissions) => {
+    if (empAccessLevel === 'root') return;
     setEmpPermissions((prev) => ({
       ...prev,
       [key]: !prev[key],
@@ -119,16 +131,21 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         if (!taskTitle.trim()) {
           throw new Error(t('modal.taskTitleLabel'));
         }
-        const resolvedAssignee = taskAssignedTo || currentProfileId || nodes[0]?.id || null;
+        // Если у сотрудника нет права tasks_assign — задача автоматически назначается на него самого
+        const enforcedAssignee = canAssignTasks
+          ? taskAssignedTo || currentProfileId || nodes[0]?.id || null
+          : currentProfileId || nodes[0]?.id || null;
+
         payload = {
           company_id: companyId,
           title: taskTitle.trim(),
+          description: taskDescription.trim() || null,
           type: taskType,
           priority: taskPriority,
           status: taskStatus,
-          assigned_to: resolvedAssignee,
-          owner_node_id: resolvedAssignee,
-          created_by: currentProfileId || resolvedAssignee,
+          assigned_to: enforcedAssignee,
+          owner_node_id: enforcedAssignee,
+          created_by: currentProfileId || enforcedAssignee,
         };
       } else if (type === 'organization_nodes') {
         if (!empName.trim() || !empRoleTitle.trim()) {
@@ -141,10 +158,14 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           role_type: empRoleTitle.trim(),
           department: empDepartment.trim() || null,
           access_level: empAccessLevel,
-          permissions: empPermissions,
+          permissions:
+            empAccessLevel === 'root'
+              ? getDefaultPermissionsForAccessLevel('root')
+              : empPermissions,
           email: empEmail.trim() || null,
           telegram_chat_id: empTelegramId.trim() ? String(empTelegramId.trim()) : null,
           invite_code: inviteCode,
+          tree_path: 'root',
         };
       } else if (type === 'crm_leads') {
         if (!leadClientName.trim()) {
@@ -157,6 +178,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           client_name: leadClientName.trim(),
           amount: Number(leadAmount) || 0,
           contact: leadContact.trim() || null,
+          description: leadNotes.trim() || null,
           status: leadStatus,
         };
       }
@@ -225,17 +247,17 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
             <div className="rounded-lg border border-[#262626] bg-[#171717] p-3.5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider">
+                <span className="text-[11px] font-medium text-[#8E8E93]">
                   {t('invite.codeLabel')}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-white font-semibold bg-[#242424] px-2.5 py-1 rounded border border-[#333333] whitespace-nowrap">
+                  <span className="text-xs text-white font-semibold font-mono bg-[#242424] px-2.5 py-1 rounded border border-[#333333] whitespace-nowrap">
                     {createdEmployeeInvite.inviteCode}
                   </span>
                   <button
                     type="button"
                     onClick={() => copyText(createdEmployeeInvite.inviteCode, 'code')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#242424] hover:bg-[#2E2E2E] text-xs text-white transition-colors"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#242424] hover:bg-[#2E2E2E] text-xs text-white transition-colors whitespace-nowrap"
                   >
                     {copiedField === 'code' ? (
                       <>
@@ -253,7 +275,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider mb-1.5">
+                <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
                   {t('invite.deepLinkLabel')}
                 </label>
                 <div className="flex items-center gap-2">
@@ -360,6 +382,19 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.taskDescLabel')}
+                </label>
+                <textarea
+                  rows={2}
+                  value={taskDescription}
+                  onChange={(e) => setTaskDescription(e.target.value)}
+                  placeholder={t('modal.taskDescPlaceholder')}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
@@ -413,17 +448,20 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     {t('modal.taskAssigneeLabel')}
                   </label>
                   <select
-                    value={taskAssignedTo}
+                    disabled={!canAssignTasks}
+                    value={canAssignTasks ? taskAssignedTo : currentProfileId || ''}
                     onChange={(e) => setTaskAssignedTo(e.target.value)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white disabled:opacity-60 disabled:cursor-not-allowed focus:border-[#52525B] focus:outline-none"
                   >
-                    <option value="">{t('tasks.unassigned')}</option>
                     {nodes.map((node) => (
                       <option key={node.id} value={node.id}>
                         {node.name} — {node.role_type}
                       </option>
                     ))}
                   </select>
+                  {!canAssignTasks && (
+                    <p className="text-[11px] text-[#71717A] mt-1">{t('tasks.selfAssignedNote')}</p>
+                  )}
                 </div>
               </div>
             </>
@@ -445,7 +483,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 />
               </div>
 
-              {/* Свободный ввод должности и подразделения (БЛОК 1) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
@@ -475,7 +512,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 </div>
               </div>
 
-              {/* Уровень системного допуска (access_level) */}
               <div>
                 <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
                   {t('modal.empAccessLabel')}
@@ -488,37 +524,30 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   <option value="root">{t('access.root')}</option>
                   <option value="manager">{t('access.manager')}</option>
                   <option value="member">{t('access.member')}</option>
-                  <option value="viewer">{t('access.viewer')}</option>
+                  <option value="observer">{t('access.observer')}</option>
                 </select>
               </div>
 
-              {/* Интерактивные чекбоксы индивидуальных прав (permissions JSON) */}
-              <div className="rounded-lg border border-[#262626] bg-[#161618] p-3.5 space-y-2.5">
+              <div className="rounded-lg border border-[#262626] bg-[#161618] p-3.5 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-semibold text-white">
                   <Shield className="w-3.5 h-3.5 text-emerald-400" />
                   <span>{t('perm.title')}</span>
                 </div>
 
-                <div className="space-y-2 pt-1">
-                  {(
-                    [
-                      ['canAssignTasks', t('perm.canAssignTasks')],
-                      ['canManageCrm', t('perm.canManageCrm')],
-                      ['canManageTeam', t('perm.canManageTeam')],
-                      ['canDeleteAndSettings', t('perm.canDeleteAndSettings')],
-                    ] as [keyof EmployeePermissions, string][]
-                  ).map(([permKey, label]) => (
+                <div className="space-y-1.5 pt-1 max-h-44 overflow-y-auto">
+                  {PERMISSION_KEYS.map((permKey) => (
                     <label
                       key={permKey}
                       className="flex items-center gap-2.5 text-xs text-[#D4D4D8] cursor-pointer select-none"
                     >
                       <input
                         type="checkbox"
-                        checked={empPermissions[permKey]}
+                        disabled={empAccessLevel === 'root'}
+                        checked={empAccessLevel === 'root' ? true : empPermissions[permKey]}
                         onChange={() => togglePermission(permKey)}
-                        className="w-4 h-4 rounded border-[#3F3F46] bg-[#0D0D0F] text-white focus:ring-0"
+                        className="w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F] text-white focus:ring-0"
                       />
-                      <span>{label}</span>
+                      <span>{t(`perm.${permKey}`)}</span>
                     </label>
                   ))}
                 </div>
@@ -627,6 +656,19 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   onChange={(e) => setLeadContact(e.target.value)}
                   placeholder={t('modal.dealContactPlaceholder')}
                   className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  {t('modal.dealNotesLabel')}
+                </label>
+                <textarea
+                  rows={2}
+                  value={leadNotes}
+                  onChange={(e) => setLeadNotes(e.target.value)}
+                  placeholder={t('modal.dealNotesPlaceholder')}
+                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                 />
               </div>
             </>

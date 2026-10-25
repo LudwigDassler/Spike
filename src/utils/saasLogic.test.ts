@@ -690,8 +690,15 @@ test(' Serverless /api/telegram/webhook and /api/db login normalization work wit
   assert.equal(sentBody, 'OK');
 });
 
-test('computeDashboardKpis and generateCorporateInviteCode produce strict B2B metrics and TC-XXXX codes', async () => {
-  const { computeDashboardKpis, generateCorporateInviteCode } = await import('../types/database');
+test('computeDashboardKpis, generateCorporateInviteCode, and 7-flag RBAC permissions presets work accurately', async () => {
+  const {
+    computeDashboardKpis,
+    generateCorporateInviteCode,
+    getDefaultPermissionsForAccessLevel,
+    normalizeEmployeePermissions,
+    PERMISSION_KEYS,
+  } = await import('../types/database');
+  const { getDefaultPermissions } = await import('../../api/db');
 
   const code = generateCorporateInviteCode();
   assert.match(code, /^TC-[A-Z0-9]{4}$/);
@@ -701,12 +708,54 @@ test('computeDashboardKpis and generateCorporateInviteCode produce strict B2B me
   assert.equal(emptyKpis.activeTasksCount, 0);
   assert.equal(emptyKpis.conversionRatePercent, 0);
   assert.equal(emptyKpis.employeesCount, 0);
+
+  // 1. Root has all 7 permissions true
+  const rootPerms = getDefaultPermissionsForAccessLevel('root');
+  for (const key of PERMISSION_KEYS) {
+    assert.equal(rootPerms[key], true);
+  }
+
+  // 2. Manager has all true except billing_admin: false
+  const managerPerms = getDefaultPermissionsForAccessLevel('manager');
+  assert.equal(managerPerms.tasks_view_all, true);
+  assert.equal(managerPerms.tasks_assign, true);
+  assert.equal(managerPerms.crm_view, true);
+  assert.equal(managerPerms.crm_edit, true);
+  assert.equal(managerPerms.team_manage, true);
+  assert.equal(managerPerms.data_export, true);
+  assert.equal(managerPerms.billing_admin, false);
+
+  // 3. Member has all 7 flags false by default
+  const memberPerms = getDefaultPermissionsForAccessLevel('member');
+  for (const key of PERMISSION_KEYS) {
+    assert.equal(memberPerms[key], false);
+  }
+
+  // 4. Observer has tasks_view_all, crm_view, data_export true and edit flags false
+  const observerPerms = getDefaultPermissionsForAccessLevel('observer');
+  assert.equal(observerPerms.tasks_view_all, true);
+  assert.equal(observerPerms.crm_view, true);
+  assert.equal(observerPerms.data_export, true);
+  assert.equal(observerPerms.tasks_assign, false);
+  assert.equal(observerPerms.crm_edit, false);
+  assert.equal(observerPerms.team_manage, false);
+  assert.equal(observerPerms.billing_admin, false);
+
+  // 5. Custom override on member (e.g. Economist granted crm_view by Superadmin)
+  const customEconomist = normalizeEmployeePermissions(
+    'member',
+    { crm_view: true, data_export: true },
+    'Экономист'
+  );
+  assert.equal(customEconomist.access_level, 'member');
+  assert.equal(customEconomist.permissions.crm_view, true);
+  assert.equal(customEconomist.permissions.data_export, true);
+  assert.equal(customEconomist.permissions.team_manage, false);
+  assert.equal(customEconomist.permissions.billing_admin, false);
+
+  // 6. Server /api/db getDefaultPermissions matches client presets
+  const serverMember = getDefaultPermissions('member');
+  assert.equal(serverMember.team_manage, false);
+  assert.equal(serverMember.billing_admin, false);
+  assert.equal(serverMember.crm_view, false);
 });
-
-
-
-
-
-
-
-

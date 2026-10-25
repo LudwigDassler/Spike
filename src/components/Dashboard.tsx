@@ -5,7 +5,6 @@ import {
   Clock,
   Users,
   Briefcase,
-  Search,
   Send,
   Shield,
   TrendingUp,
@@ -23,31 +22,38 @@ import {
   Check,
   X,
   UserCircle,
-  LogOut,
   Percent,
   Save,
+  SlidersHorizontal,
+  Lock,
+  Globe,
+  FileText,
 } from 'lucide-react';
 import {
   AccessLevel,
   Company,
   CrmLeadRecord,
   CrmLeadStatus,
+  CurrencyCode,
   DashboardSection,
   EmployeePermissions,
+  LanguageCode,
   OrganizationNode,
+  PERMISSION_KEYS,
   PaymentGatewayRegion,
   SubscriptionPlanTier,
   TaskPriority,
   TaskRecord,
   TaskStatus,
   computeDashboardKpis,
-  getDefaultPermissionsForAccessLevel,
   normalizeEmployeePermissions,
 } from '../types/database';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AddRecordModal, ModalRecordType } from './AddRecordModal';
 import { ConfirmDialog } from './ConfirmDialog';
+import { PermissionsMatrixModal } from './PermissionsMatrixModal';
+import { SlideOverDrawer, DrawerRecordTarget } from './SlideOverDrawer';
 import { useLocale } from '../i18n/LocaleContext';
 
 interface DashboardProps {
@@ -82,7 +88,6 @@ interface PendingConfirmAction {
 export const Dashboard: React.FC<DashboardProps> = ({
   company,
   currentProfile,
-  activeChatId,
   nodes,
   tasks,
   leads,
@@ -92,7 +97,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onDeleteRecord,
   onResetSession,
 }) => {
-  const { t, formatMoney } = useLocale();
+  const { language, currency, setLanguage, setCurrency, t, formatMoney } = useLocale();
 
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
   const [modalType, setModalType] = useState<ModalRecordType>(null);
@@ -112,6 +117,43 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Invite Modal for existing employee
   const [inspectInviteNode, setInspectInviteNode] = useState<OrganizationNode | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Permissions Matrix Modal for Superadmin / Team Manager
+  const [permissionsModalNode, setPermissionsModalNode] = useState<OrganizationNode | null>(null);
+
+  // Slide-over Detail Drawer for Tasks & Deals
+  const [drawerSelection, setDrawerSelection] = useState<{
+    kind: 'task' | 'lead';
+    id: string;
+  } | null>(null);
+
+  // Strict RBAC Permissions for Current User
+  const { access_level: currentAccessLevel, permissions: perms } = useMemo(
+    () =>
+      normalizeEmployeePermissions(
+        currentProfile?.access_level,
+        currentProfile?.permissions,
+        currentProfile?.role_type
+      ),
+    [currentProfile]
+  );
+
+  const canCreateOrEditTasks =
+    currentAccessLevel !== 'observer' ||
+    perms.tasks_assign ||
+    perms.team_manage ||
+    perms.billing_admin;
+
+  // Guard activeSection if permissions change or user lacks access
+  useEffect(() => {
+    if (activeSection === 'crm' && !perms.crm_view) {
+      setActiveSection('overview');
+    } else if (activeSection === 'team' && !perms.team_manage) {
+      setActiveSection('overview');
+    } else if (activeSection === 'workspace' && !perms.billing_admin) {
+      setActiveSection('overview');
+    }
+  }, [activeSection, perms.crm_view, perms.team_manage, perms.billing_admin]);
 
   // My Profile editable state
   const [profileName, setProfileName] = useState(currentProfile?.name || '');
@@ -151,7 +193,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return map;
   }, [nodes]);
 
-  const kpis = useMemo(() => computeDashboardKpis(leads, tasks, nodes), [leads, tasks, nodes]);
+  // RBAC-filtered Tasks: if !perms.tasks_view_all, employee sees ONLY tasks assigned to or created by them
+  const visibleTasks = useMemo(() => {
+    if (perms.tasks_view_all || !currentProfile) {
+      return tasks;
+    }
+    return tasks.filter(
+      (task) =>
+        task.assigned_to === currentProfile.id ||
+        task.owner_node_id === currentProfile.id ||
+        task.created_by === currentProfile.id
+    );
+  }, [tasks, perms.tasks_view_all, currentProfile]);
+
+  const visibleLeads = useMemo(() => {
+    if (!perms.crm_view) return [];
+    return leads;
+  }, [leads, perms.crm_view]);
+
+  const kpis = useMemo(
+    () => computeDashboardKpis(visibleLeads, visibleTasks, nodes),
+    [visibleLeads, visibleTasks, nodes]
+  );
 
   const showToast = (msg: string) => {
     setToastBanner(msg);
@@ -161,6 +224,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handlePlanChange = (plan: SubscriptionPlanTier) => {
+    if (!perms.billing_admin) return;
     setSelectedPlan(plan);
     localStorage.setItem('tedcloud_plan', plan);
     if (company?.id) {
@@ -170,6 +234,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleRegionChange = (region: PaymentGatewayRegion) => {
+    if (!perms.billing_admin) return;
     setPaymentRegion(region);
     localStorage.setItem('tedcloud_payment_region', region);
     if (company?.id) {
@@ -194,21 +259,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Filtered Lists
   const filteredTasks = useMemo(() => {
-    return tasks.filter((item) => {
+    return visibleTasks.filter((item) => {
       const matchesQuery =
         !searchQuery.trim() ||
         item.title.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        (item.description || item.notes || '')
+          .toLowerCase()
+          .includes(searchQuery.trim().toLowerCase()) ||
         (item.type || '').toLowerCase().includes(searchQuery.trim().toLowerCase());
 
       const matchesMyTasks =
-        !onlyMyTasks || (currentProfile && item.assigned_to === currentProfile.id);
+        !onlyMyTasks ||
+        (currentProfile &&
+          (item.assigned_to === currentProfile.id || item.owner_node_id === currentProfile.id));
 
       const matchesPriority =
         priorityFilter === 'ALL' || (item.priority || 'Medium') === priorityFilter;
 
       return matchesQuery && matchesMyTasks && matchesPriority;
     });
-  }, [tasks, searchQuery, onlyMyTasks, currentProfile, priorityFilter]);
+  }, [visibleTasks, searchQuery, onlyMyTasks, currentProfile, priorityFilter]);
 
   const filteredNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -225,43 +295,56 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return leads;
-    return leads.filter((l) => {
+    if (!q) return visibleLeads;
+    return visibleLeads.filter((l) => {
       const name = (l.client_name || l.full_name || '').toLowerCase();
       const title = (l.title || '').toLowerCase();
       const contact = (l.contact || l.phone || '').toLowerCase();
       return name.includes(q) || title.includes(q) || contact.includes(q);
     });
-  }, [leads, searchQuery]);
+  }, [visibleLeads, searchQuery]);
 
   const completedTasksCount = useMemo(
-    () => tasks.filter((tItem) => tItem.status === 'Done').length,
-    [tasks]
+    () => visibleTasks.filter((tItem) => tItem.status === 'Done').length,
+    [visibleTasks]
   );
 
   const highPriorityOpenCount = useMemo(
-    () => tasks.filter((tItem) => tItem.priority === 'High' && tItem.status !== 'Done').length,
-    [tasks]
+    () =>
+      visibleTasks.filter((tItem) => tItem.priority === 'High' && tItem.status !== 'Done').length,
+    [visibleTasks]
   );
 
   const totalPipelineValue = useMemo(
     () =>
-      leads
+      visibleLeads
         .filter((l) => (l.status || l.stage) !== 'Lost')
         .reduce((acc, item) => acc + (Number(item.amount ?? item.deal_value) || 0), 0),
-    [leads]
+    [visibleLeads]
   );
 
   const wonPipelineValue = useMemo(
     () =>
-      leads
+      visibleLeads
         .filter((l) => (l.status || l.stage) === 'Won')
         .reduce((acc, item) => acc + (Number(item.amount ?? item.deal_value) || 0), 0),
-    [leads]
+    [visibleLeads]
   );
+
+  // Active target for Slide-over Detail Drawer
+  const activeDrawerTarget: DrawerRecordTarget = useMemo(() => {
+    if (!drawerSelection) return null;
+    if (drawerSelection.kind === 'task') {
+      const foundTask = visibleTasks.find((item) => item.id === drawerSelection.id);
+      return foundTask ? { kind: 'task', record: foundTask } : null;
+    }
+    const foundLead = visibleLeads.find((item) => item.id === drawerSelection.id);
+    return foundLead ? { kind: 'lead', record: foundLead } : null;
+  }, [drawerSelection, visibleTasks, visibleLeads]);
 
   // Mutations
   const handleTaskUpdate = async (taskId: string, updates: Record<string, any>) => {
+    if (!canCreateOrEditTasks) return;
     setBusyRecordId(taskId);
     try {
       const res = await onPatchRecord('tasks', taskId, updates);
@@ -274,6 +357,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleLeadStatusChange = (lead: CrmLeadRecord, nextStatus: CrmLeadStatus) => {
+    if (!perms.crm_edit) return;
     const currentStatus = (lead.status || lead.stage || 'New') as CrmLeadStatus;
     if (currentStatus === nextStatus) return;
 
@@ -301,53 +385,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
-  const handleAccessLevelUpdate = (node: OrganizationNode, nextLevel: AccessLevel) => {
-    const currentLevel = node.access_level || 'member';
-    if (currentLevel === nextLevel) return;
-
-    const nextPermissions = getDefaultPermissionsForAccessLevel(nextLevel);
-
-    setPendingConfirm({
-      title: t('confirm.criticalStatusTitle'),
-      description: `${node.name} (${node.role_type}): ${t(`accessShort.${currentLevel}`)} -> ${t(
-        `accessShort.${nextLevel}`
-      )}`,
-      variant: 'warning',
-      execute: async () => {
-        setBusyRecordId(node.id);
-        try {
-          await onPatchRecord('organization_nodes', node.id, {
-            access_level: nextLevel,
-            permissions: nextPermissions,
-          });
-          showToast(t('toast.permissionsUpdated'));
-        } finally {
-          setBusyRecordId(null);
-        }
-      },
-    });
-  };
-
-  const handleToggleNodePermission = async (
-    node: OrganizationNode,
-    permKey: keyof EmployeePermissions
+  const handleSaveNodePermissionsMatrix = async (
+    nodeId: string,
+    accessLevel: AccessLevel,
+    permissions: EmployeePermissions
   ) => {
-    const { access_level, permissions } = normalizeEmployeePermissions(
-      node.access_level,
-      node.permissions
-    );
-    const updatedPermissions: EmployeePermissions = {
-      ...permissions,
-      [permKey]: !permissions[permKey],
-    };
-
-    setBusyRecordId(node.id);
+    setBusyRecordId(nodeId);
     try {
-      await onPatchRecord('organization_nodes', node.id, {
-        access_level,
-        permissions: updatedPermissions,
+      const res = await onPatchRecord('organization_nodes', nodeId, {
+        access_level: accessLevel,
+        permissions,
       });
-      showToast(t('toast.permissionsUpdated'));
+      if (res.ok) {
+        showToast(t('toast.permissionsUpdated'));
+      }
     } finally {
       setBusyRecordId(null);
     }
@@ -356,16 +407,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleSaveMyProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentProfile) return;
-    if (!profileName.trim() || !profileRoleTitle.trim()) return;
+    if (!profileName.trim()) return;
 
     setIsSavingProfile(true);
     try {
-      const res = await onPatchRecord('organization_nodes', currentProfile.id, {
+      const updates: Record<string, any> = {
         name: profileName.trim(),
-        role_type: profileRoleTitle.trim(),
-        department: profileDepartment.trim() || null,
         email: profileEmail.trim() || null,
-      });
+      };
+      // Только пользователь с правом team_manage может редактировать должность и подразделение
+      if (perms.team_manage && profileRoleTitle.trim()) {
+        updates.role_type = profileRoleTitle.trim();
+        updates.department = profileDepartment.trim() || null;
+      }
+
+      const res = await onPatchRecord('organization_nodes', currentProfile.id, updates);
       if (res.ok) {
         showToast(t('profile.savedToast'));
       }
@@ -400,6 +456,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setBusyRecordId(id);
         try {
           await onDeleteRecord(table, id);
+          if (drawerSelection?.id === id) {
+            setDrawerSelection(null);
+          }
         } finally {
           setBusyRecordId(null);
         }
@@ -425,6 +484,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     headers: string[],
     rows: (string | number | null | undefined)[][]
   ) => {
+    if (!perms.data_export) return;
     const escapeCell = (val: string | number | null | undefined) => {
       const str = val === null || val === undefined ? '' : String(val);
       return `"${str.replace(/"/g, '""')}"`;
@@ -450,14 +510,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleExportDealsCsv = () => {
     downloadCsv(
       `tedcloud-deals-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['ID', 'Client', 'Subject', 'Amount (RUB)', 'Stage', 'Contact', 'Created'],
-      leads.map((l) => [
+      ['ID', 'Client', 'Subject', 'Amount (RUB)', 'Stage', 'Contact', 'Notes', 'Created'],
+      visibleLeads.map((l) => [
         l.id,
         l.client_name || l.full_name || '',
         l.title || '',
         Number(l.amount ?? l.deal_value ?? 0),
         l.status || l.stage || 'New',
         l.contact || l.phone || '',
+        l.description || l.notes || '',
         l.created_at || '',
       ])
     );
@@ -466,8 +527,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleExportTasksCsv = () => {
     downloadCsv(
       `tedcloud-tasks-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['ID', 'Title', 'Type', 'Priority', 'Status', 'Assignee', 'Position', 'Created'],
-      tasks.map((task) => {
+      ['ID', 'Title', 'Type', 'Priority', 'Status', 'Assignee', 'Position', 'Notes', 'Created'],
+      visibleTasks.map((task) => {
         const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
         return [
           task.id,
@@ -477,6 +538,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           task.status || 'Todo',
           assignee ? assignee.name : '',
           assignee ? assignee.role_type : '',
+          task.description || task.notes || '',
           task.created_at || '',
         ];
       })
@@ -486,7 +548,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleExportTeamCsv = () => {
     downloadCsv(
       `tedcloud-team-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['ID', 'Full Name', 'Job Title', 'Department', 'Access Level', 'Email', 'Invite Code', 'Telegram ID'],
+      [
+        'ID',
+        'Full Name',
+        'Job Title',
+        'Department',
+        'Access Level',
+        'Email',
+        'Invite Code',
+        'Telegram ID',
+      ],
       nodes.map((n) => [
         n.id,
         n.name,
@@ -500,7 +571,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
-  // Single-language, non-wrapping badges (БЛОК 4)
+  // Single-language, non-wrapping badges
   const renderPriorityBadge = (priority?: TaskPriority) => {
     const p = priority || 'Medium';
     if (p === 'High') {
@@ -577,6 +648,67 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
+  // Language & Currency Selector Card (placed in Личный кабинет & Организация и Биллинг)
+  const renderLocalizationCard = () => (
+    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+      <div className="flex items-center gap-2.5">
+        <Globe className="w-4 h-4 text-[#A1A1AA]" />
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+            {t('profile.preferencesTitle')}
+          </h3>
+          <p className="text-[11px] text-[#71717A] mt-0.5">{t('profile.preferencesSubtitle')}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+        <div>
+          <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
+            {t('profile.interfaceLang')}
+          </label>
+          <div className="inline-flex w-full rounded-lg border border-[#262626] bg-[#161618] p-0.5">
+            {(['RU', 'EN'] as LanguageCode[]).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => setLanguage(lang)}
+                className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                  language === lang
+                    ? 'bg-white text-black'
+                    : 'text-[#8E8E93] hover:text-white'
+                }`}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
+            {t('profile.displayCurrency')}
+          </label>
+          <div className="inline-flex w-full rounded-lg border border-[#262626] bg-[#161618] p-0.5">
+            {(['RUB', 'USD', 'EUR'] as CurrencyCode[]).map((curr) => (
+              <button
+                key={curr}
+                type="button"
+                onClick={() => setCurrency(curr)}
+                className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                  currency === curr
+                    ? 'bg-white text-black'
+                    : 'text-[#8E8E93] hover:text-white'
+                }`}
+              >
+                {curr}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[#09090B] text-[#EDEDED] flex font-sans antialiased">
       <Sidebar
@@ -584,9 +716,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onSelectSection={setActiveSection}
         currentProfile={currentProfile}
         counts={{
-          tasks: tasks.length,
+          tasks: visibleTasks.length,
           nodes: nodes.length,
-          leads: leads.length,
+          leads: visibleLeads.length,
         }}
         onRequestSignOut={onResetSession ? requestSignOut : undefined}
       />
@@ -594,8 +726,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar
           companyName={companyName}
-          currentProfile={currentProfile}
-          activeChatId={activeChatId}
+          activeSection={activeSection}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
           isSyncing={isSyncing}
           onRefresh={onRefresh}
         />
@@ -616,8 +749,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         )}
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
-          {/* Page Header & Contextual Controls */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Page Header & Strictly 1 Contextual Primary CTA (БЛОК 2) */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-xl font-semibold text-white tracking-tight">
                 {activeSection === 'overview' && t('header.overviewTitle')}
@@ -637,54 +770,54 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              {(activeSection === 'tasks' ||
-                activeSection === 'crm' ||
-                activeSection === 'team') && (
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-[#71717A] absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t('actions.searchPlaceholder')}
-                    className="w-52 sm:w-64 rounded-lg border border-[#262626] bg-[#121212] pl-8 pr-3 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
-                  />
-                </div>
+            <div className="flex items-center gap-2.5 shrink-0">
+              {/* На вкладках Дашборд и Задачи: только + Новая задача */}
+              {(activeSection === 'overview' || activeSection === 'tasks') &&
+                canCreateOrEditTasks && (
+                  <button
+                    onClick={() => setModalType('tasks')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{t('actions.newTask')}</span>
+                  </button>
+                )}
+
+              {/* На вкладке Сделки: только + Новая сделка (если есть право crm_edit) */}
+              {activeSection === 'crm' && perms.crm_edit && (
+                <button
+                  onClick={() => setModalType('crm_leads')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t('actions.newDeal')}</span>
+                </button>
               )}
 
-              <button
-                onClick={() => setModalType('tasks')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{t('actions.newTask')}</span>
-              </button>
-
-              <button
-                onClick={() => setModalType('organization_nodes')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262626] bg-[#141414] hover:bg-[#1F1F1F] text-xs font-medium text-white transition-colors whitespace-nowrap"
-              >
-                <Plus className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                <span>{t('actions.newEmployee')}</span>
-              </button>
-
-              <button
-                onClick={() => setModalType('crm_leads')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262626] bg-[#141414] hover:bg-[#1F1F1F] text-xs font-medium text-white transition-colors whitespace-nowrap"
-              >
-                <Plus className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                <span>{t('actions.newDeal')}</span>
-              </button>
+              {/* На вкладке Штат и Доступы: только + Добавить сотрудника (если есть право team_manage) */}
+              {activeSection === 'team' && perms.team_manage && (
+                <button
+                  onClick={() => setModalType('organization_nodes')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t('actions.newEmployee')}</span>
+                </button>
+              )}
+              {/* На вкладках Личный кабинет и Организация и Биллинг кнопок создания нет вообще */}
             </div>
           </div>
 
           {/* =================================================================
-              TAB 1: ДАШБОРД / OVERVIEW (Ключевые метрики, конверсия, сводка задач)
+              TAB 1: ДАШБОРД / OVERVIEW
           ================================================================== */}
           {activeSection === 'overview' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div
+                className={`grid grid-cols-1 sm:grid-cols-2 ${
+                  perms.crm_view ? 'lg:grid-cols-4' : 'lg:grid-cols-2'
+                } gap-4`}
+              >
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
                   <div className="flex items-center justify-between text-[#8E8E93] mb-3">
                     <span className="text-xs font-medium">{t('kpi.totalTasks')}</span>
@@ -719,32 +852,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                  <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                    <span className="text-xs font-medium">{t('kpi.conversionRate')}</span>
-                    <Percent className="w-4 h-4 text-[#71717A]" />
-                  </div>
-                  <div className="text-2xl font-semibold text-white tracking-tight">
-                    {kpis.conversionRatePercent}%
-                  </div>
-                  <div className="text-[11px] text-[#71717A] mt-1">
-                    {t('kpi.wonDeals')}:{' '}
-                    {leads.filter((l) => (l.status || l.stage) === 'Won').length} / {leads.length}
-                  </div>
-                </div>
+                {perms.crm_view && (
+                  <>
+                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                        <span className="text-xs font-medium">{t('kpi.conversionRate')}</span>
+                        <Percent className="w-4 h-4 text-[#71717A]" />
+                      </div>
+                      <div className="text-2xl font-semibold text-white tracking-tight">
+                        {kpis.conversionRatePercent}%
+                      </div>
+                      <div className="text-[11px] text-[#71717A] mt-1">
+                        {t('kpi.wonDeals')}:{' '}
+                        {visibleLeads.filter((l) => (l.status || l.stage) === 'Won').length} /{' '}
+                        {visibleLeads.length}
+                      </div>
+                    </div>
 
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                  <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                    <span className="text-xs font-medium">{t('kpi.pipelineVolume')}</span>
-                    <TrendingUp className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div className="text-2xl font-semibold text-white tracking-tight">
-                    {formatMoney(totalPipelineValue)}
-                  </div>
-                  <div className="text-[11px] text-emerald-400/90 mt-1">
-                    {t('kpi.closedWon')}: {formatMoney(wonPipelineValue)}
-                  </div>
-                </div>
+                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                        <span className="text-xs font-medium">{t('kpi.pipelineVolume')}</span>
+                        <TrendingUp className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="text-2xl font-semibold text-white tracking-tight">
+                        {formatMoney(totalPipelineValue)}
+                      </div>
+                      <div className="text-[11px] text-emerald-400/90 mt-1">
+                        {t('kpi.closedWon')}: {formatMoney(wonPipelineValue)}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Сводка активных задач на Дашборде */}
@@ -756,7 +894,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       {t('tasks.sectionTitle')}
                     </h2>
                     <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
-                      {tasks.length}
+                      {visibleTasks.length}
                     </span>
                   </div>
                   <button
@@ -767,26 +905,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </button>
                 </div>
 
-                {tasks.length === 0 ? (
+                {visibleTasks.length === 0 ? (
                   <div className="p-10 text-center space-y-3">
                     <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
                     <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
-                    <button
-                      onClick={() => setModalType('tasks')}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{t('tasks.addBtn')}</span>
-                    </button>
+                    {canCreateOrEditTasks && (
+                      <button
+                        onClick={() => setModalType('tasks')}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{t('tasks.addBtn')}</span>
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="divide-y divide-[#1A1A1C]">
-                    {tasks.slice(0, 8).map((task) => {
+                    {visibleTasks.slice(0, 8).map((task) => {
                       const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
                       return (
                         <div
                           key={task.id}
-                          className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#161618] transition-colors"
+                          onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
+                          className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#161618] transition-colors cursor-pointer"
                         >
                           <div className="min-w-0">
                             <p
@@ -810,18 +951,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   {t('tasks.unassigned')}
                                 </span>
                               )}
+                              {(task.description || task.notes) && (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                                  <FileText className="w-3 h-3" />
+                                  <span>{t('drawer.openDetails')}</span>
+                                </span>
+                              )}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div
+                            className="flex items-center gap-2 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <select
+                              disabled={!canCreateOrEditTasks}
                               value={task.status || 'Todo'}
                               onChange={(e) =>
                                 handleTaskUpdate(task.id, {
                                   status: e.target.value as TaskStatus,
                                 })
                               }
-                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
+                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
                             >
                               <option value="Todo">{t('status.Todo')}</option>
                               <option value="In Progress">{t('status.In Progress')}</option>
@@ -838,7 +989,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 2: ЗАДАЧИ / TASKS (Таблица и канбан задач, реальные должности)
+              TAB 2: ЗАДАЧИ / TASKS (Таблица, канбан и выдвижной Drawer)
           ================================================================== */}
           {activeSection === 'tasks' && (
             <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
@@ -854,16 +1005,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => setOnlyMyTasks((prev) => !prev)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors whitespace-nowrap ${
-                      onlyMyTasks
-                        ? 'bg-white text-black border-white'
-                        : 'bg-[#161618] text-[#A1A1AA] border-[#262626] hover:text-white'
-                    }`}
-                  >
-                    {t('tasks.myTasks')}
-                  </button>
+                  {perms.tasks_view_all && (
+                    <button
+                      onClick={() => setOnlyMyTasks((prev) => !prev)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors whitespace-nowrap ${
+                        onlyMyTasks
+                          ? 'bg-white text-black border-white'
+                          : 'bg-[#161618] text-[#A1A1AA] border-[#262626] hover:text-white'
+                      }`}
+                    >
+                      {t('tasks.myTasks')}
+                    </button>
+                  )}
 
                   <select
                     value={priorityFilter}
@@ -875,6 +1028,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <option value="Medium">{t('priority.Medium')}</option>
                     <option value="Low">{t('priority.Low')}</option>
                   </select>
+
+                  {perms.data_export && (
+                    <button
+                      onClick={handleExportTasksCsv}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-[#262626] bg-[#161618] text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>CSV</span>
+                    </button>
+                  )}
 
                   <div className="inline-flex rounded-md border border-[#262626] bg-[#161618] p-0.5">
                     <button
@@ -905,13 +1068,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div className="p-12 text-center space-y-3">
                   <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
                   <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
-                  <button
-                    onClick={() => setModalType('tasks')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{t('tasks.addBtn')}</span>
-                  </button>
+                  {canCreateOrEditTasks && (
+                    <button
+                      onClick={() => setModalType('tasks')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{t('tasks.addBtn')}</span>
+                    </button>
+                  )}
                 </div>
               ) : taskViewMode === 'list' ? (
                 <div className="divide-y divide-[#1A1A1C]">
@@ -922,17 +1087,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     return (
                       <div
                         key={task.id}
-                        className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#161618] transition-colors"
+                        onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
+                        className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#161618] transition-colors cursor-pointer"
                       >
                         <div className="flex items-start sm:items-center gap-3 min-w-0">
                           <button
                             type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              handleTaskUpdate(task.id, {
+                            disabled={isBusy || !canCreateOrEditTasks}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleTaskUpdate(task.id, {
                                 status: task.status === 'Done' ? 'Todo' : 'Done',
-                              })
-                            }
+                              });
+                            }}
                             className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
                               task.status === 'Done'
                                 ? 'bg-emerald-500 border-emerald-500 text-black'
@@ -965,38 +1132,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </strong>
                                 </span>
                               )}
+                              {(task.description || task.notes) && (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                                  <FileText className="w-3 h-3" />
+                                  <span className="truncate max-w-[200px]">
+                                    {task.description || task.notes}
+                                  </span>
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 shrink-0">
-                          <select
-                            disabled={isBusy}
-                            value={task.assigned_to || ''}
-                            onChange={(e) =>
-                              handleTaskUpdate(task.id, {
-                                assigned_to: e.target.value || null,
-                              })
-                            }
-                            className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
-                          >
-                            <option value="">{t('tasks.unassigned')}</option>
-                            {nodes.map((node) => (
-                              <option key={node.id} value={node.id}>
-                                {node.name} — {node.role_type}
-                              </option>
-                            ))}
-                          </select>
+                        <div
+                          className="flex flex-wrap items-center gap-2 shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {perms.tasks_assign && (
+                            <select
+                              disabled={isBusy}
+                              value={task.assigned_to || ''}
+                              onChange={(e) =>
+                                handleTaskUpdate(task.id, {
+                                  assigned_to: e.target.value || null,
+                                })
+                              }
+                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
+                            >
+                              <option value="">{t('tasks.unassigned')}</option>
+                              {nodes.map((node) => (
+                                <option key={node.id} value={node.id}>
+                                  {node.name} — {node.role_type}
+                                </option>
+                              ))}
+                            </select>
+                          )}
 
                           <select
-                            disabled={isBusy}
+                            disabled={isBusy || !canCreateOrEditTasks}
                             value={task.priority || 'Medium'}
                             onChange={(e) =>
                               handleTaskUpdate(task.id, {
                                 priority: e.target.value as TaskPriority,
                               })
                             }
-                            className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
+                            className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
                           >
                             <option value="Low">{t('priority.Low')}</option>
                             <option value="Medium">{t('priority.Medium')}</option>
@@ -1004,32 +1184,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </select>
 
                           <select
-                            disabled={isBusy}
+                            disabled={isBusy || !canCreateOrEditTasks}
                             value={task.status || 'Todo'}
                             onChange={(e) =>
                               handleTaskUpdate(task.id, {
                                 status: e.target.value as TaskStatus,
                               })
                             }
-                            className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
+                            className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
                           >
                             <option value="Todo">{t('status.Todo')}</option>
                             <option value="In Progress">{t('status.In Progress')}</option>
                             <option value="Done">{t('status.Done')}</option>
                           </select>
 
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => requestDeleteRecord('tasks', task.id, task.title)}
-                            className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          >
-                            {isBusy ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-3.5 h-3.5" />
-                            )}
-                          </button>
+                          {canCreateOrEditTasks && (
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => requestDeleteRecord('tasks', task.id, task.title)}
+                              className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            >
+                              {isBusy ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1067,18 +1249,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             return (
                               <div
                                 key={task.id}
-                                className="rounded-lg border border-[#242428] bg-[#141417] p-3 space-y-2.5"
+                                onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
+                                className="rounded-lg border border-[#242428] bg-[#141417] p-3 space-y-2.5 hover:border-[#3F3F46] transition-colors cursor-pointer"
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <p className="text-xs font-medium text-white leading-snug">
                                     {task.title}
                                   </p>
-                                  <button
-                                    onClick={() => requestDeleteRecord('tasks', task.id, task.title)}
-                                    className="text-[#52525B] hover:text-red-400 transition-colors"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                                  {canCreateOrEditTasks && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        requestDeleteRecord('tasks', task.id, task.title);
+                                      }}
+                                      className="text-[#52525B] hover:text-red-400 transition-colors"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
                                 </div>
 
                                 <div className="flex items-center justify-between gap-2">
@@ -1090,10 +1278,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </span>
                                 </div>
 
-                                <div className="pt-1 flex items-center justify-between gap-1.5 border-t border-[#1F1F23]">
+                                <div
+                                  className="pt-1 flex items-center justify-between gap-1.5 border-t border-[#1F1F23]"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
                                   {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((st) => (
                                     <button
                                       key={st}
+                                      disabled={!canCreateOrEditTasks}
                                       onClick={() => handleTaskUpdate(task.id, { status: st })}
                                       className={`flex-1 py-1 rounded text-[11px] transition-colors whitespace-nowrap ${
                                         (task.status || 'Todo') === st
@@ -1120,7 +1312,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {/* =================================================================
               TAB 3: СДЕЛКИ / CRM DEALS
           ================================================================== */}
-          {activeSection === 'crm' && (
+          {activeSection === 'crm' && perms.crm_view && (
             <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
               <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1132,28 +1324,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     {filteredLeads.length}
                   </span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleExportDealsCsv}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>CSV</span>
-                  </button>
-                </div>
+                {perms.data_export && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleExportDealsCsv}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>CSV</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {filteredLeads.length === 0 ? (
                 <div className="p-12 text-center space-y-3">
                   <div className="text-sm font-medium text-white">{t('crm.emptyTitle')}</div>
                   <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('crm.empty')}</p>
-                  <button
-                    onClick={() => setModalType('crm_leads')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{t('crm.addBtn')}</span>
-                  </button>
+                  {perms.crm_edit && (
+                    <button
+                      onClick={() => setModalType('crm_leads')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{t('crm.addBtn')}</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1164,7 +1360,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <th className="py-3 px-5">{t('crm.colContact')}</th>
                         <th className="py-3 px-5">{t('crm.colStage')}</th>
                         <th className="py-3 px-5 text-right">{t('crm.colAmount')}</th>
-                        <th className="py-3 px-5 text-right">{t('crm.colControl')}</th>
+                        {perms.crm_edit && (
+                          <th className="py-3 px-5 text-right">{t('crm.colControl')}</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#1A1A1C] text-xs">
@@ -1176,11 +1374,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         const displayValue = Number(lead.amount ?? lead.deal_value ?? 0);
 
                         return (
-                          <tr key={lead.id} className="hover:bg-[#161618] transition-colors">
+                          <tr
+                            key={lead.id}
+                            onClick={() => setDrawerSelection({ kind: 'lead', id: lead.id })}
+                            className="hover:bg-[#161618] transition-colors cursor-pointer"
+                          >
                             <td className="py-3.5 px-5">
                               <div className="font-medium text-white">{displayName}</div>
                               {lead.title && lead.title !== displayName && (
                                 <div className="text-[11px] text-[#71717A]">{lead.title}</div>
+                              )}
+                              {(lead.description || lead.notes) && (
+                                <div className="text-[11px] text-[#71717A] mt-0.5 truncate max-w-xs">
+                                  {lead.description || lead.notes}
+                                </div>
                               )}
                             </td>
                             <td className="py-3.5 px-5 text-[#A1A1AA]">
@@ -1193,31 +1400,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <td className="py-3.5 px-5 text-right text-white font-semibold whitespace-nowrap">
                               {formatMoney(displayValue)}
                             </td>
-                            <td className="py-3.5 px-5 text-right">
-                              <div className="inline-flex items-center gap-2">
-                                <select
-                                  value={displayStatus}
-                                  onChange={(e) =>
-                                    handleLeadStatusChange(lead, e.target.value as CrmLeadStatus)
-                                  }
-                                  className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
-                                >
-                                  <option value="New">{t('stage.New')}</option>
-                                  <option value="Negotiation">{t('stage.Negotiation')}</option>
-                                  <option value="Won">{t('stage.Won')}</option>
-                                  <option value="Lost">{t('stage.Lost')}</option>
-                                </select>
+                            {perms.crm_edit && (
+                              <td
+                                className="py-3.5 px-5 text-right"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="inline-flex items-center gap-2">
+                                  <select
+                                    value={displayStatus}
+                                    onChange={(e) =>
+                                      handleLeadStatusChange(lead, e.target.value as CrmLeadStatus)
+                                    }
+                                    className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
+                                  >
+                                    <option value="New">{t('stage.New')}</option>
+                                    <option value="Negotiation">{t('stage.Negotiation')}</option>
+                                    <option value="Won">{t('stage.Won')}</option>
+                                    <option value="Lost">{t('stage.Lost')}</option>
+                                  </select>
 
-                                <button
-                                  onClick={() =>
-                                    requestDeleteRecord('crm_leads', lead.id, displayName)
-                                  }
-                                  className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
+                                  <button
+                                    onClick={() =>
+                                      requestDeleteRecord('crm_leads', lead.id, displayName)
+                                    }
+                                    className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -1229,9 +1441,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 4: ШТАТ И ДОСТУПЫ / TEAM & ACCESS (Свободные должности + матрица прав)
+              TAB 4: ШТАТ И ДОСТУПЫ / TEAM & ACCESS (Свободные должности + модальное окно «Права доступа»)
           ================================================================== */}
-          {activeSection === 'team' && (
+          {activeSection === 'team' && perms.team_manage && (
             <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
               <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1243,12 +1455,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     {filteredNodes.length}
                   </span>
                 </div>
-                <button
-                  onClick={() => setModalType('organization_nodes')}
-                  className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                >
-                  + {t('team.addBtn')}
-                </button>
+                {perms.data_export && (
+                  <button
+                    onClick={handleExportTeamCsv}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>CSV</span>
+                  </button>
+                )}
               </div>
 
               {filteredNodes.length === 0 ? (
@@ -1280,11 +1495,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       {filteredNodes.map((node) => {
                         const { access_level, permissions } = normalizeEmployeePermissions(
                           node.access_level,
-                          node.permissions
+                          node.permissions,
+                          node.role_type
                         );
+                        const activeFlagsCount = PERMISSION_KEYS.filter(
+                          (k) => permissions[k]
+                        ).length;
 
                         return (
-                          <tr key={node.id} className="hover:bg-[#161618] transition-colors align-top">
+                          <tr key={node.id} className="hover:bg-[#161618] transition-colors">
                             <td className="py-4 px-5">
                               <div className="font-semibold text-white">{node.name}</div>
                               {node.email && (
@@ -1304,43 +1523,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               </div>
                             </td>
 
-                            {/* Уровень допуска + Интерактивные чекбоксы полномочий */}
-                            <td className="py-4 px-5 space-y-2.5 min-w-[280px]">
-                              <select
-                                value={access_level}
-                                onChange={(e) =>
-                                  handleAccessLevelUpdate(node, e.target.value as AccessLevel)
-                                }
-                                className="w-full rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1.5 text-xs text-white focus:border-[#52525B] focus:outline-none"
-                              >
-                                <option value="root">{t('access.root')}</option>
-                                <option value="manager">{t('access.manager')}</option>
-                                <option value="member">{t('access.member')}</option>
-                                <option value="viewer">{t('access.viewer')}</option>
-                              </select>
-
-                              <div className="grid grid-cols-1 gap-1.5 pt-1">
-                                {(
-                                  [
-                                    ['canAssignTasks', t('perm.canAssignTasks')],
-                                    ['canManageCrm', t('perm.canManageCrm')],
-                                    ['canManageTeam', t('perm.canManageTeam')],
-                                    ['canDeleteAndSettings', t('perm.canDeleteAndSettings')],
-                                  ] as [keyof EmployeePermissions, string][]
-                                ).map(([permKey, label]) => (
-                                  <label
-                                    key={permKey}
-                                    className="flex items-center gap-2 text-[11px] text-[#A1A1AA] hover:text-white cursor-pointer select-none"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={permissions[permKey]}
-                                      onChange={() => void handleToggleNodePermission(node, permKey)}
-                                      className="w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F] text-white focus:ring-0"
-                                    />
-                                    <span>{label}</span>
-                                  </label>
-                                ))}
+                            {/* Контур доступа + Кнопка открытия Матрицы Прав */}
+                            <td className="py-4 px-5">
+                              <div className="flex flex-col items-start gap-1.5">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#18181B] border border-[#2C2C30] text-[#E4E4E7] font-medium whitespace-nowrap">
+                                  {t(`accessShort.${access_level}`)} ({activeFlagsCount}/7)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPermissionsModalNode(node)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#2E2E32] bg-[#161618] hover:bg-[#222226] text-[11px] font-medium text-white transition-colors whitespace-nowrap"
+                                >
+                                  <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
+                                  <span>{t('permModal.btnLabel')}</span>
+                                </button>
                               </div>
                             </td>
 
@@ -1398,92 +1594,114 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ================================================================== */}
           {activeSection === 'profile' && currentProfile && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Редактирование личных данных и должности */}
-              <form
-                onSubmit={handleSaveMyProfile}
-                className="lg:col-span-2 rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 space-y-5"
-              >
-                <div className="flex items-center gap-3 border-b border-[#1F1F1F] pb-4">
-                  <div className="w-9 h-9 rounded-lg bg-[#1C1C1F] border border-[#2C2C30] flex items-center justify-center">
-                    <UserCircle className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-white">{t('profile.cardTitle')}</h2>
-                    <p className="text-xs text-[#8E8E93]">{t('profile.cardSubtitle')}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                      {t('profile.fullName')}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={profileName}
-                      onChange={(e) => setProfileName(e.target.value)}
-                      className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
-                    />
+              {/* Левая колонка: Редактирование личных данных + Параметры локализации */}
+              <div className="lg:col-span-2 space-y-6">
+                <form
+                  onSubmit={handleSaveMyProfile}
+                  className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 space-y-5"
+                >
+                  <div className="flex items-center gap-3 border-b border-[#1F1F1F] pb-4">
+                    <div className="w-9 h-9 rounded-lg bg-[#1C1C1F] border border-[#2C2C30] flex items-center justify-center">
+                      <UserCircle className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-semibold text-white">{t('profile.cardTitle')}</h2>
+                      <p className="text-xs text-[#8E8E93]">{t('profile.cardSubtitle')}</p>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                      {t('profile.jobTitle')}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={profileRoleTitle}
-                      onChange={(e) => setProfileRoleTitle(e.target.value)}
-                      className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                        {t('profile.fullName')}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={profileName}
+                        onChange={(e) => setProfileName(e.target.value)}
+                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-medium text-[#A1A1AA]">
+                          {t('profile.jobTitle')}
+                        </label>
+                        {!perms.team_manage && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                            <Lock className="w-3 h-3" />
+                            <span>{t('profile.lockedByAdmin')}</span>
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        disabled={!perms.team_manage}
+                        value={profileRoleTitle}
+                        onChange={(e) => setProfileRoleTitle(e.target.value)}
+                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-medium text-[#A1A1AA]">
+                          {t('profile.department')}
+                        </label>
+                        {!perms.team_manage && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                            <Lock className="w-3 h-3" />
+                            <span>{t('profile.lockedByAdmin')}</span>
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        disabled={!perms.team_manage}
+                        value={profileDepartment}
+                        onChange={(e) => setProfileDepartment(e.target.value)}
+                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                        {t('profile.email')}
+                      </label>
+                      <input
+                        type="email"
+                        value={profileEmail}
+                        onChange={(e) => setProfileEmail(e.target.value)}
+                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                      {t('profile.department')}
-                    </label>
-                    <input
-                      type="text"
-                      value={profileDepartment}
-                      onChange={(e) => setProfileDepartment(e.target.value)}
-                      className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
-                    />
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={isSavingProfile}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
+                    >
+                      {isSavingProfile ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {isSavingProfile ? t('profile.savingBtn') : t('profile.saveBtn')}
+                      </span>
+                    </button>
                   </div>
+                </form>
 
-                  <div>
-                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                      {t('profile.email')}
-                    </label>
-                    <input
-                      type="email"
-                      value={profileEmail}
-                      onChange={(e) => setProfileEmail(e.target.value)}
-                      className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
-                    />
-                  </div>
-                </div>
+                {renderLocalizationCard()}
+              </div>
 
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={isSavingProfile}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
-                  >
-                    {isSavingProfile ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    <span>
-                      {isSavingProfile ? t('profile.savingBtn') : t('profile.saveBtn')}
-                    </span>
-                  </button>
-                </div>
-              </form>
-
-              {/* Права доступа, синхронизация Telegram и выход */}
+              {/* Правая колонка: Синхронизация Telegram + Активные полномочия сотрудника (без дублирования кнопки Выйти) */}
               <div className="space-y-6">
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
                   <div className="flex items-center gap-2.5">
@@ -1497,7 +1715,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div>
                       <div className="text-[#71717A] mb-1">{t('profile.accessLevelLabel')}</div>
                       <span className="inline-flex items-center px-2.5 py-1 rounded bg-[#1C1C1F] border border-[#2C2C30] text-white font-medium whitespace-nowrap">
-                        {t(`access.${currentProfile.access_level || 'member'}`)}
+                        {t(`access.${currentAccessLevel}`)}
                       </span>
                     </div>
 
@@ -1555,24 +1773,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                {onResetSession && (
-                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-3">
+                {/* Карточка активных полномочий сотрудника вместо дублирующего блока Выхода */}
+                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-3.5">
+                  <div>
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                      {t('profile.sessionTitle')}
+                      {t('profile.activePermissionsTitle')}
                     </h3>
-                    <p className="text-xs text-[#8E8E93] leading-relaxed">
-                      {t('profile.sessionDesc')}
+                    <p className="text-[11px] text-[#8E8E93] mt-1 leading-relaxed">
+                      {t('profile.activePermissionsDesc')}
                     </p>
-                    <button
-                      type="button"
-                      onClick={requestSignOut}
-                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold text-red-300 transition-colors"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>{t('profile.signOutBtn')}</span>
-                    </button>
                   </div>
-                )}
+
+                  <div className="space-y-2 pt-1">
+                    {PERMISSION_KEYS.map((permKey) => {
+                      const enabled = perms[permKey];
+                      return (
+                        <div
+                          key={permKey}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-[#1F1F23] bg-[#141417] px-3 py-2 text-xs"
+                        >
+                          <span className={enabled ? 'text-white font-medium' : 'text-[#71717A]'}>
+                            {t(`perm.${permKey}`)}
+                          </span>
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded whitespace-nowrap ${
+                              enabled
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-[#1C1C20] text-[#71717A] border border-[#27272A]'
+                            }`}
+                          >
+                            {enabled ? 'ON' : 'OFF'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1580,7 +1816,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {/* =================================================================
               TAB 6: ОРГАНИЗАЦИЯ И БИЛЛИНГ / WORKSPACE & BILLING
           ================================================================== */}
-          {activeSection === 'workspace' && (
+          {activeSection === 'workspace' && perms.billing_admin && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
@@ -1691,7 +1927,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
 
-              {/* Payment Gateway Contour & CSV Export */}
+              {/* Payment Gateway Contour, Localization & CSV Export */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
                   <div className="flex items-center gap-2.5">
@@ -1738,7 +1974,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                {/* CSV Export Center */}
+                {renderLocalizationCard()}
+              </div>
+
+              {perms.data_export && (
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
                   <div className="flex items-center gap-2.5">
                     <Download className="w-4 h-4 text-[#A1A1AA]" />
@@ -1778,7 +2017,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </button>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </main>
@@ -1789,6 +2028,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         type={modalType}
         companyId={companyId}
         currentProfileId={currentProfile?.id || null}
+        canAssignTasks={perms.tasks_assign}
         nodes={nodes}
         botUsername={botUsername}
         onClose={() => setModalType(null)}
@@ -1797,6 +2037,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
           if (pushSent) {
             showToast(t('toast.pushSent'));
           }
+        }}
+      />
+
+      {/* Employee Granular Permissions Matrix Modal (БЛОК 1) */}
+      <PermissionsMatrixModal
+        node={permissionsModalNode}
+        onClose={() => setPermissionsModalNode(null)}
+        onSave={handleSaveNodePermissionsMatrix}
+      />
+
+      {/* Slide-over Detail Drawer for Tasks & Deals (БЛОК 2) */}
+      <SlideOverDrawer
+        target={activeDrawerTarget}
+        nodes={nodes}
+        canEditTasks={canCreateOrEditTasks}
+        canAssignTasks={perms.tasks_assign}
+        canEditCrm={perms.crm_edit}
+        onClose={() => setDrawerSelection(null)}
+        onPatchRecord={async (table, id, updates) => {
+          const res = await onPatchRecord(table, id, updates);
+          if (res.ok && (updates.description !== undefined || updates.notes !== undefined)) {
+            showToast(t('drawer.savedToast'));
+          }
+          return res;
         }}
       />
 
@@ -1875,9 +2139,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setInspectInviteNode(null)}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-white text-black hover:bg-[#E4E4E7] transition-colors"
+                  className="px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
                 >
-                  {t('invite.close')}
+                  {t('invite.doneBtn')}
                 </button>
               </div>
             </div>
@@ -1885,14 +2149,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {/* Corporate Confirm Dialog */}
+      {/* Custom Enterprise Confirmation Dialog */}
       <ConfirmDialog
         isOpen={Boolean(pendingConfirm)}
         title={pendingConfirm?.title || ''}
         description={pendingConfirm?.description || ''}
         variant={pendingConfirm?.variant || 'danger'}
-        confirmLabel={pendingConfirm?.confirmLabel || t('confirm.confirm')}
-        cancelLabel={t('confirm.cancel')}
+        confirmLabel={pendingConfirm?.confirmLabel}
         isLoading={isConfirmLoading}
         onCancel={() => {
           if (!isConfirmLoading) setPendingConfirm(null);

@@ -1,11 +1,24 @@
-export type AccessLevel = 'root' | 'manager' | 'member' | 'viewer';
+export type AccessLevel = 'root' | 'manager' | 'member' | 'observer';
 
 export interface EmployeePermissions {
-  canAssignTasks: boolean;
-  canManageCrm: boolean;
-  canManageTeam: boolean;
-  canDeleteAndSettings: boolean;
+  tasks_view_all: boolean;
+  tasks_assign: boolean;
+  crm_view: boolean;
+  crm_edit: boolean;
+  team_manage: boolean;
+  data_export: boolean;
+  billing_admin: boolean;
 }
+
+export const PERMISSION_KEYS: readonly (keyof EmployeePermissions)[] = [
+  'tasks_view_all',
+  'tasks_assign',
+  'crm_view',
+  'crm_edit',
+  'team_manage',
+  'data_export',
+  'billing_admin',
+];
 
 export type TaskPriority = 'Low' | 'Medium' | 'High';
 
@@ -38,9 +51,6 @@ export interface OrganizationNode {
   company_id: string;
   user_id?: string | null;
   name: string;
-  /**
-   * Свободная должность сотрудника (например: «Главный инженер», «Финансовый директор», «Юрист»)
-   */
   role_type: string;
   department?: string | null;
   email?: string | null;
@@ -64,6 +74,8 @@ export interface TaskRecord {
   status: TaskStatus;
   assigned_to?: string | null;
   created_by?: string | null;
+  description?: string | null;
+  notes?: string | null;
   due_date?: string | null;
   created_at?: string;
 }
@@ -84,6 +96,7 @@ export interface CrmLeadRecord {
   stage?: string;
   source?: string | null;
   description?: string | null;
+  notes?: string | null;
   created_at?: string;
 }
 
@@ -94,55 +107,88 @@ export interface DashboardKpis {
   employeesCount: number;
 }
 
+export function normalizeAccessLevel(
+  rawLevel?: string | null,
+  roleType?: string | null
+): AccessLevel {
+  const cleanRole = String(roleType || '').trim().toUpperCase();
+  if (cleanRole === 'SUPERADMIN' || cleanRole === 'ROOT') {
+    return 'root';
+  }
+  const cleanLevel = String(rawLevel || '').trim().toLowerCase();
+  if (cleanLevel === 'root') return 'root';
+  if (cleanLevel === 'manager') return 'manager';
+  if (cleanLevel === 'observer' || cleanLevel === 'viewer') return 'observer';
+  return 'member';
+}
+
 export function getDefaultPermissionsForAccessLevel(level: AccessLevel): EmployeePermissions {
   switch (level) {
     case 'root':
       return {
-        canAssignTasks: true,
-        canManageCrm: true,
-        canManageTeam: true,
-        canDeleteAndSettings: true,
+        tasks_view_all: true,
+        tasks_assign: true,
+        crm_view: true,
+        crm_edit: true,
+        team_manage: true,
+        data_export: true,
+        billing_admin: true,
       };
     case 'manager':
       return {
-        canAssignTasks: true,
-        canManageCrm: true,
-        canManageTeam: true,
-        canDeleteAndSettings: false,
+        tasks_view_all: true,
+        tasks_assign: true,
+        crm_view: true,
+        crm_edit: true,
+        team_manage: true,
+        data_export: true,
+        billing_admin: false,
+      };
+    case 'observer':
+      return {
+        tasks_view_all: true,
+        tasks_assign: false,
+        crm_view: true,
+        crm_edit: false,
+        team_manage: false,
+        data_export: true,
+        billing_admin: false,
       };
     case 'member':
-      return {
-        canAssignTasks: true,
-        canManageCrm: true,
-        canManageTeam: false,
-        canDeleteAndSettings: false,
-      };
-    case 'viewer':
     default:
       return {
-        canAssignTasks: false,
-        canManageCrm: false,
-        canManageTeam: false,
-        canDeleteAndSettings: false,
+        tasks_view_all: false,
+        tasks_assign: false,
+        crm_view: false,
+        crm_edit: false,
+        team_manage: false,
+        data_export: false,
+        billing_admin: false,
       };
   }
 }
 
 export function normalizeEmployeePermissions(
   accessLevel?: string | null,
-  rawPermissions?: Partial<EmployeePermissions> | string | null
+  rawPermissions?: Partial<EmployeePermissions> | Record<string, any> | string | null,
+  roleType?: string | null
 ): { access_level: AccessLevel; permissions: EmployeePermissions } {
-  const validLevels: AccessLevel[] = ['root', 'manager', 'member', 'viewer'];
-  const normalizedLevel: AccessLevel = validLevels.includes(accessLevel as AccessLevel)
-    ? (accessLevel as AccessLevel)
-    : 'member';
+  const normalizedLevel = normalizeAccessLevel(accessLevel, roleType);
+
+  // Для root / SUPERADMIN все 7 прав всегда true
+  if (normalizedLevel === 'root') {
+    return {
+      access_level: 'root',
+      permissions: getDefaultPermissionsForAccessLevel('root'),
+    };
+  }
 
   const defaults = getDefaultPermissionsForAccessLevel(normalizedLevel);
   if (!rawPermissions) {
     return { access_level: normalizedLevel, permissions: defaults };
   }
 
-  let parsed: Partial<EmployeePermissions> = {};
+  let parsed: Record<string, any> = {};
   if (typeof rawPermissions === 'string') {
     try {
       parsed = JSON.parse(rawPermissions);
@@ -150,22 +196,36 @@ export function normalizeEmployeePermissions(
       parsed = {};
     }
   } else if (typeof rawPermissions === 'object') {
-    parsed = rawPermissions;
+    parsed = rawPermissions as Record<string, any>;
   }
 
   return {
     access_level: normalizedLevel,
     permissions: {
-      canAssignTasks:
-        typeof parsed.canAssignTasks === 'boolean' ? parsed.canAssignTasks : defaults.canAssignTasks,
-      canManageCrm:
-        typeof parsed.canManageCrm === 'boolean' ? parsed.canManageCrm : defaults.canManageCrm,
-      canManageTeam:
-        typeof parsed.canManageTeam === 'boolean' ? parsed.canManageTeam : defaults.canManageTeam,
-      canDeleteAndSettings:
-        typeof parsed.canDeleteAndSettings === 'boolean'
-          ? parsed.canDeleteAndSettings
-          : defaults.canDeleteAndSettings,
+      tasks_view_all:
+        typeof parsed.tasks_view_all === 'boolean'
+          ? parsed.tasks_view_all
+          : defaults.tasks_view_all,
+      tasks_assign:
+        typeof parsed.tasks_assign === 'boolean'
+          ? parsed.tasks_assign
+          : defaults.tasks_assign,
+      crm_view:
+        typeof parsed.crm_view === 'boolean' ? parsed.crm_view : defaults.crm_view,
+      crm_edit:
+        typeof parsed.crm_edit === 'boolean' ? parsed.crm_edit : defaults.crm_edit,
+      team_manage:
+        typeof parsed.team_manage === 'boolean'
+          ? parsed.team_manage
+          : defaults.team_manage,
+      data_export:
+        typeof parsed.data_export === 'boolean'
+          ? parsed.data_export
+          : defaults.data_export,
+      billing_admin:
+        typeof parsed.billing_admin === 'boolean'
+          ? parsed.billing_admin
+          : defaults.billing_admin,
     },
   };
 }
