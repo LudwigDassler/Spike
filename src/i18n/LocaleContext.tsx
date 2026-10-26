@@ -74,9 +74,9 @@ const ru: Dictionary = {
 
   // Contextual Single Primary Actions (БЛОК 2)
   'actions.searchPlaceholder': 'Поиск по задачам, сделкам, сотрудникам...',
-  'actions.newTask': '+ Новая задача',
-  'actions.newEmployee': '+ Добавить сотрудника',
-  'actions.newDeal': '+ Новая сделка',
+  'actions.newTask': 'Новая задача',
+  'actions.newEmployee': 'Добавить сотрудника',
+  'actions.newDeal': 'Новая сделка',
 
   // KPI Cards
   'kpi.totalTasks': 'Активные задачи',
@@ -95,7 +95,7 @@ const ru: Dictionary = {
   'tasks.sectionTitle': 'Корпоративные задачи',
   'tasks.myTasks': 'Только мои',
   'tasks.allPriorities': 'Все приоритеты',
-  'tasks.addBtn': '+ Новая задача',
+  'tasks.addBtn': 'Новая задача',
   'tasks.emptyTitle': 'Активные задачи отсутствуют',
   'tasks.empty': 'Создайте задачу в веб-интерфейсе или отправьте сообщение корпоративному Telegram-боту.',
   'tasks.assignee': 'Исполнитель',
@@ -127,7 +127,7 @@ const ru: Dictionary = {
   'accessShort.viewer': 'Аудитор (Чтение)',
 
   // 7 Granular Permissions & Clean Business Descriptions (БЛОК 1 — без ключей БД)
-  'perm.title': 'Матрица индивидуальных разрешений (7 контуров)',
+  'perm.title': 'Матрица индивидуальных разрешений',
   'perm.tasks_view_all': 'Видеть все задачи компании (иначе — только свои)',
   'perm.tasks_assign': 'Назначать и делегировать задачи другим сотрудникам',
   'perm.crm_view': 'Просматривать вкладку «Сделки» и финансовые показатели',
@@ -154,25 +154,25 @@ const ru: Dictionary = {
   'permModal.saveBtn': 'Сохранить изменения',
 
   // Department Constructor (БЛОК 2)
-  'dept.sectionTitle': 'Структура подразделений (Отделы)',
-  'dept.cardTitle': 'Структура подразделений (Отделы)',
-  'dept.subtitle': 'Сформируйте собственную структуру отделов компании для привязки сотрудников, задач, сделок и групповых оповещений в Telegram.',
-  'dept.cardSubtitle': 'Сформируйте собственную структуру отделов компании для привязки сотрудников, задач, сделок и групповых оповещений в Telegram.',
+  'dept.sectionTitle': 'Структура подразделений компании',
+  'dept.cardTitle': 'Структура подразделений компании',
+  'dept.subtitle': 'Зарегистрируйте отделы и подразделения организации для распределения сотрудников, задач, сделок и групповых оповещений в Telegram.',
+  'dept.cardSubtitle': 'Зарегистрируйте отделы и подразделения организации для распределения сотрудников, задач, сделок и групповых оповещений в Telegram.',
   'dept.placeholder': 'Название нового отдела (например: Финансовый отдел, ПТО, Логистика)...',
   'dept.inputPlaceholder': 'Название нового отдела (например: Финансовый отдел, ПТО, Логистика)...',
-  'dept.addBtn': 'Добавить отдел',
-  'dept.empty': 'Подразделения еще не созданы. Добавьте первый отдел компании выше.',
-  'dept.customOption': '+ Вписать новый отдел вручную...',
+  'dept.addBtn': 'Зарегистрировать отдел',
+  'dept.empty': 'Подразделения еще не зарегистрированы. Создайте первый отдел компании для распределения сотрудников и задач.',
+  'dept.customOption': '+ Создать новый отдел...',
   'dept.customInputPlaceholder': 'Введите название нового подразделения...',
   'dept.selectNone': 'Без привязки к отделу',
   'dept.noneOption': 'Без привязки к отделу',
   'dept.allDeptNotifyHint': 'При выборе отдела без конкретного исполнителя уведомление в Telegram получат все сотрудники этого подразделения.',
-  'dept.addedToast': 'Новое подразделение добавлено в структуру компании.',
-  'dept.removedToast': 'Подразделение удалено из списка компании.',
+  'dept.addedToast': 'Новое подразделение зарегистрировано в структуре компании.',
+  'dept.removedToast': 'Подразделение удалено из структуры компании.',
 
   // Team Section
   'team.sectionTitle': 'Штатное расписание и матрица доступов',
-  'team.addBtn': '+ Добавить сотрудника',
+  'team.addBtn': 'Добавить сотрудника',
   'team.emptyTitle': 'Штат сотрудников не заполнен',
   'team.empty': 'Добавьте сотрудников с указанием их должности, подразделения и уровня системного допуска.',
   'team.colEmployee': 'ФИО и Email',
@@ -190,7 +190,7 @@ const ru: Dictionary = {
 
   // CRM Section (БЛОК 3)
   'crm.sectionTitle': 'Реестр коммерческих сделок',
-  'crm.addBtn': '+ Новая сделка',
+  'crm.addBtn': 'Новая сделка',
   'crm.emptyTitle': 'Воронка сделок пуста',
   'crm.empty': 'Зарегистрируйте первую коммерческую сделку для отслеживания стадий переговоров и выручки.',
   'crm.colClient': 'Клиент и Договор',
@@ -342,13 +342,13 @@ const ru: Dictionary = {
   'modal.taskDepartmentHint': 'Если конкретный сотрудник не выбран, уведомление в Telegram получат все сотрудники указанного отдела.',
   'modal.empNameLabel': 'ФИО сотрудника',
   'modal.empNamePlaceholder': 'Например: Волков Дмитрий Сергеевич',
-  'modal.empRoleLabel': 'Должность / Роль в компании (свободный ввод)',
+  'modal.empRoleLabel': 'Должность в компании',
   'modal.empRolePlaceholder': 'Например: Главный инженер, Экономист, Юрист',
   'modal.empDeptLabel': 'Подразделение / Отдел',
   'modal.empDeptPlaceholder': 'Например: Финансовый отдел, ПТО, Коммерческий блок',
   'modal.empAccessLabel': 'Базовый уровень системного допуска',
   'modal.empEmailLabel': 'Корпоративный Email',
-  'modal.empTgLabel': 'Telegram ID (необязательно при входе по коду)',
+  'modal.empTgLabel': 'Telegram ID',
   'modal.dealClientLabel': 'Компания / Контрагент',
   'modal.dealClientPlaceholder': 'Например: АО СтройИнвест Холдинг',
   'modal.dealTitleLabel': 'Предмет договора / проект',
@@ -484,9 +484,9 @@ const en: Dictionary = {
 
   // Contextual Single Primary Actions
   'actions.searchPlaceholder': 'Search tasks, deals, employees...',
-  'actions.newTask': '+ New Task',
-  'actions.newEmployee': '+ Add Member',
-  'actions.newDeal': '+ New Deal',
+  'actions.newTask': 'New Task',
+  'actions.newEmployee': 'Add Member',
+  'actions.newDeal': 'New Deal',
 
   // KPI Cards
   'kpi.totalTasks': 'Open Tasks',
@@ -505,7 +505,7 @@ const en: Dictionary = {
   'tasks.sectionTitle': 'Organization Tasks',
   'tasks.myTasks': 'Only Mine',
   'tasks.allPriorities': 'All Priorities',
-  'tasks.addBtn': '+ New Task',
+  'tasks.addBtn': 'New Task',
   'tasks.emptyTitle': 'No tasks registered',
   'tasks.empty': 'Create a task in the web console or send a message to the corporate Telegram bot.',
   'tasks.assignee': 'Assignee',
@@ -537,7 +537,7 @@ const en: Dictionary = {
   'accessShort.viewer': 'Auditor (Read-Only)',
 
   // 7 Granular Permissions & Clean Business Descriptions
-  'perm.title': 'Granular Permission Matrix (7 Contours)',
+  'perm.title': 'Granular Permission Matrix',
   'perm.tasks_view_all': 'View all company tasks (otherwise only own tasks)',
   'perm.tasks_assign': 'Assign and delegate tasks to other employees',
   'perm.crm_view': 'View CRM Deals tab and financial metrics',
@@ -564,25 +564,25 @@ const en: Dictionary = {
   'permModal.saveBtn': 'Save Permissions',
 
   // Department Constructor
-  'dept.sectionTitle': 'Organizational Structure (Departments)',
-  'dept.cardTitle': 'Organizational Structure (Departments)',
-  'dept.subtitle': 'Define custom company departments to assign staff, tasks, CRM deals, and broadcast Telegram alerts.',
-  'dept.cardSubtitle': 'Define custom company departments to assign staff, tasks, CRM deals, and broadcast Telegram alerts.',
+  'dept.sectionTitle': 'Organizational Structure',
+  'dept.cardTitle': 'Organizational Structure',
+  'dept.subtitle': 'Register company departments to assign staff, tasks, CRM deals, and broadcast Telegram alerts.',
+  'dept.cardSubtitle': 'Register company departments to assign staff, tasks, CRM deals, and broadcast Telegram alerts.',
   'dept.placeholder': 'New department name (e.g. Finance, Engineering, Legal)...',
   'dept.inputPlaceholder': 'New department name (e.g. Finance, Engineering, Legal)...',
-  'dept.addBtn': 'Add Department',
-  'dept.empty': 'No custom departments defined yet. Add your first company department above.',
-  'dept.customOption': '+ Enter new department manually...',
+  'dept.addBtn': 'Register Department',
+  'dept.empty': 'No departments registered yet. Create your first department above.',
+  'dept.customOption': '+ Create new department...',
   'dept.customInputPlaceholder': 'Enter new department name...',
   'dept.selectNone': 'No specific department',
   'dept.noneOption': 'No specific department',
   'dept.allDeptNotifyHint': 'When a department is selected without a specific assignee, all Telegram-linked members of that department will be notified.',
-  'dept.addedToast': 'New department added to organization structure.',
-  'dept.removedToast': 'Department removed from organization list.',
+  'dept.addedToast': 'New department registered in organization structure.',
+  'dept.removedToast': 'Department removed from organization structure.',
 
   // Team Section
   'team.sectionTitle': 'Organization Directory & Permissions',
-  'team.addBtn': '+ Add Member',
+  'team.addBtn': 'Add Member',
   'team.emptyTitle': 'No team members found',
   'team.empty': 'Add employees with their custom job titles, departments, and system access levels.',
   'team.colEmployee': 'Name & Email',
@@ -600,7 +600,7 @@ const en: Dictionary = {
 
   // CRM Section
   'crm.sectionTitle': 'Commercial Deal Registry',
-  'crm.addBtn': '+ New Deal',
+  'crm.addBtn': 'New Deal',
   'crm.emptyTitle': 'No deals in pipeline',
   'crm.empty': 'Register your first commercial deal to track negotiation stages and revenue.',
   'crm.colClient': 'Client & Contract',
@@ -752,13 +752,13 @@ const en: Dictionary = {
   'modal.taskDepartmentHint': 'If no individual assignee is chosen, all Telegram-linked members of the selected department will be notified.',
   'modal.empNameLabel': 'Full Name',
   'modal.empNamePlaceholder': 'e.g. Dmitry Volkov',
-  'modal.empRoleLabel': 'Job Title / Position (free text input)',
+  'modal.empRoleLabel': 'Job Title / Position',
   'modal.empRolePlaceholder': 'e.g. Chief Engineer, Economist, Legal Counsel',
   'modal.empDeptLabel': 'Department / Division',
   'modal.empDeptPlaceholder': 'e.g. Finance Department, Engineering, Commercial Block',
   'modal.empAccessLabel': 'Base System Access Level',
   'modal.empEmailLabel': 'Corporate Email',
-  'modal.empTgLabel': 'Telegram ID (optional when using invite code)',
+  'modal.empTgLabel': 'Telegram ID',
   'modal.dealClientLabel': 'Client Organization',
   'modal.dealClientPlaceholder': 'e.g. StroyInvest Holding Corp',
   'modal.dealTitleLabel': 'Contract Subject / Project',

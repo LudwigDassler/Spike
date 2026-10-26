@@ -18,7 +18,7 @@ import {
 import { useLocale } from '../i18n/LocaleContext';
 import { UserAvatar } from './UserAvatar';
 
-interface SidebarProps {
+export interface SidebarProps {
   activeSection: DashboardSection;
   onSelectSection: (section: DashboardSection) => void;
   currentProfile: OrganizationNode | null;
@@ -170,18 +170,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="inline-flex items-center rounded-md border border-[#262626] bg-[#161618] p-0.5 shrink-0"
                 aria-label="Language switcher"
               >
-                {(['RU', 'EN'] as LanguageCode[]).map((lang) => (
+                {(['ru', 'en'] as LanguageCode[]).map((lang) => (
                   <button
                     key={lang}
                     type="button"
                     onClick={() => setLanguage(lang)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase transition-colors ${
                       language === lang
                         ? 'bg-white text-black'
                         : 'text-[#8E8E93] hover:text-white'
                     }`}
                   >
-                    {lang}
+                    {lang.toUpperCase()}
                   </button>
                 ))}
               </div>

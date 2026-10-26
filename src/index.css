@@ -4,18 +4,37 @@
   :root {
     --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    color-scheme: dark;
   }
 
   body {
     font-family: var(--font-sans);
-    color: #0f172a;
-    background-color: #f8fafc;
+    color: #ededed;
+    background-color: #09090b;
   }
 
   code, pre, .font-mono {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .tabular-nums {

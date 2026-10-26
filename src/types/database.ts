@@ -53,6 +53,8 @@ export interface Company {
   created_at?: string;
 }
 
+export type OrganizationRoleType = string;
+
 export interface OrganizationNode {
   id: string;
   company_id: string;

@@ -764,8 +764,28 @@ test('computeDashboardKpis, generateCorporateInviteCode, and 7-flag RBAC permiss
   const mergedDepts = extractCompanyDepartments(
     { id: 'c1', name: 'TedCloud', departments: ['Дирекция', 'Отдел продаж'] },
     [{ id: 'n1', company_id: 'c1', name: 'Иван', role_type: 'Юрист', department: 'Юридический отдел' }],
-    [{ id: 't1', title: 'Задача', department: 'IT и Разработка' }],
-    [{ id: 'l1', title: 'Сделка', department: 'Отдел продаж' }]
+    [
+      {
+        id: 't1',
+        company_id: 'c1',
+        title: 'Задача',
+        type: 'Task',
+        priority: 'Medium',
+        status: 'Todo',
+        department: 'IT и Разработка',
+      },
+    ],
+    [
+      {
+        id: 'l1',
+        company_id: 'c1',
+        title: 'Сделка',
+        client_name: 'Клиент',
+        amount: 100000,
+        status: 'New',
+        department: 'Отдел продаж',
+      },
+    ]
   );
   assert.deepEqual(mergedDepts, [
     'Дирекция',
@@ -774,4 +794,5 @@ test('computeDashboardKpis, generateCorporateInviteCode, and 7-flag RBAC permiss
     'IT и Разработка',
   ]);
 });
+
 

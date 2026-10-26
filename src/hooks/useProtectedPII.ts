@@ -1,19 +1,6 @@
 import React, { useMemo } from 'react';
 import { maskPhoneForRls } from '../utils/saasLogic';
 
-// Типизация глобального объекта Telegram Mini Apps SDK
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        openTelegramLink?: (url: string) => void;
-        HapticFeedback?: {
-          notificationOccurred?: (type: 'success' | 'warning' | 'error') => void;
-        };
-      };
-    };
-  }
-}
 
 export interface UseProtectedPIIInput {
   rawPhone: string;

@@ -11,13 +11,17 @@ export interface TelegramWebAppUser {
   language_code?: string;
 }
 
-interface TelegramWebAppInstance {
+export interface TelegramWebAppInstance {
   initDataUnsafe?: {
     user?: TelegramWebAppUser;
     start_param?: string;
   };
   ready?: () => void;
   expand?: () => void;
+  openTelegramLink?: (url: string) => void;
+  HapticFeedback?: {
+    notificationOccurred?: (type: 'success' | 'warning' | 'error') => void;
+  };
 }
 
 declare global {
@@ -46,7 +50,7 @@ export interface TelegramAuthContextValue {
 
 const DEFAULT_SYSTEM_NODE: OrganizationNode = {
   id: 'default-workspace-node',
-  company_id: null,
+  company_id: '',
   name: 'Администратор',
   role_type: 'SUPERADMIN',
   tree_path: 'tedcloud',
@@ -124,7 +128,7 @@ export const TelegramAuthProvider: React.FC<{
                 (data.role_type as OrganizationRoleType) || 'SUPERADMIN';
               setUserNode({
                 id: String(data.id),
-                company_id: data.company_id ? String(data.company_id) : null,
+                company_id: data.company_id ? String(data.company_id) : '',
                 name: String(data.name),
                 role_type: resolvedRole,
                 tree_path: String(data.tree_path || 'tedcloud'),
@@ -160,7 +164,7 @@ export const TelegramAuthProvider: React.FC<{
             const node = result.node;
             setUserNode({
               id: String(node.id),
-              company_id: node.company_id ? String(node.company_id) : null,
+              company_id: node.company_id ? String(node.company_id) : '',
               name: String(node.name),
               role_type:
                 (node.role_type as OrganizationRoleType) || 'SUPERADMIN',

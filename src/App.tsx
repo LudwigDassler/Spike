@@ -13,6 +13,7 @@ import { LocaleProvider, useLocale } from './i18n/LocaleContext';
 
 const SESSION_PROFILE_ID_KEY = 'tedcloud_session_profile_id';
 const SESSION_CHAT_ID_KEY = 'tedcloud_chat_id';
+const SESSION_COMPANY_ID_KEY = 'tedcloud_session_company_id';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -43,6 +44,7 @@ class GlobalErrorBoundary extends React.Component<
     try {
       localStorage.removeItem(SESSION_PROFILE_ID_KEY);
       localStorage.removeItem(SESSION_CHAT_ID_KEY);
+      localStorage.removeItem(SESSION_COMPANY_ID_KEY);
       localStorage.removeItem('tedcloud_custom_departments');
     } catch {}
     window.location.href = window.location.pathname;
@@ -105,19 +107,32 @@ function AppContent() {
 
     try {
       const params = new URLSearchParams(window.location.search);
-      const urlChatId = params.get('chatId');
-      const storedChatId = localStorage.getItem(SESSION_CHAT_ID_KEY);
-      const storedProfileId = localStorage.getItem(SESSION_PROFILE_ID_KEY);
+      const urlInvite = params.get('invite')?.trim() || null;
+      const urlTgId = params.get('tg_id')?.trim() || null;
+      const urlChatId = params.get('chatId')?.trim() || null;
 
-      const resolvedChatId = urlChatId || storedChatId || null;
-      if (urlChatId) {
-        localStorage.setItem(SESSION_CHAT_ID_KEY, urlChatId);
+      // If URL contains a 1-click login parameter (?invite=, ?tg_id=, ?chatId=), prioritize it over stale localStorage session
+      const hasUrlAutoAuth = Boolean(urlInvite || urlTgId || urlChatId);
+      const storedChatId = localStorage.getItem(SESSION_CHAT_ID_KEY);
+      const storedProfileId = hasUrlAutoAuth
+        ? null
+        : localStorage.getItem(SESSION_PROFILE_ID_KEY);
+      const storedCompanyId = hasUrlAutoAuth
+        ? null
+        : localStorage.getItem(SESSION_COMPANY_ID_KEY);
+
+      const resolvedChatId = urlTgId || urlChatId || storedChatId || null;
+      if (urlTgId || urlChatId) {
+        localStorage.setItem(SESSION_CHAT_ID_KEY, urlTgId || urlChatId || '');
       }
       setActiveChatId(resolvedChatId);
 
       const queryParams = new URLSearchParams();
+      if (urlInvite) queryParams.set('invite', urlInvite);
+      if (urlTgId) queryParams.set('tg_id', urlTgId);
       if (resolvedChatId) queryParams.set('chatId', resolvedChatId);
       if (storedProfileId) queryParams.set('profileId', storedProfileId);
+      if (storedCompanyId) queryParams.set('company_id', storedCompanyId);
 
       const qs = queryParams.toString();
       const endpoint = qs ? `/api/db?${qs}` : '/api/db';
@@ -146,11 +161,30 @@ function AppContent() {
       if (payload.currentProfile) {
         setCurrentProfile(payload.currentProfile);
         localStorage.setItem(SESSION_PROFILE_ID_KEY, payload.currentProfile.id);
+        if (payload.currentProfile.company_id) {
+          localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.currentProfile.company_id);
+        } else if (payload.company?.id) {
+          localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.company.id);
+        }
+        if (payload.currentProfile.telegram_chat_id) {
+          localStorage.setItem(
+            SESSION_CHAT_ID_KEY,
+            String(payload.currentProfile.telegram_chat_id)
+          );
+        }
+        if (hasUrlAutoAuth) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('invite');
+          cleanUrl.searchParams.delete('tg_id');
+          cleanUrl.searchParams.delete('chatId');
+          window.history.replaceState({}, '', cleanUrl.toString());
+        }
       } else if (storedProfileId) {
         const matched = loadedNodes.find((n) => n.id === storedProfileId) || null;
         setCurrentProfile(matched);
         if (!matched) {
           localStorage.removeItem(SESSION_PROFILE_ID_KEY);
+          localStorage.removeItem(SESSION_COMPANY_ID_KEY);
         }
       } else {
         setCurrentProfile(null);
@@ -181,13 +215,23 @@ function AppContent() {
   const handleAuthenticated = useCallback(
     async (profile: OrganizationNode, authCompany: Company | null) => {
       localStorage.setItem(SESSION_PROFILE_ID_KEY, profile.id);
+      if (profile.company_id) {
+        localStorage.setItem(SESSION_COMPANY_ID_KEY, profile.company_id);
+      } else if (authCompany?.id) {
+        localStorage.setItem(SESSION_COMPANY_ID_KEY, authCompany.id);
+      }
       if (profile.telegram_chat_id) {
         localStorage.setItem(SESSION_CHAT_ID_KEY, String(profile.telegram_chat_id));
+      } else {
+        localStorage.removeItem(SESSION_CHAT_ID_KEY);
       }
+      // Clear stale state before loading the newly authenticated workspace
+      setNodes([profile]);
+      setTasks([]);
+      setLeads([]);
+      setMessages([]);
       setCurrentProfile(profile);
-      if (authCompany) {
-        setCompany(authCompany);
-      }
+      setCompany(authCompany);
       await loadWorkspaceData(false);
     },
     [loadWorkspaceData]
@@ -318,11 +362,18 @@ function AppContent() {
   const handleResetSession = useCallback(() => {
     localStorage.removeItem(SESSION_PROFILE_ID_KEY);
     localStorage.removeItem(SESSION_CHAT_ID_KEY);
+    localStorage.removeItem(SESSION_COMPANY_ID_KEY);
     const url = new URL(window.location.href);
     url.searchParams.delete('chatId');
+    url.searchParams.delete('tg_id');
+    url.searchParams.delete('invite');
     window.history.replaceState({}, '', url.toString());
     setActiveChatId(null);
     setCurrentProfile(null);
+    setCompany(null);
+    setTasks([]);
+    setLeads([]);
+    setMessages([]);
   }, []);
 
   if (isLoading) {

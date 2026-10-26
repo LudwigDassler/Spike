@@ -162,6 +162,9 @@ test('filterMessagesForActiveThread isolates 1-on-1 dialogs and channels accurat
   const frolovDialog = filterMessagesForActiveThread(
     messages,
     {
+      type: 'direct',
+      id: frolov.id,
+      label: frolov.name,
       targetType: 'direct',
       targetId: frolov.id,
       targetLabel: frolov.name,
@@ -178,6 +181,9 @@ test('filterMessagesForActiveThread isolates 1-on-1 dialogs and channels accurat
   const broadcastChannel = filterMessagesForActiveThread(
     messages,
     {
+      type: 'broadcast',
+      id: 'broadcast',
+      label: 'Общий поток (Циркуляры компании)',
       targetType: 'broadcast',
       targetId: 'broadcast',
       targetLabel: 'Общий поток (Циркуляры компании)',

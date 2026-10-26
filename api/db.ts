@@ -466,17 +466,31 @@ async function resolveFallbackOwnerNodeId(
   return anyNode?.id || null;
 }
 
-async function fetchAllCompanyNodes(supabase: SupabaseClient | null): Promise<any[]> {
+async function fetchAllCompanyNodes(
+  supabase: SupabaseClient | null,
+  companyId?: string | null
+): Promise<any[]> {
+  let rows: any[] = [];
   if (!supabase) {
-    return localStore.organization_nodes;
+    rows = localStore.organization_nodes;
+  } else {
+    let query = supabase.from('organization_nodes').select('*');
+    if (companyId) {
+      query = query.eq('company_id', companyId);
+    }
+    const { data } = await query;
+    rows = Array.isArray(data) ? data : [];
   }
-  const { data } = await supabase.from('organization_nodes').select('*');
-  return Array.isArray(data) ? data : [];
+  if (companyId) {
+    return rows.filter((n) => String(n?.company_id || '') === String(companyId));
+  }
+  return rows;
 }
 
-// БЛОК 2: Отправка Telegram-уведомления конкретному исполнителю ИЛИ всему подразделению (отделу)
+// БЛОК 2: Отправка Telegram-уведомления конкретному исполнителю ИЛИ всему подразделению (отделу) строго внутри companyId
 async function sendTelegramTaskOrDepartmentPush(params: {
   supabase: SupabaseClient | null;
+  companyId?: string | null;
   assignedToId?: string | null;
   department?: string | null;
   taskId?: string;
@@ -484,14 +498,23 @@ async function sendTelegramTaskOrDepartmentPush(params: {
   taskPriority: string;
   taskType?: string;
 }): Promise<{ pushed: boolean; count?: number; reason?: string }> {
-  const { supabase, assignedToId, department, taskId, taskTitle, taskPriority, taskType } = params;
+  const {
+    supabase,
+    companyId,
+    assignedToId,
+    department,
+    taskId,
+    taskTitle,
+    taskPriority,
+    taskType,
+  } = params;
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     return { pushed: false, reason: 'missing_bot_token' };
   }
 
-  const allNodes = await fetchAllCompanyNodes(supabase);
+  const allNodes = await fetchAllCompanyNodes(supabase, companyId);
   let targetNodes: any[] = [];
 
   if (assignedToId) {
@@ -549,8 +572,14 @@ async function sendTelegramTaskOrDepartmentPush(params: {
         { text: 'Завершить задачу', callback_data: `task_done:${taskId}` },
       ]);
     }
+    const inviteParam = node.invite_code
+      ? `&invite=${encodeURIComponent(String(node.invite_code))}`
+      : '';
     inlineKeyboard.push([
-      { text: 'Открыть панель TedCloud', url: `${siteUrl}/?chatId=${telegramChatId}` },
+      {
+        text: 'Открыть панель TedCloud',
+        url: `${siteUrl}/?tg_id=${telegramChatId}${inviteParam}&chatId=${telegramChatId}`,
+      },
     ]);
 
     try {
@@ -586,7 +615,10 @@ async function sendTelegramWorkspaceMessagePush(params: {
     return { pushed: false, count: 0, reason: 'missing_bot_token' };
   }
 
-  const allNodes = await fetchAllCompanyNodes(supabase);
+  const allNodes = await fetchAllCompanyNodes(
+    supabase,
+    messageRecord.company_id ? String(messageRecord.company_id) : null
+  );
   const senderNode = messageRecord.sender_id
     ? allNodes.find((n) => String(n.id) === String(messageRecord.sender_id))
     : null;
@@ -707,10 +739,13 @@ async function sendTelegramWorkspaceMessagePush(params: {
         },
       ]);
     }
+    const inviteParam = recipient.invite_code
+      ? `&invite=${encodeURIComponent(String(recipient.invite_code))}`
+      : '';
     inlineKeyboard.push([
       {
         text: 'Открыть панель TedCloud',
-        url: `${siteUrl}/?chatId=${tgChatId}`,
+        url: `${siteUrl}/?tg_id=${tgChatId}${inviteParam}&chatId=${tgChatId}`,
       },
     ]);
 
@@ -990,6 +1025,7 @@ function findMatchingNodeByInput(nodes: any[], rawInput: string): any | null {
   return (
     nodes.find(
       (node: any) =>
+        String(node.id || '').trim().toLowerCase() === q ||
         String(node.telegram_chat_id || '').trim().toLowerCase() === q ||
         String(node.invite_code || '').trim().toLowerCase() === q ||
         String(node.email || '').trim().toLowerCase() === q ||
@@ -1005,58 +1041,153 @@ export default async function handler(req: any, res: any) {
 
     if (method === 'GET') {
       const chatId = req.query?.chatId ? String(req.query.chatId).trim() : null;
+      const tgId = req.query?.tg_id ? String(req.query.tg_id).trim() : null;
+      const inviteCode = req.query?.invite ? String(req.query.invite).trim() : null;
       const profileId = req.query?.profileId ? String(req.query.profileId).trim() : null;
+      const requestedCompanyId =
+        req.query?.company_id || req.query?.companyId
+          ? String(req.query.company_id || req.query.companyId).trim()
+          : null;
 
       if (!supabase) {
-        const nodes = localStore.organization_nodes.map(normalizeNodeRow);
+        const allNodes = localStore.organization_nodes.map(normalizeNodeRow);
         let currentProfile = null;
         if (profileId) {
-          currentProfile = nodes.find((n) => n.id === profileId) || null;
-        } else if (chatId) {
-          currentProfile = findMatchingNodeByInput(nodes, chatId);
+          currentProfile =
+            allNodes.find((n) => String(n.id) === profileId) ||
+            findMatchingNodeByInput(allNodes, profileId);
+        }
+        if (!currentProfile && inviteCode) {
+          currentProfile = findMatchingNodeByInput(allNodes, inviteCode);
+        }
+        if (!currentProfile && tgId) {
+          currentProfile = findMatchingNodeByInput(allNodes, tgId);
+        }
+        if (!currentProfile && chatId) {
+          currentProfile = findMatchingNodeByInput(allNodes, chatId);
         }
 
-        const allNormalizedMessages = localStore.workspace_messages.map(normalizeMessageRow);
-        const privateMessages = currentProfile
-          ? allNormalizedMessages.filter((m) => canServerUserSeeMessage(m, currentProfile))
-          : allNormalizedMessages;
+        const activeCompanyId =
+          currentProfile?.company_id || requestedCompanyId || null;
+
+        if (!activeCompanyId) {
+          return res.status(200).json({
+            ok: true,
+            mode: 'local_empty',
+            company: null,
+            currentProfile: null,
+            nodes: allNodes,
+            tasks: [],
+            leads: [],
+            messages: [],
+          });
+        }
+
+        const matchedCompany =
+          localStore.companies.find((c) => String(c.id) === String(activeCompanyId)) || null;
+        const companyNodes = allNodes.filter(
+          (n) => String(n.company_id || '') === String(activeCompanyId)
+        );
+        const companyTasks = localStore.tasks
+          .map(normalizeTaskRow)
+          .filter((t) => String(t.company_id || '') === String(activeCompanyId));
+        const companyLeads = localStore.crm_leads
+          .map(normalizeLeadRow)
+          .filter((l) => String(l.company_id || '') === String(activeCompanyId));
+        const companyMessages = localStore.workspace_messages
+          .map(normalizeMessageRow)
+          .filter(
+            (m) =>
+              String(m.company_id || '') === String(activeCompanyId) &&
+              (!currentProfile || canServerUserSeeMessage(m, currentProfile))
+          );
 
         return res.status(200).json({
           ok: true,
           mode: 'local_empty',
-          company: normalizeCompanyRow(localStore.companies[0] || null),
+          company: normalizeCompanyRow(matchedCompany),
           currentProfile,
-          nodes,
-          tasks: localStore.tasks.map(normalizeTaskRow),
-          leads: localStore.crm_leads.map(normalizeLeadRow),
-          messages: privateMessages,
+          nodes: companyNodes,
+          tasks: companyTasks,
+          leads: companyLeads,
+          messages: companyMessages,
         });
       }
 
       const [companiesRes, nodesRes, tasksRes, leadsRes, messagesRes] = await Promise.all([
-        safeSelectTable(supabase, 'companies', false, 1),
+        safeSelectTable(supabase, 'companies', false, 100),
         safeSelectTable(supabase, 'organization_nodes', true),
         safeSelectTable(supabase, 'tasks', false),
         safeSelectTable(supabase, 'crm_leads', false),
-        safeSelectTable(supabase, 'workspace_messages', false, 200),
+        safeSelectTable(supabase, 'workspace_messages', false, 300),
       ]);
 
       if (nodesRes.error) {
         throw new Error(`[organization_nodes] ${nodesRes.error.message}`);
       }
 
+      const rawCompanies = (companiesRes.data || []).map(normalizeCompanyRow);
       const rawNodes = (nodesRes.data || []).map(normalizeNodeRow);
       const rawTasks = (tasksRes.data || []).map(normalizeTaskRow);
       const rawLeads = (leadsRes.data || []).map(normalizeLeadRow);
 
       let currentProfile = null;
       if (profileId) {
-        currentProfile = rawNodes.find((n: any) => n.id === profileId) || null;
-      } else if (chatId) {
+        currentProfile =
+          rawNodes.find((n: any) => String(n.id) === profileId) ||
+          findMatchingNodeByInput(rawNodes, profileId);
+      }
+      if (!currentProfile && inviteCode) {
+        currentProfile = findMatchingNodeByInput(rawNodes, inviteCode);
+      }
+      if (!currentProfile && tgId) {
+        currentProfile = findMatchingNodeByInput(rawNodes, tgId);
+      }
+      if (!currentProfile && chatId) {
         currentProfile = findMatchingNodeByInput(rawNodes, chatId);
       }
 
-      // Merge remote workspace_messages with any in-memory fallback messages
+      const activeCompanyId =
+        currentProfile?.company_id || requestedCompanyId || null;
+
+      if (!activeCompanyId) {
+        return res.status(200).json({
+          ok: true,
+          mode: 'supabase',
+          company: null,
+          currentProfile: null,
+          nodes: rawNodes,
+          tasks: [],
+          leads: [],
+          messages: [],
+        });
+      }
+
+      let activeCompany =
+        rawCompanies.find((c: any) => String(c?.id) === String(activeCompanyId)) || null;
+      if (!activeCompany) {
+        const { data: singleCompany } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('id', activeCompanyId)
+          .maybeSingle();
+        if (singleCompany) {
+          activeCompany = normalizeCompanyRow(singleCompany);
+        }
+      }
+
+      // STRICT MULTI-TENANCY FILTER BY company_id
+      const companyNodes = rawNodes.filter(
+        (n: any) => String(n.company_id || '') === String(activeCompanyId)
+      );
+      const companyTasks = rawTasks.filter(
+        (t: any) => String(t.company_id || '') === String(activeCompanyId)
+      );
+      const companyLeads = rawLeads.filter(
+        (l: any) => String(l.company_id || '') === String(activeCompanyId)
+      );
+
+      // Merge remote workspace_messages with in-memory fallback messages strictly for activeCompanyId
       const remoteMessages = Array.isArray(messagesRes.data) ? messagesRes.data : [];
       const seenMsgIds = new Set<string>();
       const mergedMessages: any[] = [];
@@ -1064,7 +1195,10 @@ export default async function handler(req: any, res: any) {
         if (m && m.id && !seenMsgIds.has(m.id)) {
           seenMsgIds.add(m.id);
           const norm = normalizeMessageRow(m);
-          if (!currentProfile || canServerUserSeeMessage(norm, currentProfile)) {
+          if (
+            String(norm.company_id || '') === String(activeCompanyId) &&
+            (!currentProfile || canServerUserSeeMessage(norm, currentProfile))
+          ) {
             mergedMessages.push(norm);
           }
         }
@@ -1073,11 +1207,11 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({
         ok: true,
         mode: 'supabase',
-        company: normalizeCompanyRow(companiesRes.data?.[0] || null),
+        company: activeCompany,
         currentProfile,
-        nodes: rawNodes,
-        tasks: rawTasks,
-        leads: rawLeads,
+        nodes: companyNodes,
+        tasks: companyTasks,
+        leads: companyLeads,
         messages: mergedMessages,
       });
     }
@@ -1085,7 +1219,7 @@ export default async function handler(req: any, res: any) {
     if (method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
 
-      // Вход сотрудника по любому из 4 полей
+      // Универсальный вход сотрудника по любому из 5 идентификаторов (Telegram ID, Invite Code, Email, UUID, ФИО)
       if (body.action === 'login') {
         const q = String(body.input || body.identifier || '').trim().toLowerCase();
         if (!q) {
@@ -1093,30 +1227,24 @@ export default async function handler(req: any, res: any) {
         }
 
         let nodes: any[] = [];
-        let company: any = null;
+        let companies: any[] = [];
 
         if (!supabase) {
           nodes = localStore.organization_nodes.map(normalizeNodeRow);
-          company = normalizeCompanyRow(localStore.companies[0] || null);
+          companies = localStore.companies.map(normalizeCompanyRow);
         } else {
           const [nodesRes, companiesRes] = await Promise.all([
             safeSelectTable(supabase, 'organization_nodes', true),
-            safeSelectTable(supabase, 'companies', false, 1),
+            safeSelectTable(supabase, 'companies', false, 100),
           ]);
           if (nodesRes.error) {
             return res.status(400).json({ error: nodesRes.error.message });
           }
           nodes = (nodesRes.data || []).map(normalizeNodeRow);
-          company = normalizeCompanyRow(companiesRes.data?.[0] || null);
+          companies = (companiesRes.data || []).map(normalizeCompanyRow);
         }
 
-        const matched = nodes.find(
-          (node: any) =>
-            String(node.telegram_chat_id || '').trim().toLowerCase() === q ||
-            String(node.invite_code || '').trim().toLowerCase() === q ||
-            String(node.email || '').trim().toLowerCase() === q ||
-            String(node.name || '').trim().toLowerCase() === q
-        );
+        const matched = findMatchingNodeByInput(nodes, q);
 
         if (!matched) {
           return res.status(404).json({
@@ -1125,7 +1253,10 @@ export default async function handler(req: any, res: any) {
           });
         }
 
-        if (matched.company_id && supabase) {
+        let company =
+          companies.find((c: any) => String(c?.id) === String(matched.company_id)) || null;
+
+        if (!company && matched.company_id && supabase) {
           const { data: matchedCompany } = await supabase
             .from('companies')
             .select('*')
@@ -1143,14 +1274,16 @@ export default async function handler(req: any, res: any) {
         });
       }
 
-      // Регистрация новой компании и корневого руководителя
+      // Регистрация новой компании и корневого руководителя (изолированный company_id)
       if (body.action === 'register_workspace' || body.action === 'register') {
         const companyName = String(body.companyName || '').trim();
         const leaderName = String(body.leaderName || '').trim();
         const leaderTitle = String(
           body.leaderTitle || body.role_type || 'Генеральный директор'
         ).trim();
-        const leaderDepartment = String(body.leaderDepartment || 'Дирекция').trim();
+        const leaderDepartment = body.leaderDepartment
+          ? String(body.leaderDepartment).trim()
+          : '';
         const leaderEmail = body.leaderEmail ? String(body.leaderEmail).trim() : null;
         const leaderTelegramChatId = body.telegram_chat_id
           ? String(body.telegram_chat_id).trim()
@@ -1332,6 +1465,7 @@ export default async function handler(req: any, res: any) {
 
         const pushStatus = await sendTelegramTaskOrDepartmentPush({
           supabase,
+          companyId,
           assignedToId: explicitAssignee || null,
           department: taskDept,
           taskId: savedTask.id,
@@ -1504,6 +1638,7 @@ export default async function handler(req: any, res: any) {
         if (leadAssignee || leadDept) {
           telegramPush = await sendTelegramTaskOrDepartmentPush({
             supabase,
+            companyId,
             assignedToId: leadAssignee || null,
             department: leadDept,
             taskTitle: `Сделка CRM: ${clientName} (${title})`,
@@ -1528,7 +1663,7 @@ export default async function handler(req: any, res: any) {
           return res.status(400).json({ error: 'Текст сообщения не может быть пустым.' });
         }
 
-        const allNodes = await fetchAllCompanyNodes(supabase);
+        const allNodes = await fetchAllCompanyNodes(supabase, companyId);
         const rawTargetType = String(
           payload.target_type || payload.scope_type || payload.scope || ''
         )
@@ -1795,6 +1930,7 @@ export default async function handler(req: any, res: any) {
         if (rawUpdates.assigned_to && rawUpdates.assigned_to !== previousAssignee) {
           telegramPush = await sendTelegramTaskOrDepartmentPush({
             supabase,
+            companyId: updatedTask.company_id || null,
             assignedToId: rawUpdates.assigned_to,
             taskId: updatedTask.id,
             taskTitle: updatedTask.title,
@@ -1808,6 +1944,7 @@ export default async function handler(req: any, res: any) {
         ) {
           telegramPush = await sendTelegramTaskOrDepartmentPush({
             supabase,
+            companyId: updatedTask.company_id || null,
             department: rawUpdates.department,
             taskId: updatedTask.id,
             taskTitle: updatedTask.title,

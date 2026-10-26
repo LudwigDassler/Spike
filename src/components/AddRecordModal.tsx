@@ -72,6 +72,16 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const safeNodes = Array.isArray(nodes) ? nodes : [];
   const safeDepartments = Array.isArray(departments) ? departments : [];
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   // Task fields
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -127,8 +137,9 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     roleTitle: string;
     inviteCode: string;
     deepLink: string;
+    webLoginLink: string;
   } | null>(null);
-  const [copiedField, setCopiedField] = useState<'code' | 'link' | null>(null);
+  const [copiedField, setCopiedField] = useState<'code' | 'link' | 'weblink' | null>(null);
 
   // CRM Lead fields (БЛОК 3: реквизиты РФ и Global + Ответственный + Отдел)
   const [leadTitle, setLeadTitle] = useState('');
@@ -163,7 +174,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     }));
   };
 
-  const copyText = async (val: string, field: 'code' | 'link') => {
+  const copyText = async (val: string, field: 'code' | 'link' | 'weblink') => {
     try {
       await navigator.clipboard.writeText(val);
       setCopiedField(field);
@@ -303,11 +314,13 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       if (type === 'organization_nodes') {
         const finalCode = result.data?.invite_code || payload.invite_code;
         const cleanBot = botUsername.replace(/^@/, '').trim() || 'TedCloudEnterpriseBot';
+        const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tedcloud.vercel.app';
         setCreatedEmployeeInvite({
           name: payload.name,
           roleTitle: payload.role_type,
           inviteCode: finalCode,
           deepLink: `https://t.me/${cleanBot}?start=${finalCode}`,
+          webLoginLink: `${origin}/?invite=${encodeURIComponent(finalCode)}`,
         });
         return;
       }
@@ -324,7 +337,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   if (createdEmployeeInvite) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans">
-        <div className="w-full max-w-lg rounded-xl border border-[#262626] bg-[#121212] shadow-2xl overflow-hidden">
+        <div className="w-full max-w-lg rounded-xl border border-[#262626] bg-[#121214] shadow-2xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-[#262626]">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-[#1F1F1F] border border-[#2E2E2E] flex items-center justify-center">
@@ -347,19 +360,19 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               {t('invite.modalSubtitle')}
             </p>
 
-            <div className="rounded-lg border border-[#262626] bg-[#171717] p-3.5 space-y-3">
+            <div className="rounded-lg border border-[#262626] bg-[#17171A] p-3.5 space-y-3.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-medium text-[#8E8E93]">
                   {t('invite.codeLabel')}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-white font-semibold font-mono bg-[#242424] px-2.5 py-1 rounded border border-[#333333] whitespace-nowrap">
+                  <span className="text-xs text-white font-semibold font-mono bg-[#242428] px-2.5 py-1 rounded border border-[#333338] whitespace-nowrap">
                     {createdEmployeeInvite.inviteCode}
                   </span>
                   <button
                     type="button"
                     onClick={() => copyText(createdEmployeeInvite.inviteCode, 'code')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#242424] hover:bg-[#2E2E2E] text-xs text-white transition-colors whitespace-nowrap"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#242428] hover:bg-[#2E2E34] text-xs text-white transition-colors whitespace-nowrap"
                   >
                     {copiedField === 'code' ? (
                       <>
@@ -378,6 +391,37 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
               <div>
                 <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
+                  Ссылка быстрого входа в веб-панель (1 клик)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={createdEmployeeInvite.webLoginLink}
+                    className="w-full rounded-lg border border-[#2A2A2E] bg-[#0D0D0F] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => copyText(createdEmployeeInvite.webLoginLink, 'weblink')}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white text-black hover:bg-[#E4E4E7] transition-colors whitespace-nowrap"
+                  >
+                    {copiedField === 'weblink' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{t('invite.copied')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Скопировать</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
                   {t('invite.deepLinkLabel')}
                 </label>
                 <div className="flex items-center gap-2">
@@ -385,16 +429,16 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     type="text"
                     readOnly
                     value={createdEmployeeInvite.deepLink}
-                    className="w-full rounded-lg border border-[#2A2A2A] bg-[#0D0D0D] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
+                    className="w-full rounded-lg border border-[#2A2A2E] bg-[#0D0D0F] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => copyText(createdEmployeeInvite.deepLink, 'link')}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white text-black hover:bg-[#E4E4E7] transition-colors whitespace-nowrap"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-[#2E2E34] bg-[#1F1F24] text-white hover:bg-[#2A2A32] transition-colors whitespace-nowrap"
                   >
                     {copiedField === 'link' ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
                         <span>{t('invite.copied')}</span>
                       </>
                     ) : (
@@ -439,9 +483,9 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans overflow-y-auto">
-      <div className="w-full max-w-xl rounded-xl border border-[#262626] bg-[#121212] shadow-2xl overflow-hidden my-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#262626]">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 font-sans flex items-center justify-center">
+      <div className="w-full max-w-2xl rounded-xl border border-[#262626] bg-[#121214] shadow-2xl overflow-hidden my-auto">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#262626]">
           <div className="flex items-center gap-2.5">
             {type === 'tasks' && <CheckSquare className="w-4 h-4 text-[#EDEDED]" />}
             {type === 'organization_nodes' && <UserPlus className="w-4 h-4 text-[#EDEDED]" />}
@@ -460,7 +504,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[82vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
           {errorMessage && (
             <div className="flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -660,7 +704,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
                     {t('modal.empDeptLabel')}
                   </label>
-                  {!isEmpCustomDept && safeDepartments.length > 0 ? (
+                  {!isEmpCustomDept ? (
                     <select
                       value={empDepartment}
                       onChange={(e) => {
@@ -685,27 +729,21 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     <div className="flex items-center gap-1.5">
                       <input
                         type="text"
-                        value={isEmpCustomDept ? empCustomDept : empDepartment}
-                        onChange={(e) =>
-                          isEmpCustomDept
-                            ? setEmpCustomDept(e.target.value)
-                            : setEmpDepartment(e.target.value)
-                        }
-                        placeholder={t('modal.empDeptPlaceholder')}
+                        value={empCustomDept}
+                        onChange={(e) => setEmpCustomDept(e.target.value)}
+                        placeholder={t('dept.customInputPlaceholder')}
                         className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                       />
-                      {isEmpCustomDept && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsEmpCustomDept(false);
-                            setEmpCustomDept('');
-                          }}
-                          className="px-2 py-2 text-xs text-[#8E8E93] hover:text-white"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEmpCustomDept(false);
+                          setEmpCustomDept('');
+                        }}
+                        className="px-2 py-2 text-xs text-[#8E8E93] hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -727,33 +765,63 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 </select>
               </div>
 
-              <div className="rounded-lg border border-[#262626] bg-[#161618] p-3.5 space-y-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-white">
-                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{t('perm.title')}</span>
+              <div className="rounded-lg border border-[#262626] bg-[#151518] p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-white">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t('perm.title')}</span>
+                  </div>
                 </div>
 
-                <div className="space-y-2 pt-1 max-h-44 overflow-y-auto">
-                  {PERMISSION_KEYS.map((permKey) => (
-                    <label
-                      key={permKey}
-                      className="flex items-start gap-2.5 text-xs text-[#D4D4D8] cursor-pointer select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        disabled={empAccessLevel === 'root'}
-                        checked={empAccessLevel === 'root' ? true : empPermissions[permKey]}
-                        onChange={() => togglePermission(permKey)}
-                        className="mt-0.5 w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F] text-white focus:ring-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-medium text-white font-sans">{t(`perm.${permKey}`)}</div>
-                        <div className="text-[11px] text-[#8E8E93] font-sans leading-snug">
-                          {t(`permDesc.${permKey}`)}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                  {PERMISSION_KEYS.map((permKey) => {
+                    const isRootLocked = empAccessLevel === 'root';
+                    const enabled = isRootLocked ? true : Boolean(empPermissions[permKey]);
+                    return (
+                      <div
+                        key={permKey}
+                        onClick={() => togglePermission(permKey)}
+                        className={`flex items-center justify-between gap-2.5 rounded-lg border px-3 py-2.5 text-xs transition-colors select-none ${
+                          enabled
+                            ? 'border-[#2E2E36] bg-[#1B1B20]'
+                            : 'border-[#222226] bg-[#121215]'
+                        } ${
+                          isRootLocked
+                            ? 'opacity-80 cursor-not-allowed'
+                            : 'cursor-pointer hover:border-[#3F3F46]'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-1">
+                          <div className="font-medium text-white font-sans leading-snug">
+                            {t(`perm.${permKey}`)}
+                          </div>
+                          <div className="text-[11px] text-[#8E8E93] font-sans leading-snug mt-0.5 line-clamp-2">
+                            {t(`permDesc.${permKey}`)}
+                          </div>
                         </div>
+
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={enabled}
+                          disabled={isRootLocked}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePermission(permKey);
+                          }}
+                          className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${
+                            enabled ? 'bg-emerald-500' : 'bg-[#2C2C30]'
+                          }`}
+                        >
+                          <span
+                            className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
+                              enabled ? 'translate-x-4' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
                       </div>
-                    </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

@@ -50,22 +50,24 @@ export const AuthGate: React.FC<AuthGateProps> = ({
     setIsLoading(true);
     try {
       const response = await fetch('/api/db', {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          action: 'login',
+          input: input.trim(),
+        }),
       });
       const payload = await response.json();
 
-      if (!response.ok || payload.error) {
-        throw new Error(payload.error || `HTTP ${response.status}`);
+      if (response.ok && payload.profile) {
+        onAuthenticated(payload.profile, payload.company || null);
+        return;
       }
 
-      const nodes: OrganizationNode[] = Array.isArray(payload.nodes)
-        ? payload.nodes
-        : existingNodes;
-
-      const matchedNode = nodes.find(
+      // Fallback search in existingNodes if server returned 404
+      const matchedNode = existingNodes.find(
         (node) =>
+          String(node.id || '').trim().toLowerCase() === q ||
           String(node.telegram_chat_id || '').trim().toLowerCase() === q ||
           String(node.invite_code || '').trim().toLowerCase() === q ||
           String(node.email || '').trim().toLowerCase() === q ||
@@ -73,11 +75,16 @@ export const AuthGate: React.FC<AuthGateProps> = ({
       );
 
       if (!matchedNode) {
-        setErrorMessage(t('auth.userNotFound'));
+        setErrorMessage(payload.error || t('auth.userNotFound'));
         return;
       }
 
-      onAuthenticated(matchedNode, payload.company || existingCompany);
+      onAuthenticated(
+        matchedNode,
+        existingCompany && existingCompany.id === matchedNode.company_id
+          ? existingCompany
+          : null
+      );
     } catch (err: any) {
       setErrorMessage(err?.message || String(err));
     } finally {

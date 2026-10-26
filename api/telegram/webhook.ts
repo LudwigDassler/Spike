@@ -238,17 +238,27 @@ function buildRoleCommandCenterKeyboard(siteUrl: string, chatId: string, user: a
     rows.push([{ text: 'Финансовая сводка CRM', callback_data: 'menu_crm_digest' }]);
   }
 
+  const inviteQuery = user?.invite_code
+    ? `&invite=${encodeURIComponent(String(user.invite_code))}`
+    : '';
+
   rows.push([
     {
       text: 'Открыть панель TedCloud',
-      url: `${siteUrl}/?chatId=${chatId}`,
+      url: `${siteUrl}/?tg_id=${chatId}${inviteQuery}&chatId=${chatId}`,
     },
   ]);
 
   return { inline_keyboard: rows };
 }
 
-function buildWebAppKeyboard(siteUrl: string, chatId: string, extraRows: any[][] = []) {
+function buildWebAppKeyboard(
+  siteUrl: string,
+  chatId: string,
+  extraRows: any[][] = [],
+  inviteCode?: string | null
+) {
+  const inviteQuery = inviteCode ? `&invite=${encodeURIComponent(String(inviteCode))}` : '';
   return {
     inline_keyboard: [
       ...extraRows,
@@ -256,7 +266,7 @@ function buildWebAppKeyboard(siteUrl: string, chatId: string, extraRows: any[][]
       [
         {
           text: 'Открыть панель TedCloud',
-          url: `${siteUrl}/?chatId=${chatId}`,
+          url: `${siteUrl}/?tg_id=${chatId}${inviteQuery}&chatId=${chatId}`,
         },
       ],
     ],
@@ -487,7 +497,11 @@ export default async function handler(req: any, res: any) {
     };
 
     const sendActiveTasksList = async (targetChatId: string, user: any) => {
-      const { data: allTasks, error: tasksErr } = await supabase.from('tasks').select('*');
+      let query = supabase.from('tasks').select('*');
+      if (user?.company_id) {
+        query = query.eq('company_id', user.company_id);
+      }
+      const { data: allTasks, error: tasksErr } = await query;
 
       if (tasksErr) {
         throw new Error(`Ошибка загрузки реестра задач: ${tasksErr.message}`);
@@ -495,6 +509,7 @@ export default async function handler(req: any, res: any) {
 
       const activeTasks = (allTasks || []).filter(
         (t: any) =>
+          (!user.company_id || String(t.company_id || '') === String(user.company_id)) &&
           t.status !== 'Done' &&
           (t.assigned_to === user.id ||
             t.owner_node_id === user.id ||
@@ -545,7 +560,12 @@ export default async function handler(req: any, res: any) {
           ...lines,
         ].join('\n'),
         {
-          reply_markup: buildWebAppKeyboard(siteUrl, targetChatId, extraRows),
+          reply_markup: buildWebAppKeyboard(
+            siteUrl,
+            targetChatId,
+            extraRows,
+            user?.invite_code || null
+          ),
         }
       );
     };
@@ -563,13 +583,21 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const [tasksRes, leadsRes] = await Promise.all([
-        supabase.from('tasks').select('*'),
-        supabase.from('crm_leads').select('*'),
-      ]);
+      let tasksQuery = supabase.from('tasks').select('*');
+      let leadsQuery = supabase.from('crm_leads').select('*');
+      if (user?.company_id) {
+        tasksQuery = tasksQuery.eq('company_id', user.company_id);
+        leadsQuery = leadsQuery.eq('company_id', user.company_id);
+      }
 
-      const allTasks = tasksRes.data || [];
-      const allLeads = leadsRes.data || [];
+      const [tasksRes, leadsRes] = await Promise.all([tasksQuery, leadsQuery]);
+
+      const allTasks = (tasksRes.data || []).filter(
+        (t: any) => !user.company_id || String(t.company_id || '') === String(user.company_id)
+      );
+      const allLeads = (leadsRes.data || []).filter(
+        (l: any) => !user.company_id || String(l.company_id || '') === String(user.company_id)
+      );
 
       const openTasks = allTasks.filter((t: any) => t.status !== 'Done');
       const highPriorityOpen = openTasks.filter((t: any) => t.priority === 'High');
@@ -696,9 +724,17 @@ export default async function handler(req: any, res: any) {
       }
 
       if (cbData === 'comm_mode_direct') {
-        const { data: nodes } = await supabase.from('organization_nodes').select('*');
-        const employees = (nodes || []).filter((emp: any) => emp.id !== user.id);
-        const listToRender = employees.length > 0 ? employees : nodes || [];
+        let nodesQuery = supabase.from('organization_nodes').select('*');
+        if (user?.company_id) {
+          nodesQuery = nodesQuery.eq('company_id', user.company_id);
+        }
+        const { data: nodes } = await nodesQuery;
+        const companyNodes = (nodes || []).filter(
+          (emp: any) =>
+            !user.company_id || String(emp.company_id || '') === String(user.company_id)
+        );
+        const employees = companyNodes.filter((emp: any) => emp.id !== user.id);
+        const listToRender = employees.length > 0 ? employees : companyNodes;
 
         const buttons = listToRender.slice(0, 12).map((emp: any) => [
           {
@@ -723,9 +759,15 @@ export default async function handler(req: any, res: any) {
       }
 
       if (cbData === 'comm_mode_dept') {
+        let nodesQuery = supabase.from('organization_nodes').select('department, company_id');
+        let compQuery = supabase.from('companies').select('id, departments');
+        if (user?.company_id) {
+          nodesQuery = nodesQuery.eq('company_id', user.company_id);
+          compQuery = compQuery.eq('id', user.company_id);
+        }
         const [{ data: nodes }, { data: compRows }] = await Promise.all([
-          supabase.from('organization_nodes').select('department'),
-          supabase.from('companies').select('departments').limit(1),
+          nodesQuery,
+          compQuery.limit(1),
         ]);
 
         const deptSet = new Set<string>();
@@ -736,14 +778,18 @@ export default async function handler(req: any, res: any) {
           });
         }
         (nodes || []).forEach((n: any) => {
-          if (n?.department && String(n.department).trim()) {
+          if (
+            (!user.company_id || String(n?.company_id || '') === String(user.company_id)) &&
+            n?.department &&
+            String(n.department).trim()
+          ) {
             deptSet.add(String(n.department).trim());
           }
         });
 
         const departments = Array.from(deptSet);
         if (departments.length === 0) {
-          departments.push('Дирекция', 'Отдел продаж');
+          departments.push(user?.department || 'Основное подразделение');
         }
 
         const deptButtons = departments.slice(0, 10).map((deptName) => [
@@ -876,8 +922,15 @@ export default async function handler(req: any, res: any) {
           return res.status(200).send('OK');
         }
 
-        const { data: nodes } = await supabase.from('organization_nodes').select('*');
-        const employees = nodes || [];
+        let nodesQuery = supabase.from('organization_nodes').select('*');
+        if (user?.company_id) {
+          nodesQuery = nodesQuery.eq('company_id', user.company_id);
+        }
+        const { data: nodes } = await nodesQuery;
+        const employees = (nodes || []).filter(
+          (emp: any) =>
+            !user.company_id || String(emp.company_id || '') === String(user.company_id)
+        );
 
         const colleagueButtons = employees.slice(0, 12).map((emp: any) => [
           {
@@ -1039,8 +1092,14 @@ export default async function handler(req: any, res: any) {
       if (activeCommState && !rawText.startsWith('/')) {
         await setPendingCommForUser(chatId, user, null);
 
-        const { data: allNodes } = await supabase.from('organization_nodes').select('*');
-        const nodesList = allNodes || [];
+        let allNodesQuery = supabase.from('organization_nodes').select('*');
+        if (companyId) {
+          allNodesQuery = allNodesQuery.eq('company_id', companyId);
+        }
+        const { data: allNodes } = await allNodesQuery;
+        const nodesList = (allNodes || []).filter(
+          (n: any) => !companyId || String(n.company_id || '') === String(companyId)
+        );
 
         const msgBody = String(rawText || '').trim();
         let targetNodes: any[] = [];
@@ -1113,6 +1172,9 @@ export default async function handler(req: any, res: any) {
         for (const recipient of targetNodes) {
           const recChatId = String(recipient?.telegram_chat_id || '').trim();
           if (!recChatId || recChatId === chatId) continue;
+          const recInviteQuery = recipient?.invite_code
+            ? `&invite=${encodeURIComponent(String(recipient.invite_code))}`
+            : '';
 
           await sendTelegramMessage(recChatId, incomingHtml, {
             reply_markup: {
@@ -1126,7 +1188,7 @@ export default async function handler(req: any, res: any) {
                 [
                   {
                     text: 'Открыть панель TedCloud',
-                    url: `${siteUrl}/?chatId=${recChatId}`,
+                    url: `${siteUrl}/?tg_id=${recChatId}${recInviteQuery}&chatId=${recChatId}`,
                   },
                 ],
               ],
@@ -1245,7 +1307,12 @@ export default async function handler(req: any, res: any) {
             `Приоритет: ${priorityLabel}`,
           ].join('\n'),
           {
-            reply_markup: buildWebAppKeyboard(siteUrl, colleagueChatId, extraRows),
+            reply_markup: buildWebAppKeyboard(
+              siteUrl,
+              colleagueChatId,
+              extraRows,
+              targetAssigneeNode?.invite_code || null
+            ),
           }
         );
       }
@@ -1262,7 +1329,7 @@ export default async function handler(req: any, res: any) {
           )})`,
         ].join('\n'),
         {
-          reply_markup: buildWebAppKeyboard(siteUrl, chatId, extraRows),
+          reply_markup: buildWebAppKeyboard(siteUrl, chatId, extraRows, user?.invite_code || null),
         }
       );
     }

@@ -3,9 +3,9 @@ import { OrganizationNode, WorkspaceMessageRecord, normalizeAccessLevel } from '
 export type MessengerTargetType = 'direct' | 'department' | 'broadcast' | 'general' | 'task' | 'deal';
 
 export interface ActiveMessengerThread {
-  type?: 'broadcast' | 'department' | 'direct';
-  id?: string;
-  label?: string;
+  type: 'broadcast' | 'department' | 'direct';
+  id: string;
+  label: string;
   subtitle?: string;
   telegramConnected?: boolean;
   targetType?: 'broadcast' | 'department' | 'direct';

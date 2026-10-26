@@ -29,68 +29,39 @@ export const Layout: React.FC<LayoutProps> = ({
   tasks,
   activeSection,
   onSelectSection,
-  onOpenCreateModal,
   children,
 }) => {
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   return (
     <div
       id="workspace"
-      className="min-h-screen flex flex-col font-sans bg-slate-50 text-slate-900 antialiased"
+      className="min-h-screen flex font-sans bg-[#09090B] text-[#EDEDED] antialiased"
     >
-      <TopBar
-        company={company}
+      <Sidebar
         activeSection={activeSection}
         onSelectSection={onSelectSection}
-        onOpenCreateModal={() => onOpenCreateModal(activeSection)}
-        onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
+        currentProfile={nodes[0] || null}
+        counts={{
+          tasks: tasks.length,
+          nodes: nodes.length,
+          leads: leads.length,
+        }}
       />
 
-      {/* Мобильный Offcanvas Drawer (< md) с затемнением bg-black/50 */}
-      {isMobileSidebarOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Мобильное меню навигации TedCloud"
-          className="fixed inset-0 z-50 flex md:hidden"
-        >
-          <div
-            className="fixed inset-0 bg-black/50 transition-opacity duration-200"
-            onClick={() => setIsMobileSidebarOpen(false)}
-          />
-          <div className="relative z-10 flex h-full">
-            <Sidebar
-              company={company}
-              nodes={nodes}
-              leads={leads}
-              tasks={tasks}
-              activeSection={activeSection}
-              onSelectSection={onSelectSection}
-              onQuickCreateAction={(section) => onOpenCreateModal(section)}
-              isMobileDrawer
-              onCloseMobileDrawer={() => setIsMobileSidebarOpen(false)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Основная рабочая сетка: Сайдбар + Контент */}
-      <div className="flex-1 flex flex-col md:flex-row max-w-[1440px] w-full mx-auto">
-        <Sidebar
-          company={company}
-          nodes={nodes}
-          leads={leads}
-          tasks={tasks}
+      <div className="flex-1 flex flex-col min-w-0">
+        <TopBar
+          companyName={company?.name || 'TedCloud'}
           activeSection={activeSection}
-          onSelectSection={onSelectSection}
-          onQuickCreateAction={(section) => onOpenCreateModal(section)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          isSyncing={false}
+          onRefresh={() => {}}
         />
 
-        <main className="flex-1 w-full px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6 lg:p-8 min-w-0">
-          {children}
-        </main>
+        <main className="flex-1 w-full px-6 py-6 min-w-0">{children}</main>
       </div>
     </div>
   );
 };
+

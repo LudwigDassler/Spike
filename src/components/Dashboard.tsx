@@ -107,7 +107,7 @@ interface PendingConfirmAction {
   execute: () => Promise<void>;
 }
 
-const CUSTOM_DEPTS_STORAGE_KEY = 'tedcloud_custom_departments';
+const CUSTOM_DEPTS_STORAGE_PREFIX = 'tedcloud_custom_departments_';
 
 export const Dashboard: React.FC<DashboardProps> = ({
   company,
@@ -125,10 +125,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const { language, currency, setLanguage, setCurrency, t, formatMoney } = useLocale();
 
-  const safeNodes = useMemo(() => (Array.isArray(nodes) ? nodes : []), [nodes]);
-  const safeTasks = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
-  const safeLeads = useMemo(() => (Array.isArray(leads) ? leads : []), [leads]);
-  const safeMessages = useMemo(() => (Array.isArray(messages) ? messages : []), [messages]);
+  const companyId = company?.id || currentProfile?.company_id || '';
+  const companyName = company?.name || 'TedCloud';
+
+  const safeNodes = useMemo(
+    () =>
+      (Array.isArray(nodes) ? nodes : []).filter(
+        (n) => !companyId || !n?.company_id || String(n.company_id) === String(companyId)
+      ),
+    [nodes, companyId]
+  );
+  const safeTasks = useMemo(
+    () =>
+      (Array.isArray(tasks) ? tasks : []).filter(
+        (tItem) =>
+          !companyId || !tItem?.company_id || String(tItem.company_id) === String(companyId)
+      ),
+    [tasks, companyId]
+  );
+  const safeLeads = useMemo(
+    () =>
+      (Array.isArray(leads) ? leads : []).filter(
+        (l) => !companyId || !l?.company_id || String(l.company_id) === String(companyId)
+      ),
+    [leads, companyId]
+  );
+  const safeMessages = useMemo(
+    () =>
+      (Array.isArray(messages) ? messages : []).filter(
+        (m) => !companyId || !m?.company_id || String(m.company_id) === String(companyId)
+      ),
+    [messages, companyId]
+  );
 
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
   const [modalType, setModalType] = useState<ModalRecordType>(null);
@@ -141,18 +169,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null);
   const [toastBanner, setToastBanner] = useState<string | null>(null);
 
-  // Department Constructor state (БЛОК 2)
-  const [localDepartments, setLocalDepartments] = useState<string[]>(() => {
+  // Department Constructor state (Strictly scoped per companyId)
+  const [localDepartments, setLocalDepartments] = useState<string[]>([]);
+  const [newDeptName, setNewDeptName] = useState('');
+
+  useEffect(() => {
+    if (!companyId) {
+      setLocalDepartments([]);
+      return;
+    }
     try {
-      const raw = localStorage.getItem(CUSTOM_DEPTS_STORAGE_KEY);
+      const raw = localStorage.getItem(`${CUSTOM_DEPTS_STORAGE_PREFIX}${companyId}`);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed.filter((x) => typeof x === 'string');
+        if (Array.isArray(parsed)) {
+          setLocalDepartments(parsed.filter((x) => typeof x === 'string'));
+          return;
+        }
       }
     } catch {}
-    return [];
-  });
-  const [newDeptName, setNewDeptName] = useState('');
+    setLocalDepartments([]);
+  }, [companyId]);
 
   // Split-View Corporate Messenger state (Инфополе и Связь)
   const [activeCommThread, setActiveCommThread] = useState<ActiveMessengerThread>({
@@ -260,8 +297,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return localStorage.getItem('tedcloud_bot_username') || 'TedCloudEnterpriseBot';
   });
 
-  const companyId = company?.id || currentProfile?.company_id || '';
-  const companyName = company?.name || 'TedCloud';
+  useEffect(() => {
+    try {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    } catch {}
+  }, [activeSection]);
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, OrganizationNode>();
@@ -324,7 +364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }, 3500);
   };
 
-  // Department Constructor handlers (БЛОК 2)
+  // Department Constructor handlers (БЛОК 2 — изолировано по companyId)
   const handleAddDepartment = async (deptToAdd?: string) => {
     const raw = (deptToAdd ?? newDeptName).trim();
     if (!raw) return;
@@ -334,9 +374,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
     const nextList = [...companyDepartments, raw];
     setLocalDepartments(nextList);
-    try {
-      localStorage.setItem(CUSTOM_DEPTS_STORAGE_KEY, JSON.stringify(nextList));
-    } catch {}
+    if (companyId) {
+      try {
+        localStorage.setItem(
+          `${CUSTOM_DEPTS_STORAGE_PREFIX}${companyId}`,
+          JSON.stringify(nextList)
+        );
+      } catch {}
+    }
     setNewDeptName('');
     if (company?.id) {
       await onPatchRecord('companies', company.id, { departments: nextList });
@@ -347,9 +392,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleRemoveDepartment = async (deptName: string) => {
     const nextList = companyDepartments.filter((d) => d !== deptName);
     setLocalDepartments(nextList);
-    try {
-      localStorage.setItem(CUSTOM_DEPTS_STORAGE_KEY, JSON.stringify(nextList));
-    } catch {}
+    if (companyId) {
+      try {
+        localStorage.setItem(
+          `${CUSTOM_DEPTS_STORAGE_PREFIX}${companyId}`,
+          JSON.stringify(nextList)
+        );
+      } catch {}
+    }
     if (company?.id) {
       await onPatchRecord('companies', company.id, { departments: nextList });
     }
@@ -1055,18 +1105,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {t('profile.interfaceLang')}
           </label>
           <div className="inline-flex w-full rounded-lg border border-[#262626] bg-[#161618] p-0.5">
-            {(['RU', 'EN'] as LanguageCode[]).map((lang) => (
+            {(['ru', 'en'] as LanguageCode[]).map((lang) => (
               <button
                 key={lang}
                 type="button"
                 onClick={() => setLanguage(lang)}
-                className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                className={`flex-1 py-1.5 rounded-md text-xs font-semibold uppercase transition-colors ${
                   language === lang
                     ? 'bg-white text-black'
                     : 'text-[#8E8E93] hover:text-white'
                 }`}
               >
-                {lang}
+                {lang.toUpperCase()}
               </button>
             ))}
           </div>
@@ -1120,7 +1170,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           onSearchChange={setSearchQuery}
           searchPlaceholder={
             !perms.crm_view && !perms.team_manage
-              ? language === 'EN'
+              ? language === 'en'
                 ? 'Search tasks and messages...'
                 : 'Поиск по задачам и сообщениям...'
               : t('actions.searchPlaceholder')
@@ -1144,7 +1194,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         )}
 
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 px-6 py-6 max-w-7xl w-full mx-auto space-y-6">
           {/* Page Header & Strictly 1 Contextual Primary CTA */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -1164,7 +1214,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {activeSection === 'communications' && t('header.communicationsSubtitle')}
                 {activeSection === 'team' && t('header.teamSubtitle')}
                 {activeSection === 'profile' &&
-                  (language === 'EN'
+                  (language === 'en'
                     ? 'Personal details, profile photo, Telegram synchronization, and active workspace capabilities'
                     : 'Персональные реквизиты, фотография профиля, синхронизация с Telegram и рабочий контур')}
                 {activeSection === 'workspace' && t('header.workspaceSubtitle')}
@@ -2768,142 +2818,159 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
 
-              {/* Компактная сетка из 2 колонок (БЛОК 3) */}
+              {/* Компактная сетка из 2 колонок (БЛОК 3: без сырой формы из 6 инпутов БД) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                {/* Левая колонка: Личные реквизиты и контактные данные */}
-                <form
-                  onSubmit={handleSaveMyProfile}
-                  className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 space-y-5"
-                >
-                  <div className="flex items-center justify-between border-b border-[#1F1F1F] pb-4">
-                    <div>
-                      <h3 className="text-sm font-semibold text-white">
-                        Личные реквизиты и контакты
-                      </h3>
-                      <p className="text-xs text-[#8E8E93] mt-0.5">
-                        Учетная карточка сотрудника в корпоративном реестре {companyName}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                        {t('profile.fullName')}
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={profileName}
-                        onChange={(e) => setProfileName(e.target.value)}
-                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <label className="block text-xs font-medium text-[#A1A1AA] truncate">
-                          {t('profile.jobTitle')}
-                        </label>
-                        {!perms.team_manage && (
-                          <span
-                            title={t('profile.lockedByAdmin')}
-                            className="inline-flex items-center gap-1 text-[10px] text-[#71717A] whitespace-nowrap shrink-0"
-                          >
-                            <Lock className="w-3 h-3" />
-                            <span>Только админ</span>
-                          </span>
-                        )}
+                {/* Левая колонка: Редактируемый профиль + чистая карточка учетных идентификаторов */}
+                <div className="space-y-6">
+                  <form
+                    onSubmit={handleSaveMyProfile}
+                    className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 space-y-5"
+                  >
+                    <div className="flex items-center justify-between border-b border-[#1F1F1F] pb-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">
+                          Личные реквизиты и контакты
+                        </h3>
+                        <p className="text-xs text-[#8E8E93] mt-0.5">
+                          Учетная карточка сотрудника в корпоративном реестре {companyName}
+                        </p>
                       </div>
-                      <input
-                        type="text"
-                        required
-                        disabled={!perms.team_manage}
-                        value={profileRoleTitle}
-                        onChange={(e) => setProfileRoleTitle(e.target.value)}
-                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                      />
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <label className="block text-xs font-medium text-[#A1A1AA] truncate">
-                          {t('profile.department')}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                          {t('profile.fullName')}
                         </label>
-                        {!perms.team_manage && (
-                          <span
-                            title={t('profile.lockedByAdmin')}
-                            className="inline-flex items-center gap-1 text-[10px] text-[#71717A] whitespace-nowrap shrink-0"
-                          >
-                            <Lock className="w-3 h-3" />
-                            <span>Только админ</span>
-                          </span>
-                        )}
+                        <input
+                          type="text"
+                          required
+                          value={profileName}
+                          onChange={(e) => setProfileName(e.target.value)}
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        disabled={!perms.team_manage}
-                        value={profileDepartment}
-                        onChange={(e) => setProfileDepartment(e.target.value)}
-                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                      />
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                        {t('profile.email')}
-                      </label>
-                      <input
-                        type="email"
-                        value={profileEmail}
-                        onChange={(e) => setProfileEmail(e.target.value)}
-                        placeholder="name@company.com"
-                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
-                      />
-                    </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                          {t('profile.email')}
+                        </label>
+                        <input
+                          type="email"
+                          value={profileEmail}
+                          onChange={(e) => setProfileEmail(e.target.value)}
+                          placeholder="name@company.com"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                        Персональный код входа
-                      </label>
-                      <input
-                        type="text"
-                        readOnly
-                        value={currentProfile.invite_code || 'TC-0000'}
-                        className="w-full rounded-lg border border-[#222226] bg-[#141417] px-3.5 py-2 text-sm font-mono font-semibold text-[#E4E4E7] focus:outline-none"
-                      />
-                    </div>
+                      {perms.team_manage && (
+                        <>
+                          <div>
+                            <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                              {t('profile.jobTitle')}
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={profileRoleTitle}
+                              onChange={(e) => setProfileRoleTitle(e.target.value)}
+                              className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                            />
+                          </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                        Telegram ID
-                      </label>
-                      <input
-                        type="text"
-                        readOnly
-                        value={currentProfile.telegram_chat_id || 'Не привязан'}
-                        className="w-full rounded-lg border border-[#222226] bg-[#141417] px-3.5 py-2 text-sm font-mono text-[#A1A1AA] focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={isSavingProfile}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
-                    >
-                      {isSavingProfile ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Save className="w-3.5 h-3.5" />
+                          <div>
+                            <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                              {t('profile.department')}
+                            </label>
+                            <input
+                              type="text"
+                              value={profileDepartment}
+                              onChange={(e) => setProfileDepartment(e.target.value)}
+                              placeholder="Например: Дирекция"
+                              className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                            />
+                          </div>
+                        </>
                       )}
-                      <span>
-                        {isSavingProfile ? t('profile.savingBtn') : t('profile.saveBtn')}
-                      </span>
-                    </button>
-                  </div>
-                </form>
+                    </div>
+
+                    {!perms.team_manage && (
+                      <div className="rounded-lg border border-[#1F1F23] bg-[#141417] p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <div className="text-[11px] text-[#71717A] flex items-center gap-1">
+                            <Lock className="w-3 h-3" />
+                            <span>{t('profile.jobTitle')}</span>
+                          </div>
+                          <div className="font-semibold text-white mt-1">
+                            {currentProfile.role_type}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-[#71717A] flex items-center gap-1">
+                            <Lock className="w-3 h-3" />
+                            <span>{t('profile.department')}</span>
+                          </div>
+                          <div className="font-semibold text-white mt-1">
+                            {currentProfile.department || 'Не назначено'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Компактная информационная панель системных идентификаторов вместо сырых readOnly-инпутов */}
+                    <div className="rounded-lg border border-[#1F1F23] bg-[#141417] p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <div>
+                          <div className="text-[11px] text-[#8E8E93]">Персональный код входа</div>
+                          <div className="font-mono font-semibold text-white mt-0.5">
+                            {currentProfile.invite_code || 'TC-0000'}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(
+                            currentProfile.invite_code || 'TC-0000',
+                            'profile-invite-code'
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#2C2C32] bg-[#1C1C21] hover:bg-[#27272E] text-xs font-medium text-white transition-colors"
+                      >
+                        {copiedToken === 'profile-invite-code' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{t('invite.copied')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                            <span>{t('invite.copyCode')}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="pt-1 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isSavingProfile}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
+                      >
+                        {isSavingProfile ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5" />
+                        )}
+                        <span>
+                          {isSavingProfile ? t('profile.savingBtn') : t('profile.saveBtn')}
+                        </span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
 
                 {/* Правая колонка: Синхронизация с Telegram-ботом + Активный рабочий контур */}
                 <div className="space-y-6">
