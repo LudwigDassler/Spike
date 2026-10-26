@@ -13,17 +13,23 @@ import {
   Building2,
   MessageSquare,
   Send,
+  Sparkles,
+  Plus,
+  Trash2,
+  Check,
 } from 'lucide-react';
 import {
   CounterpartyJurisdiction,
   CrmLeadRecord,
   CrmLeadStatus,
   OrganizationNode,
+  TaskChecklistItem,
   TaskPriority,
   TaskRecord,
   TaskStatus,
   WorkspaceMessageRecord,
 } from '../types/database';
+import { buildBuiltInChecklistForTask } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
 
 export type DrawerTarget =
@@ -66,6 +72,12 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Task checklist & AI decomposition state
+  const [checklist, setChecklist] = useState<TaskChecklistItem[]>([]);
+  const [aiSummary, setAiSummary] = useState<string>('');
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [isDecomposing, setIsDecomposing] = useState(false);
+
   // Deal legal requisites state
   const [jurisdiction, setJurisdiction] = useState<CounterpartyJurisdiction>('RU');
   const [taxId, setTaxId] = useState('');
@@ -92,7 +104,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   useEffect(() => {
     if (!target || !target.record) return;
     setNotes(target.record.description || target.record.notes || '');
-    if (target.type === 'deal') {
+    if (target.type === 'task') {
+      const taskRec = target.record as TaskRecord;
+      setChecklist(Array.isArray(taskRec.checklist) ? taskRec.checklist : []);
+      setAiSummary(taskRec.ai_summary || '');
+    } else if (target.type === 'deal') {
       const lead = target.record as CrmLeadRecord;
       setJurisdiction(lead.jurisdiction === 'GLOBAL' ? 'GLOBAL' : 'RU');
       setTaxId(lead.tax_id || '');
@@ -149,6 +165,82 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
 
   const assigneeNode = currentAssigneeId ? nodeMap.get(currentAssigneeId) : null;
 
+  // БЛОК 2: ИИ-декомпозиция задачи (генерирует 4-5 подзадач и сохраняет в tasks.checklist)
+  const handleAiDecomposeTask = async () => {
+    if (!isTask || isDecomposing) return;
+    const taskRec = record as TaskRecord;
+    setIsDecomposing(true);
+    try {
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ai_assistant',
+          mode: 'decompose_task',
+          task_id: taskRec.id,
+          company_id: taskRec.company_id,
+          taskTitle: taskRec.title,
+          taskDescription: notes || taskRec.description || '',
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && Array.isArray(data?.checklist) && data.checklist.length > 0) {
+        const nextChecklist: TaskChecklistItem[] = data.checklist;
+        const nextSummary = data.aiSummary || '';
+        setChecklist(nextChecklist);
+        setAiSummary(nextSummary);
+        await onPatchRecord('tasks', taskRec.id, {
+          checklist: nextChecklist,
+          ai_summary: nextSummary || null,
+        });
+        return;
+      }
+      throw new Error('Fallback to built-in decomposition');
+    } catch {
+      const builtIn = buildBuiltInChecklistForTask(taskRec.title, notes || taskRec.description);
+      setChecklist(builtIn.checklist);
+      setAiSummary(builtIn.summary);
+      await onPatchRecord('tasks', taskRec.id, {
+        checklist: builtIn.checklist,
+        ai_summary: builtIn.summary,
+      });
+    } finally {
+      setIsDecomposing(false);
+    }
+  };
+
+  const handleToggleChecklistItem = async (itemId: string) => {
+    if (!isTask || !canEditTasks) return;
+    const nextList = checklist.map((item) =>
+      item.id === itemId ? { ...item, done: !item.done } : item
+    );
+    setChecklist(nextList);
+    await onPatchRecord('tasks', record.id, { checklist: nextList });
+  };
+
+  const handleAddChecklistItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isTask || !canEditTasks) return;
+    const clean = newSubtaskTitle.trim();
+    if (!clean) return;
+    const nextItem: TaskChecklistItem = {
+      id: `chk_${Date.now()}`,
+      title: clean,
+      done: false,
+    };
+    const nextList = [...checklist, nextItem];
+    setChecklist(nextList);
+    setNewSubtaskTitle('');
+    await onPatchRecord('tasks', record.id, { checklist: nextList });
+  };
+
+  const handleDeleteChecklistItem = async (itemId: string) => {
+    if (!isTask || !canEditTasks) return;
+    const nextList = checklist.filter((item) => item.id !== itemId);
+    setChecklist(nextList);
+    await onPatchRecord('tasks', record.id, { checklist: nextList });
+  };
+
   const handleSaveNotes = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -156,6 +248,8 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
       if (isTask) {
         await onPatchRecord('tasks', record.id, {
           description: notes.trim(),
+          checklist,
+          ai_summary: aiSummary || null,
         });
       } else {
         await onPatchRecord('crm_leads', record.id, {
@@ -206,6 +300,10 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
       setIsSendingComment(false);
     }
   };
+
+  const doneCount = checklist.filter((c) => c.done).length;
+  const totalCount = checklist.length;
+  const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
   return (
     <div
@@ -420,7 +518,131 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               )}
             </div>
 
-            {/* БЛОК 3: Юридические реквизиты контрагента в карточке сделки */}
+            {/* БЛОК 2: ИИ-декомпозиция и интерактивный чек-лист подзадач (tasks.checklist) */}
+            {isTask && (
+              <div className="rounded-xl border border-[#24242C] bg-[#15151A] p-4 space-y-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-semibold text-white">
+                      Чек-лист подзадач ({doneCount}/{totalCount})
+                    </span>
+                  </div>
+
+                  {canEditTasks && (
+                    <button
+                      type="button"
+                      disabled={isDecomposing}
+                      onClick={() => void handleAiDecomposeTask()}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-semibold text-emerald-300 transition-colors"
+                    >
+                      {isDecomposing ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 text-emerald-400" />
+                      )}
+                      <span>ИИ-декомпозиция</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Progress Bar */}
+                {totalCount > 0 && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-full rounded-full bg-[#22222A] overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-400 transition-all duration-300"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-[#8E8E93] font-mono">
+                      <span>Выполнено: {progressPercent}%</span>
+                      <span>
+                        {doneCount} из {totalCount}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {aiSummary && (
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/15 px-3 py-2 text-[11px] text-emerald-200/90 leading-relaxed">
+                    <strong className="text-emerald-400">Резюме TedCloud AI:</strong> {aiSummary}
+                  </div>
+                )}
+
+                {/* Checklist Items */}
+                {checklist.length === 0 ? (
+                  <p className="text-xs text-[#71717A]">
+                    Подзадачи еще не сформированы. Нажмите «ИИ-декомпозиция» для автоматической генерации плана работ.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {checklist.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-start justify-between gap-2.5 rounded-lg border border-[#22222A] bg-[#111115] px-3 py-2 text-xs"
+                      >
+                        <button
+                          type="button"
+                          disabled={!canEditTasks}
+                          onClick={() => void handleToggleChecklistItem(item.id)}
+                          className="flex items-start gap-2.5 text-left flex-1 min-w-0"
+                        >
+                          <span
+                            className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                              item.done
+                                ? 'bg-emerald-500 border-emerald-500 text-black'
+                                : 'border-[#3F3F46] hover:border-white'
+                            }`}
+                          >
+                            {item.done && <Check className="w-3 h-3 stroke-[3]" />}
+                          </span>
+                          <span
+                            className={`leading-snug break-words ${
+                              item.done ? 'line-through text-[#71717A]' : 'text-zinc-100'
+                            }`}
+                          >
+                            {item.title}
+                          </span>
+                        </button>
+
+                        {canEditTasks && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteChecklistItem(item.id)}
+                            className="text-[#52525B] hover:text-red-400 transition-colors p-0.5 shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {canEditTasks && (
+                  <form onSubmit={handleAddChecklistItem} className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={newSubtaskTitle}
+                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                      placeholder="Добавить шаг чек-листа вручную..."
+                      className="flex-1 rounded-lg border border-[#26262E] bg-[#111115] px-2.5 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newSubtaskTitle.trim()}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#22222A] hover:bg-white hover:text-black disabled:opacity-40 text-xs font-medium text-white transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Шаг</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* Юридические реквизиты контрагента в карточке сделки */}
             {!isTask && (
               <div className="rounded-lg border border-[#222225] bg-[#151518] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -531,7 +753,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               )}
             </form>
 
-            {/* БЛОК 4: Поток комментариев (Инфополе) внутри задачи и сделки */}
+            {/* Поток комментариев (Инфополе) внутри задачи и сделки */}
             <div className="rounded-lg border border-[#222225] bg-[#141417] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-semibold text-white">

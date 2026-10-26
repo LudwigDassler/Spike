@@ -21,7 +21,6 @@ import {
   Copy,
   Check,
   X,
-  UserCircle,
   Percent,
   Save,
   SlidersHorizontal,
@@ -29,17 +28,28 @@ import {
   Globe,
   FileText,
   MessageSquare,
-  Reply,
   Hash,
   Radio,
   AlertCircle,
   Camera,
   Zap,
-  Upload,
+  Sparkles,
+  Network,
+  ListChecks,
+  Receipt,
+  Printer,
+  History,
+  ShieldCheck,
+  Search,
 } from 'lucide-react';
 import {
   AccessLevel,
+  AuditLogRecord,
+  BillingCycle,
+  BillingInvoiceRecord,
+  BillingPaymentMethod,
   Company,
+  CompanyBillingDetails,
   CrmLeadRecord,
   CrmLeadStatus,
   CurrencyCode,
@@ -50,6 +60,7 @@ import {
   PERMISSION_KEYS,
   PaymentGatewayRegion,
   SubscriptionPlanTier,
+  TaskChecklistItem,
   TaskPriority,
   TaskRecord,
   TaskStatus,
@@ -65,6 +76,11 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { PermissionsMatrixModal } from './PermissionsMatrixModal';
 import { SlideOverDrawer, DrawerTarget } from './SlideOverDrawer';
 import { UserAvatar, cropAndCompressAvatarToDataUrl } from './UserAvatar';
+import { TedCloudAiDrawer } from './TedCloudAiDrawer';
+import { CommandBarModal } from './CommandBarModal';
+import { TeamworkGraphView } from './TeamworkGraphView';
+import { SubscriptionCheckoutModal, PrintableInvoiceModal } from './BillingModals';
+import { buildBuiltInChecklistForTask } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
 import {
   ActiveMessengerThread,
@@ -82,10 +98,12 @@ interface DashboardProps {
   tasks: TaskRecord[];
   leads: CrmLeadRecord[];
   messages?: WorkspaceMessageRecord[];
+  invoices?: BillingInvoiceRecord[];
+  auditLogs?: AuditLogRecord[];
   isSyncing: boolean;
   onRefresh: () => Promise<void> | void;
   onPatchRecord: (
-    table: 'tasks' | 'crm_leads' | 'organization_nodes' | 'companies',
+    table: 'tasks' | 'crm_leads' | 'organization_nodes' | 'companies' | 'billing_invoices',
     id: string,
     updates: Record<string, any>
   ) => Promise<{ ok: boolean; pushSent?: boolean }>;
@@ -96,6 +114,9 @@ interface DashboardProps {
   onSendMessage?: (
     payload: Record<string, any>
   ) => Promise<{ ok: boolean; pushSent?: boolean }>;
+  onCreateInvoice?: (
+    payload: Record<string, any>
+  ) => Promise<{ ok: boolean; invoice?: BillingInvoiceRecord }>;
   onResetSession?: () => void;
 }
 
@@ -116,11 +137,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   tasks,
   leads,
   messages = [],
+  invoices = [],
+  auditLogs = [],
   isSyncing,
   onRefresh,
   onPatchRecord,
   onDeleteRecord,
   onSendMessage,
+  onCreateInvoice,
   onResetSession,
 }) => {
   const { language, currency, setLanguage, setCurrency, t, formatMoney } = useLocale();
@@ -157,10 +181,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
       ),
     [messages, companyId]
   );
+  const safeInvoices = useMemo(
+    () =>
+      (Array.isArray(invoices) ? invoices : []).filter(
+        (inv) => !companyId || !inv?.company_id || String(inv.company_id) === String(companyId)
+      ),
+    [invoices, companyId]
+  );
+  const safeAuditLogs = useMemo(
+    () =>
+      (Array.isArray(auditLogs) ? auditLogs : []).filter(
+        (log) => !companyId || !log?.company_id || String(log.company_id) === String(companyId)
+      ),
+    [auditLogs, companyId]
+  );
 
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
   const [modalType, setModalType] = useState<ModalRecordType>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // TedCloud AI Copilot & Global Command Bar (Cmd+K)
+  const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
+  const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
+  const [overviewViewMode, setOverviewViewMode] = useState<'standard' | 'graph'>('standard');
+  const [teamViewMode, setTeamViewMode] = useState<'table' | 'graph'>('table');
+  const [decomposingTaskId, setDecomposingTaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandBarOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // Task Filters & View Mode
   const [taskViewMode, setTaskViewMode] = useState<'list' | 'board'>('list');
@@ -286,16 +342,56 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Workspace & Billing state
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlanTier>(() => {
-    const saved = localStorage.getItem('tedcloud_plan') as SubscriptionPlanTier | null;
-    return saved || company?.plan || 'Business';
+    return company?.plan || (localStorage.getItem('tedcloud_plan') as SubscriptionPlanTier | null) || 'Business';
   });
   const [paymentRegion, setPaymentRegion] = useState<PaymentGatewayRegion>(() => {
-    const saved = localStorage.getItem('tedcloud_payment_region') as PaymentGatewayRegion | null;
-    return saved || company?.payment_region || 'RU';
+    return company?.payment_region || (localStorage.getItem('tedcloud_payment_region') as PaymentGatewayRegion | null) || 'RU';
   });
   const [botUsername, setBotUsername] = useState<string>(() => {
     return localStorage.getItem('tedcloud_bot_username') || 'TedCloudEnterpriseBot';
   });
+
+  // Payer Requisites (Реквизиты плательщика — companies.billing_details)
+  const [payerLegalName, setPayerLegalName] = useState<string>(
+    company?.billing_details?.legal_name || company?.name || ''
+  );
+  const [payerTaxId, setPayerTaxId] = useState<string>(
+    company?.billing_details?.tax_id || ''
+  );
+  const [payerRegNumber, setPayerRegNumber] = useState<string>(
+    company?.billing_details?.reg_number || ''
+  );
+  const [payerLegalAddress, setPayerLegalAddress] = useState<string>(
+    company?.billing_details?.legal_address || ''
+  );
+  const [payerBillingEmail, setPayerBillingEmail] = useState<string>(
+    company?.billing_details?.billing_email || currentProfile?.email || ''
+  );
+  const [payerCountry, setPayerCountry] = useState<string>(
+    company?.billing_details?.country || ''
+  );
+  const [isSavingBillingDetails, setIsSavingBillingDetails] = useState(false);
+  const [checkoutModalPlan, setCheckoutModalPlan] = useState<SubscriptionPlanTier | null>(null);
+  const [printableInvoice, setPrintableInvoice] = useState<BillingInvoiceRecord | null>(null);
+
+  useEffect(() => {
+    if (company?.plan) {
+      setSelectedPlan(company.plan);
+    }
+    if (company?.payment_region) {
+      setPaymentRegion(company.payment_region);
+    }
+    if (company?.billing_details) {
+      setPayerLegalName(company.billing_details.legal_name || company.name || '');
+      setPayerTaxId(company.billing_details.tax_id || '');
+      setPayerRegNumber(company.billing_details.reg_number || '');
+      setPayerLegalAddress(company.billing_details.legal_address || '');
+      setPayerBillingEmail(company.billing_details.billing_email || currentProfile?.email || '');
+      setPayerCountry(company.billing_details.country || '');
+    } else if (company?.name) {
+      setPayerLegalName((prev) => prev || company.name);
+    }
+  }, [company, currentProfile?.email]);
 
   useEffect(() => {
     try {
@@ -424,6 +520,149 @@ export const Dashboard: React.FC<DashboardProps> = ({
       void onPatchRecord('companies', company.id, { payment_region: region });
     }
     showToast(t('toast.gatewayUpdated'));
+  };
+
+  const handleSaveBillingDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!perms.billing_admin || !company?.id) return;
+    setIsSavingBillingDetails(true);
+    try {
+      const nextDetails: CompanyBillingDetails = {
+        legal_name: payerLegalName.trim() || companyName,
+        tax_id: payerTaxId.trim(),
+        reg_number: payerRegNumber.trim(),
+        legal_address: payerLegalAddress.trim(),
+        billing_email: payerBillingEmail.trim(),
+        country: payerCountry.trim(),
+        region: paymentRegion,
+      };
+      const res = await onPatchRecord('companies', company.id, {
+        billing_details: nextDetails,
+        payment_region: paymentRegion,
+      });
+      if (res.ok) {
+        showToast('Реквизиты плательщика сохранены');
+      }
+    } finally {
+      setIsSavingBillingDetails(false);
+    }
+  };
+
+  const handleConfirmSubscription = async (params: {
+    plan: SubscriptionPlanTier;
+    billingCycle: BillingCycle;
+    paymentMethod: BillingPaymentMethod;
+    amount: number;
+    invoiceNumber: string;
+  }) => {
+    if (!perms.billing_admin) return;
+    const currentDetails: CompanyBillingDetails = {
+      legal_name: payerLegalName.trim() || companyName,
+      tax_id: payerTaxId.trim() || (paymentRegion === 'RU' ? '7701234567' : 'EU-9920184'),
+      reg_number: payerRegNumber.trim() || (paymentRegion === 'RU' ? '770101001' : ''),
+      legal_address:
+        payerLegalAddress.trim() ||
+        (paymentRegion === 'RU'
+          ? 'РФ, г. Москва, Пресненская наб., д. 12'
+          : '100 Enterprise Way, Suite 400'),
+      billing_email: payerBillingEmail.trim() || currentProfile?.email || 'billing@company.org',
+      country: payerCountry.trim() || (paymentRegion === 'RU' ? 'Россия' : 'United States'),
+      region: paymentRegion,
+    };
+
+    const status = params.paymentMethod === 'card_sbp' ? 'Paid' : 'Pending';
+    setSelectedPlan(params.plan);
+    localStorage.setItem('tedcloud_plan', params.plan);
+
+    if (company?.id) {
+      await onPatchRecord('companies', company.id, {
+        plan: params.plan,
+        billing_cycle: params.billingCycle,
+        billing_details: currentDetails,
+      });
+    }
+
+    if (onCreateInvoice) {
+      const created = await onCreateInvoice({
+        company_id: companyId,
+        invoice_number: params.invoiceNumber,
+        plan: params.plan,
+        billing_cycle: params.billingCycle,
+        payment_method: params.paymentMethod,
+        amount: params.amount,
+        currency: paymentRegion === 'GLOBAL' && currency !== 'RUB' ? currency : 'RUB',
+        status,
+        payer_details: currentDetails,
+      });
+
+      setCheckoutModalPlan(null);
+      if (created.ok && created.invoice) {
+        if (params.paymentMethod === 'b2b_invoice') {
+          setPrintableInvoice(created.invoice);
+          showToast(`Счет ${params.invoiceNumber} сформирован и готов к печати`);
+        } else {
+          showToast(`Тариф ${params.plan} успешно оплачен и активирован`);
+        }
+      }
+    } else {
+      setCheckoutModalPlan(null);
+      showToast(t('toast.planUpdated'));
+    }
+  };
+
+  const handleMarkInvoicePaid = async (invoiceId: string) => {
+    if (!perms.billing_admin) return;
+    const res = await onPatchRecord('billing_invoices', invoiceId, { status: 'Paid' });
+    if (res.ok) {
+      setPrintableInvoice((prev) =>
+        prev && prev.id === invoiceId ? { ...prev, status: 'Paid' } : prev
+      );
+      showToast('Статус счета обновлен: Оплачен');
+    }
+  };
+
+  const handleQuickAiDecomposeTask = async (task: TaskRecord, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!canCreateOrEditTasks || decomposingTaskId === task.id) return;
+    setDecomposingTaskId(task.id);
+    try {
+      let nextChecklist: TaskChecklistItem[] = [];
+      let nextSummary = '';
+      try {
+        const response = await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'ai_assistant',
+            mode: 'decompose_task',
+            company_id: companyId,
+            profile_id: currentProfile?.id,
+            task_id: task.id,
+            taskTitle: task.title,
+            taskDescription: task.description || task.notes || '',
+          }),
+        });
+        const data = await response.json();
+        if (response.ok && Array.isArray(data.checklist) && data.checklist.length > 0) {
+          nextChecklist = data.checklist;
+          nextSummary = data.aiSummary || data.ai_summary || '';
+        }
+      } catch {}
+
+      if (nextChecklist.length === 0) {
+        const builtIn = buildBuiltInChecklistForTask(task.title, task.description || task.notes);
+        nextChecklist = builtIn.checklist;
+        nextSummary = builtIn.summary;
+      }
+
+      await onPatchRecord('tasks', task.id, {
+        checklist: nextChecklist,
+        ai_summary: nextSummary,
+      });
+      showToast(`ИИ-декомпозиция выполнена: создано ${nextChecklist.length} подзадач`);
+    } finally {
+      setDecomposingTaskId(null);
+    }
   };
 
   const handleBotUsernameChange = (val: string) => {
@@ -1177,6 +1416,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           }
           isSyncing={isSyncing}
           onRefresh={onRefresh}
+          onOpenCommandBar={() => setIsCommandBarOpen(true)}
+          onOpenAiCopilot={() => setIsAiDrawerOpen(true)}
         />
 
         {toastBanner && (
@@ -1195,7 +1436,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         )}
 
         <main className="flex-1 px-6 py-6 max-w-7xl w-full mx-auto space-y-6">
-          {/* Page Header & Strictly 1 Contextual Primary CTA */}
+          {/* Page Header & Contextual Controls */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-xl font-semibold text-white tracking-tight">
@@ -1221,7 +1462,67 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              {/* Switcher: Стандартный вид / Карта связей (Teamwork Graph) on Overview */}
+              {activeSection === 'overview' && (
+                <div className="inline-flex items-center rounded-lg border border-[#262626] bg-[#141417] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setOverviewViewMode('standard')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                      overviewViewMode === 'standard'
+                        ? 'bg-[#26262C] text-white'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    <LayoutList className="w-3.5 h-3.5" />
+                    <span>Обзор</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverviewViewMode('graph')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                      overviewViewMode === 'graph'
+                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    <Network className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Карта связей (Teamwork Graph)</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Switcher: Таблица штата / Карта связей (Teamwork Graph) on Team */}
+              {activeSection === 'team' && perms.team_manage && (
+                <div className="inline-flex items-center rounded-lg border border-[#262626] bg-[#141417] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setTeamViewMode('table')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                      teamViewMode === 'table'
+                        ? 'bg-[#26262C] text-white'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Реестр штата</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTeamViewMode('graph')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                      teamViewMode === 'graph'
+                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    <Network className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Карта связей (Teamwork Graph)</span>
+                  </button>
+                </div>
+              )}
+
               {(activeSection === 'overview' || activeSection === 'tasks') &&
                 canCreateOrEditTasks && (
                   <button
@@ -1260,300 +1561,344 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ================================================================== */}
           {activeSection === 'overview' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                  <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                    <span className="text-xs font-medium">{t('kpi.totalTasks')}</span>
-                    <Clock className="w-4 h-4 text-[#71717A]" />
-                  </div>
-                  <div className="text-2xl font-semibold text-white tracking-tight">
-                    {kpis.activeTasksCount}
-                  </div>
-                  <div className="text-[11px] text-[#71717A] mt-1 flex items-center justify-between">
-                    <span>
-                      {t('kpi.completed')}: {completedTasksCount}
-                    </span>
-                    {highPriorityOpenCount > 0 && (
-                      <span className="text-red-400 font-medium whitespace-nowrap">
-                        {highPriorityOpenCount} {t('kpi.highPriority')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                  <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                    <span className="text-xs font-medium">{t('kpi.orgStructure')}</span>
-                    <Users className="w-4 h-4 text-[#71717A]" />
-                  </div>
-                  <div className="text-2xl font-semibold text-white tracking-tight">
-                    {safeNodes.length}
-                  </div>
-                  <div className="text-[11px] text-[#71717A] mt-1">
-                    {t('kpi.telegramConnected')}:{' '}
-                    {safeNodes.filter((n) => Boolean(n.telegram_chat_id)).length}
-                  </div>
-                </div>
-
-                {perms.crm_view ? (
-                  <>
+              {overviewViewMode === 'graph' ? (
+                <TeamworkGraphView
+                  companyName={companyName}
+                  departments={companyDepartments}
+                  nodes={safeNodes}
+                  tasks={visibleTasks}
+                  leads={visibleLeads}
+                  canViewCrm={perms.crm_view}
+                  onSelectTask={(taskId) => setDrawerSelection({ kind: 'task', id: taskId })}
+                  onSelectLead={(leadId) => setDrawerSelection({ kind: 'lead', id: leadId })}
+                />
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
                       <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                        <span className="text-xs font-medium">{t('kpi.conversionRate')}</span>
-                        <Percent className="w-4 h-4 text-[#71717A]" />
+                        <span className="text-xs font-medium">{t('kpi.totalTasks')}</span>
+                        <Clock className="w-4 h-4 text-[#71717A]" />
                       </div>
                       <div className="text-2xl font-semibold text-white tracking-tight">
-                        {kpis.conversionRatePercent}%
+                        {kpis.activeTasksCount}
+                      </div>
+                      <div className="text-[11px] text-[#71717A] mt-1 flex items-center justify-between">
+                        <span>
+                          {t('kpi.completed')}: {completedTasksCount}
+                        </span>
+                        {highPriorityOpenCount > 0 && (
+                          <span className="text-red-400 font-medium whitespace-nowrap">
+                            {highPriorityOpenCount} {t('kpi.highPriority')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                        <span className="text-xs font-medium">{t('kpi.orgStructure')}</span>
+                        <Users className="w-4 h-4 text-[#71717A]" />
+                      </div>
+                      <div className="text-2xl font-semibold text-white tracking-tight">
+                        {safeNodes.length}
                       </div>
                       <div className="text-[11px] text-[#71717A] mt-1">
-                        {t('kpi.wonDeals')}:{' '}
-                        {visibleLeads.filter((l) => (l.status || l.stage) === 'Won').length} /{' '}
-                        {visibleLeads.length}
+                        {t('kpi.telegramConnected')}:{' '}
+                        {safeNodes.filter((n) => Boolean(n.telegram_chat_id)).length}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                        <span className="text-xs font-medium">{t('kpi.pipelineVolume')}</span>
-                        <TrendingUp className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="text-2xl font-semibold text-white tracking-tight">
-                        {formatMoney(totalPipelineValue)}
-                      </div>
-                      <div className="text-[11px] text-emerald-400/90 mt-1">
-                        {t('kpi.closedWon')}: {formatMoney(wonPipelineValue)}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                        <span className="text-xs font-medium">Срочные поручения</span>
-                        <AlertCircle className="w-4 h-4 text-amber-400" />
-                      </div>
-                      <div className="text-2xl font-semibold text-white tracking-tight">
-                        {highPriorityOpenCount}
-                      </div>
-                      <div className="text-[11px] text-[#71717A] mt-1">
-                        В работе сейчас:{' '}
-                        {visibleTasks.filter((tItem) => tItem.status === 'In Progress').length}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                        <span className="text-xs font-medium">Инфополе и сообщения</span>
-                        <MessageSquare className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="text-2xl font-semibold text-white tracking-tight">
-                        {visibleMessages.length}
-                      </div>
-                      <div className="text-[11px] text-emerald-400/90 mt-1">
-                        <button
-                          type="button"
-                          onClick={() => setActiveSection('communications')}
-                          className="hover:underline"
-                        >
-                          Открыть корпоративный чат →
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Персональная сводка продуктивности для сотрудников без доступа к CRM (!perms.crm_view) */}
-              {!perms.crm_view && (
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F1F] pb-3.5">
-                    <div>
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
-                        Персональная сводка продуктивности
-                      </h2>
-                      <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                        Ваши активные задачи, срочные поручения и последние сообщения из корпоративного инфополя
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setActiveSection('tasks')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Перейти к задачам</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveSection('communications')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262626] bg-[#17171A] hover:bg-[#222226] text-xs font-medium text-white transition-colors"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Инфополе</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {visibleMessages.length === 0 ? (
-                    <div className="text-xs text-[#71717A] py-2">
-                      В вашем инфополе пока нет новых сообщений.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {visibleMessages.slice(0, 3).map((msg) => {
-                        const senderNode = msg.sender_id
-                          ? nodeMap.get(String(msg.sender_id))
-                          : null;
-                        const sName =
-                          senderNode?.name || msg.sender_name || 'Сотрудник TedCloud';
-                        const sBody = extractMessageText(msg);
-                        return (
-                          <div
-                            key={msg.id}
-                            onClick={() => setActiveSection('communications')}
-                            className="rounded-lg border border-[#222226] bg-[#151518] p-3 space-y-2 hover:border-[#3F3F46] transition-colors cursor-pointer"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <UserAvatar
-                                  name={sName}
-                                  avatarUrl={senderNode?.avatar_url}
-                                  size="xs"
-                                />
-                                <span className="text-xs font-semibold text-white truncate">
-                                  {sName}
-                                </span>
-                              </div>
-                              {msg.is_urgent && (
-                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/30">
-                                  Срочно
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-[#D4D4D8] line-clamp-2 leading-relaxed">
-                              {sBody}
-                            </p>
+                    {perms.crm_view ? (
+                      <>
+                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                            <span className="text-xs font-medium">{t('kpi.conversionRate')}</span>
+                            <Percent className="w-4 h-4 text-[#71717A]" />
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Сводка активных задач на Дашборде */}
-              <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-[#A1A1AA]" />
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
-                      {t('tasks.sectionTitle')}
-                    </h2>
-                    <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
-                      {visibleTasks.length}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setActiveSection('tasks')}
-                    className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                  >
-                    {t('nav.tasks')}
-                  </button>
-                </div>
-
-                {visibleTasks.length === 0 ? (
-                  <div className="p-10 text-center space-y-3">
-                    <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
-                    <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
-                    {canCreateOrEditTasks && (
-                      <button
-                        onClick={() => setModalType('tasks')}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{t('tasks.addBtn')}</span>
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-[#1A1A1C]">
-                    {visibleTasks.slice(0, 8).map((task) => {
-                      const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
-                      return (
-                        <div
-                          key={task.id}
-                          onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
-                          className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#161618] transition-colors cursor-pointer"
-                        >
-                          <div className="min-w-0">
-                            <p
-                              className={`text-sm font-medium truncate ${
-                                task.status === 'Done'
-                                  ? 'text-[#71717A] line-through'
-                                  : 'text-white'
-                              }`}
-                            >
-                              {task.title}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2 mt-1">
-                              {renderPriorityBadge(task.priority)}
-                              {renderTaskStatusBadge(task.status)}
-                              {task.department && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8]">
-                                  {task.department}
-                                </span>
-                              )}
-                              {assignee ? (
-                                <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
-                                  <UserAvatar
-                                    name={assignee.name}
-                                    avatarUrl={assignee.avatar_url}
-                                    size="xs"
-                                  />
-                                  <span>
-                                    {assignee.name} ({assignee.role_type})
-                                  </span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-[#71717A]">
-                                  {t('tasks.unassigned')}
-                                </span>
-                              )}
-                              {(task.description || task.notes) && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
-                                  <FileText className="w-3 h-3" />
-                                  <span>{t('drawer.openDetails')}</span>
-                                </span>
-                              )}
-                            </div>
+                          <div className="text-2xl font-semibold text-white tracking-tight">
+                            {kpis.conversionRatePercent}%
                           </div>
-
-                          <div
-                            className="flex items-center gap-2 shrink-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <select
-                              disabled={!canCreateOrEditTasks}
-                              value={task.status || 'Todo'}
-                              onChange={(e) =>
-                                handleTaskUpdate(task.id, {
-                                  status: e.target.value as TaskStatus,
-                                })
-                              }
-                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
-                            >
-                              <option value="Todo">{t('status.Todo')}</option>
-                              <option value="In Progress">{t('status.In Progress')}</option>
-                              <option value="Done">{t('status.Done')}</option>
-                            </select>
+                          <div className="text-[11px] text-[#71717A] mt-1">
+                            {t('kpi.wonDeals')}:{' '}
+                            {visibleLeads.filter((l) => (l.status || l.stage) === 'Won').length} /{' '}
+                            {visibleLeads.length}
                           </div>
                         </div>
-                      );
-                    })}
+
+                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                            <span className="text-xs font-medium">{t('kpi.pipelineVolume')}</span>
+                            <TrendingUp className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div className="text-2xl font-semibold text-white tracking-tight">
+                            {formatMoney(totalPipelineValue)}
+                          </div>
+                          <div className="text-[11px] text-emerald-400/90 mt-1">
+                            {t('kpi.closedWon')}: {formatMoney(wonPipelineValue)}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                            <span className="text-xs font-medium">Срочные поручения</span>
+                            <AlertCircle className="w-4 h-4 text-amber-400" />
+                          </div>
+                          <div className="text-2xl font-semibold text-white tracking-tight">
+                            {highPriorityOpenCount}
+                          </div>
+                          <div className="text-[11px] text-[#71717A] mt-1">
+                            В работе сейчас:{' '}
+                            {visibleTasks.filter((tItem) => tItem.status === 'In Progress').length}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                            <span className="text-xs font-medium">Инфополе и сообщения</span>
+                            <MessageSquare className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div className="text-2xl font-semibold text-white tracking-tight">
+                            {visibleMessages.length}
+                          </div>
+                          <div className="text-[11px] text-emerald-400/90 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => setActiveSection('communications')}
+                              className="hover:underline"
+                            >
+                              Открыть корпоративный чат →
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  {/* Персональная сводка продуктивности для сотрудников без доступа к CRM (!perms.crm_view) */}
+                  {!perms.crm_view && (
+                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F1F] pb-3.5">
+                        <div>
+                          <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
+                            Персональная сводка продуктивности
+                          </h2>
+                          <p className="text-[11px] text-[#8E8E93] mt-0.5">
+                            Ваши активные задачи, срочные поручения и последние сообщения из корпоративного инфополя
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setActiveSection('tasks')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Перейти к задачам</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveSection('communications')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262626] bg-[#17171A] hover:bg-[#222226] text-xs font-medium text-white transition-colors"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Инфополе</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {visibleMessages.length === 0 ? (
+                        <div className="text-xs text-[#71717A] py-2">
+                          В вашем инфополе пока нет новых сообщений.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {visibleMessages.slice(0, 3).map((msg) => {
+                            const senderNode = msg.sender_id
+                              ? nodeMap.get(String(msg.sender_id))
+                              : null;
+                            const sName =
+                              senderNode?.name || msg.sender_name || 'Сотрудник TedCloud';
+                            const sBody = extractMessageText(msg);
+                            return (
+                              <div
+                                key={msg.id}
+                                onClick={() => setActiveSection('communications')}
+                                className="rounded-lg border border-[#222226] bg-[#151518] p-3 space-y-2 hover:border-[#3F3F46] transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <UserAvatar
+                                      name={sName}
+                                      avatarUrl={senderNode?.avatar_url}
+                                      size="xs"
+                                    />
+                                    <span className="text-xs font-semibold text-white truncate">
+                                      {sName}
+                                    </span>
+                                  </div>
+                                  {msg.is_urgent && (
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/30">
+                                      Срочно
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-[#D4D4D8] line-clamp-2 leading-relaxed">
+                                  {sBody}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Сводка активных задач на Дашборде */}
+                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <CheckCircle2 className="w-4 h-4 text-[#A1A1AA]" />
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
+                          {t('tasks.sectionTitle')}
+                        </h2>
+                        <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
+                          {visibleTasks.length}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setActiveSection('tasks')}
+                        className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                      >
+                        {t('nav.tasks')}
+                      </button>
+                    </div>
+
+                    {visibleTasks.length === 0 ? (
+                      <div className="p-10 text-center space-y-3">
+                        <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
+                        <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
+                        {canCreateOrEditTasks && (
+                          <button
+                            onClick={() => setModalType('tasks')}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{t('tasks.addBtn')}</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-[#1A1A1C]">
+                        {visibleTasks.slice(0, 8).map((task) => {
+                          const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
+                          const checklist = Array.isArray(task.checklist) ? task.checklist : [];
+                          const doneSubtasks = checklist.filter((c) => c.done).length;
+                          const isDecomposing = decomposingTaskId === task.id;
+
+                          return (
+                            <div
+                              key={task.id}
+                              onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
+                              className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#161618] transition-colors cursor-pointer"
+                            >
+                              <div className="min-w-0">
+                                <p
+                                  className={`text-sm font-medium truncate ${
+                                    task.status === 'Done'
+                                      ? 'text-[#71717A] line-through'
+                                      : 'text-white'
+                                  }`}
+                                >
+                                  {task.title}
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2 mt-1">
+                                  {renderPriorityBadge(task.priority)}
+                                  {renderTaskStatusBadge(task.status)}
+                                  {task.department && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8]">
+                                      {task.department}
+                                    </span>
+                                  )}
+                                  {checklist.length > 0 && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-300">
+                                      <ListChecks className="w-3 h-3" />
+                                      <span>
+                                        {doneSubtasks}/{checklist.length}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {assignee ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
+                                      <UserAvatar
+                                        name={assignee.name}
+                                        avatarUrl={assignee.avatar_url}
+                                        size="xs"
+                                      />
+                                      <span>
+                                        {assignee.name} ({assignee.role_type})
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-[#71717A]">
+                                      {t('tasks.unassigned')}
+                                    </span>
+                                  )}
+                                  {(task.description || task.notes) && (
+                                    <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                                      <FileText className="w-3 h-3" />
+                                      <span>{t('drawer.openDetails')}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div
+                                className="flex items-center gap-2 shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {canCreateOrEditTasks && (
+                                  <button
+                                    type="button"
+                                    disabled={isDecomposing}
+                                    onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
+                                    title="ИИ-декомпозиция задачи на чек-лист подзадач"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-medium text-emerald-300 transition-colors whitespace-nowrap"
+                                  >
+                                    {isDecomposing ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Sparkles className="w-3 h-3" />
+                                    )}
+                                    <span>ИИ-декомпозиция</span>
+                                  </button>
+                                )}
+
+                                <select
+                                  disabled={!canCreateOrEditTasks}
+                                  value={task.status || 'Todo'}
+                                  onChange={(e) =>
+                                    handleTaskUpdate(task.id, {
+                                      status: e.target.value as TaskStatus,
+                                    })
+                                  }
+                                  className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                                >
+                                  <option value="Todo">{t('status.Todo')}</option>
+                                  <option value="In Progress">{t('status.In Progress')}</option>
+                                  <option value="Done">{t('status.Done')}</option>
+                                </select>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1652,6 +1997,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   {filteredTasks.map((task) => {
                     const isBusy = busyRecordId === task.id;
                     const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
+                    const checklist = Array.isArray(task.checklist) ? task.checklist : [];
+                    const doneSubtasks = checklist.filter((c) => c.done).length;
+                    const isDecomposing = decomposingTaskId === task.id;
 
                     return (
                       <div
@@ -1698,6 +2046,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   {task.department}
                                 </span>
                               )}
+                              {checklist.length > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-300">
+                                  <ListChecks className="w-3 h-3" />
+                                  <span>
+                                    {doneSubtasks}/{checklist.length}
+                                  </span>
+                                </span>
+                              )}
                               {assignee && (
                                 <span className="inline-flex items-center gap-1.5 text-xs text-[#8E8E93]">
                                   <UserAvatar
@@ -1726,6 +2082,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           className="flex flex-wrap items-center gap-2 shrink-0"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          {canCreateOrEditTasks && (
+                            <button
+                              type="button"
+                              disabled={isDecomposing}
+                              onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
+                              title="ИИ-декомпозиция задачи на чек-лист подзадач"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-medium text-emerald-300 transition-colors whitespace-nowrap"
+                            >
+                              {isDecomposing ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-3 h-3" />
+                              )}
+                              <span>ИИ-декомпозиция</span>
+                            </button>
+                          )}
+
                           {perms.tasks_assign && (
                             <select
                               disabled={isBusy}
@@ -2568,164 +2941,177 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 5: ШТАТ И ДОСТУПЫ / TEAM & ACCESS (БЛОК 2: Конструктор отделов + таблица штата)
+              TAB 5: ШТАТ И ДОСТУПЫ / TEAM & ACCESS (БЛОК 2: Конструктор отделов + таблица штата / Карта связей)
           ================================================================== */}
           {activeSection === 'team' && perms.team_manage && (
             <div className="space-y-6">
               {renderDepartmentConstructorCard()}
 
-              <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Users className="w-4 h-4 text-[#A1A1AA]" />
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
-                      {t('team.sectionTitle')}
-                    </h2>
-                    <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
-                      {filteredNodes.length}
-                    </span>
+              {teamViewMode === 'graph' ? (
+                <TeamworkGraphView
+                  companyName={companyName}
+                  departments={companyDepartments}
+                  nodes={safeNodes}
+                  tasks={visibleTasks}
+                  leads={visibleLeads}
+                  canViewCrm={perms.crm_view}
+                  onSelectTask={(taskId) => setDrawerSelection({ kind: 'task', id: taskId })}
+                  onSelectLead={(leadId) => setDrawerSelection({ kind: 'lead', id: leadId })}
+                />
+              ) : (
+                <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <Users className="w-4 h-4 text-[#A1A1AA]" />
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
+                        {t('team.sectionTitle')}
+                      </h2>
+                      <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
+                        {filteredNodes.length}
+                      </span>
+                    </div>
+                    {perms.data_export && (
+                      <button
+                        onClick={handleExportTeamCsv}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>CSV</span>
+                      </button>
+                    )}
                   </div>
-                  {perms.data_export && (
-                    <button
-                      onClick={handleExportTeamCsv}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>CSV</span>
-                    </button>
-                  )}
-                </div>
 
-                {filteredNodes.length === 0 ? (
-                  <div className="p-12 text-center space-y-3">
-                    <div className="text-sm font-medium text-white">{t('team.emptyTitle')}</div>
-                    <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('team.empty')}</p>
-                    <button
-                      onClick={() => setModalType('organization_nodes')}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{t('team.addBtn')}</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
-                          <th className="py-3 px-5">{t('team.colEmployee')}</th>
-                          <th className="py-3 px-5">{t('team.colJobTitle')}</th>
-                          <th className="py-3 px-5">{t('team.colAccess')}</th>
-                          <th className="py-3 px-5">{t('team.colInviteCode')}</th>
-                          <th className="py-3 px-5">{t('team.colTelegram')}</th>
-                          <th className="py-3 px-5 text-right">{t('team.colActions')}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#1A1A1C] text-xs">
-                        {filteredNodes.map((node) => {
-                          const { access_level, permissions } = normalizeEmployeePermissions(
-                            node.access_level,
-                            node.permissions,
-                            node.role_type
-                          );
-                          const activeFlagsCount = PERMISSION_KEYS.filter(
-                            (k) => permissions[k]
-                          ).length;
+                  {filteredNodes.length === 0 ? (
+                    <div className="p-12 text-center space-y-3">
+                      <div className="text-sm font-medium text-white">{t('team.emptyTitle')}</div>
+                      <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('team.empty')}</p>
+                      <button
+                        onClick={() => setModalType('organization_nodes')}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{t('team.addBtn')}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                            <th className="py-3 px-5">{t('team.colEmployee')}</th>
+                            <th className="py-3 px-5">{t('team.colJobTitle')}</th>
+                            <th className="py-3 px-5">{t('team.colAccess')}</th>
+                            <th className="py-3 px-5">{t('team.colInviteCode')}</th>
+                            <th className="py-3 px-5">{t('team.colTelegram')}</th>
+                            <th className="py-3 px-5 text-right">{t('team.colActions')}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#1A1A1C] text-xs">
+                          {filteredNodes.map((node) => {
+                            const { access_level, permissions } = normalizeEmployeePermissions(
+                              node.access_level,
+                              node.permissions,
+                              node.role_type
+                            );
+                            const activeFlagsCount = PERMISSION_KEYS.filter(
+                              (k) => permissions[k]
+                            ).length;
 
-                          return (
-                            <tr key={node.id} className="hover:bg-[#161618] transition-colors">
-                              <td className="py-4 px-5">
-                                <div className="flex items-center gap-3">
-                                  <UserAvatar
-                                    name={node.name}
-                                    avatarUrl={node.avatar_url}
-                                    size="md"
-                                  />
-                                  <div className="min-w-0">
-                                    <div className="font-semibold text-white truncate">
-                                      {node.name}
-                                    </div>
-                                    {node.email && (
-                                      <div className="text-[11px] text-[#71717A] mt-0.5 truncate">
-                                        {node.email}
+                            return (
+                              <tr key={node.id} className="hover:bg-[#161618] transition-colors">
+                                <td className="py-4 px-5">
+                                  <div className="flex items-center gap-3">
+                                    <UserAvatar
+                                      name={node.name}
+                                      avatarUrl={node.avatar_url}
+                                      size="md"
+                                    />
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-white truncate">
+                                        {node.name}
                                       </div>
-                                    )}
+                                      {node.email && (
+                                        <div className="text-[11px] text-[#71717A] mt-0.5 truncate">
+                                          {node.email}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
+                                </td>
 
-                              <td className="py-4 px-5">
-                                <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#1C1C1F] text-white border border-[#2C2C30] font-medium whitespace-nowrap">
-                                  {node.role_type}
-                                </div>
-                                <div className="text-[11px] text-[#8E8E93] mt-1">
-                                  {node.department || t('team.noDepartment')}
-                                </div>
-                              </td>
+                                <td className="py-4 px-5">
+                                  <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#1C1C1F] text-white border border-[#2C2C30] font-medium whitespace-nowrap">
+                                    {node.role_type}
+                                  </div>
+                                  <div className="text-[11px] text-[#8E8E93] mt-1">
+                                    {node.department || t('team.noDepartment')}
+                                  </div>
+                                </td>
 
-                              <td className="py-4 px-5">
-                                <div className="flex flex-col items-start gap-1.5">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#18181B] border border-[#2C2C30] text-[#E4E4E7] font-medium whitespace-nowrap">
-                                    {t(`accessShort.${access_level}`)} ({activeFlagsCount}/7)
-                                  </span>
+                                <td className="py-4 px-5">
+                                  <div className="flex flex-col items-start gap-1.5">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#18181B] border border-[#2C2C30] text-[#E4E4E7] font-medium whitespace-nowrap">
+                                      {t(`accessShort.${access_level}`)} ({activeFlagsCount}/7)
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPermissionsModalNode(node)}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#2E2E32] bg-[#161618] hover:bg-[#222226] text-[11px] font-medium text-white transition-colors whitespace-nowrap"
+                                    >
+                                      <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
+                                      <span>{t('permModal.btnLabel')}</span>
+                                    </button>
+                                  </div>
+                                </td>
+
+                                <td className="py-4 px-5">
+                                  <div className="flex flex-col items-start gap-1.5">
+                                    <span className="text-xs px-2.5 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-white font-semibold whitespace-nowrap">
+                                      {node.invite_code || 'TC-0000'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setInspectInviteNode(node)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#A1A1AA] hover:text-white bg-[#1C1C1F] hover:bg-[#27272A] transition-colors whitespace-nowrap"
+                                    >
+                                      <KeyRound className="w-3 h-3" />
+                                      <span>{t('team.inviteLinkBtn')}</span>
+                                    </button>
+                                  </div>
+                                </td>
+
+                                <td className="py-4 px-5">
+                                  {node.telegram_chat_id ? (
+                                    <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium whitespace-nowrap">
+                                      <Send className="w-3 h-3" />
+                                      {t('team.connected')} ({node.telegram_chat_id})
+                                    </span>
+                                  ) : (
+                                    <span className="text-[#71717A] whitespace-nowrap">
+                                      {t('team.pendingInvite')}
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td className="py-4 px-5 text-right">
                                   <button
-                                    type="button"
-                                    onClick={() => setPermissionsModalNode(node)}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#2E2E32] bg-[#161618] hover:bg-[#222226] text-[11px] font-medium text-white transition-colors whitespace-nowrap"
+                                    onClick={() =>
+                                      requestDeleteRecord('organization_nodes', node.id, node.name)
+                                    }
+                                    className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
                                   >
-                                    <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
-                                    <span>{t('permModal.btnLabel')}</span>
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
-                                </div>
-                              </td>
-
-                              <td className="py-4 px-5">
-                                <div className="flex flex-col items-start gap-1.5">
-                                  <span className="text-xs px-2.5 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-white font-semibold whitespace-nowrap">
-                                    {node.invite_code || 'TC-0000'}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setInspectInviteNode(node)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#A1A1AA] hover:text-white bg-[#1C1C1F] hover:bg-[#27272A] transition-colors whitespace-nowrap"
-                                  >
-                                    <KeyRound className="w-3 h-3" />
-                                    <span>{t('team.inviteLinkBtn')}</span>
-                                  </button>
-                                </div>
-                              </td>
-
-                              <td className="py-4 px-5">
-                                {node.telegram_chat_id ? (
-                                  <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium whitespace-nowrap">
-                                    <Send className="w-3 h-3" />
-                                    {t('team.connected')} ({node.telegram_chat_id})
-                                  </span>
-                                ) : (
-                                  <span className="text-[#71717A] whitespace-nowrap">
-                                    {t('team.pendingInvite')}
-                                  </span>
-                                )}
-                              </td>
-
-                              <td className="py-4 px-5 text-right">
-                                <button
-                                  onClick={() =>
-                                    requestDeleteRecord('organization_nodes', node.id, node.name)
-                                  }
-                                  className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
           )}
 
@@ -3079,11 +3465,75 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           {/* =================================================================
               TAB 7: ОРГАНИЗАЦИЯ И БИЛЛИНГ / WORKSPACE & BILLING
+              (БЛОК 1: без тегов отделов сверху; БЛОК 4: Квоты, Реквизиты, Счета; БЛОК 5: Audit Log)
           ================================================================== */}
           {activeSection === 'workspace' && perms.billing_admin && (
             <div className="space-y-6">
-              {renderDepartmentConstructorCard()}
+              {/* 1. Квоты и лимиты тарифа (Plan Quotas) */}
+              {(() => {
+                const maxSeats =
+                  selectedPlan === 'Trial' ? 5 : selectedPlan === 'Business' ? 50 : 500;
+                const seatsPercent = Math.min(
+                  100,
+                  Math.round((safeNodes.length / maxSeats) * 100)
+                );
+                return (
+                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                            Квоты и лимиты корпоративного тарифа ({selectedPlan})
+                          </h3>
+                          <p className="text-[11px] text-[#8E8E93] mt-0.5">
+                            Мониторинг лицензий сотрудников, AI-квот и защищенного API-шлюза компании
+                          </p>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-xs font-medium text-emerald-300">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span>Хранилище и API-шлюз: Активно</span>
+                      </span>
+                    </div>
 
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                      <div className="rounded-lg border border-[#222228] bg-[#151519] p-3.5 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[#A1A1AA] font-medium">
+                            Активные сотрудники (Тариф {selectedPlan})
+                          </span>
+                          <span className="font-mono font-semibold text-white">
+                            {safeNodes.length} / {selectedPlan === 'Enterprise' ? '∞' : maxSeats}
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-[#24242A] overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-500 transition-all duration-300"
+                            style={{ width: `${Math.max(8, seatsPercent)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-[#222228] bg-[#151519] p-3.5 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[#A1A1AA] font-medium">
+                            Хранилище, Telegram Webhook и TedCloud AI Copilot
+                          </span>
+                          <span className="font-mono font-semibold text-emerald-400">
+                            Активно · 99.98% SLA
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-[#24242A] overflow-hidden">
+                          <div className="h-full bg-emerald-500 w-full" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 2. Параметры организации и Выбор тарифа */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
                   <div className="flex items-center gap-2.5">
@@ -3117,7 +3567,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Subscription Plan Selector */}
+                {/* Subscription Plan Selector (открывает модальное окно оформления подписки и B2B-счета) */}
                 <div className="lg:col-span-2 rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
@@ -3177,14 +3627,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => handlePlanChange(planItem.tier)}
+                            onClick={() => {
+                              if (planItem.tier === 'Trial') {
+                                handlePlanChange('Trial');
+                              } else {
+                                setCheckoutModalPlan(planItem.tier);
+                              }
+                            }}
                             className={`mt-4 w-full py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
                               isCurrent
-                                ? 'bg-white text-black'
-                                : 'bg-[#222226] text-[#D4D4D8] hover:bg-[#2C2C30]'
+                                ? 'bg-white text-black hover:bg-[#E4E4E7]'
+                                : 'bg-[#222226] text-[#D4D4D8] hover:bg-white hover:text-black'
                             }`}
                           >
-                            {isCurrent ? t('workspace.activeTier') : t('workspace.upgradeBtn')}
+                            {planItem.tier === 'Trial'
+                              ? isCurrent
+                                ? t('workspace.activeTier')
+                                : t('workspace.upgradeBtn')
+                              : isCurrent
+                              ? 'Продлить / Выставить счет'
+                              : 'Выбрать тариф'}
                           </button>
                         </div>
                       );
@@ -3193,55 +3655,329 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
-                  <div className="flex items-center gap-2.5">
-                    <CreditCard className="w-4 h-4 text-[#A1A1AA]" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                      {t('workspace.billingSection')}
-                    </h3>
+              {/* 3. Платежный шлюз и Форма «Реквизиты плательщика» (companies.billing_details) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                    <div className="flex items-center gap-2.5">
+                      <CreditCard className="w-4 h-4 text-[#A1A1AA]" />
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                        {t('workspace.billingSection')}
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleRegionChange('RU')}
+                        className={`text-left rounded-lg border p-3.5 transition-colors ${
+                          paymentRegion === 'RU'
+                            ? 'border-white bg-[#18181B]'
+                            : 'border-[#262626] bg-[#141416] hover:border-[#3F3F46]'
+                        }`}
+                      >
+                        <div className="text-xs font-semibold text-white mb-1">
+                          {t('workspace.gatewayRu')}
+                        </div>
+                        <p className="text-[11px] text-[#8E8E93] leading-relaxed">
+                          {t('workspace.gatewayRuDesc')}
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRegionChange('GLOBAL')}
+                        className={`text-left rounded-lg border p-3.5 transition-colors ${
+                          paymentRegion === 'GLOBAL'
+                            ? 'border-white bg-[#18181B]'
+                            : 'border-[#262626] bg-[#141416] hover:border-[#3F3F46]'
+                        }`}
+                      >
+                        <div className="text-xs font-semibold text-white mb-1">
+                          {t('workspace.gatewayGlobal')}
+                        </div>
+                        <p className="text-[11px] text-[#8E8E93] leading-relaxed">
+                          {t('workspace.gatewayGlobalDesc')}
+                        </p>
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleRegionChange('RU')}
-                      className={`text-left rounded-lg border p-3.5 transition-colors ${
-                        paymentRegion === 'RU'
-                          ? 'border-white bg-[#18181B]'
-                          : 'border-[#262626] bg-[#141416] hover:border-[#3F3F46]'
-                      }`}
-                    >
-                      <div className="text-xs font-semibold text-white mb-1">
-                        {t('workspace.gatewayRu')}
-                      </div>
-                      <p className="text-[11px] text-[#8E8E93] leading-relaxed">
-                        {t('workspace.gatewayRuDesc')}
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleRegionChange('GLOBAL')}
-                      className={`text-left rounded-lg border p-3.5 transition-colors ${
-                        paymentRegion === 'GLOBAL'
-                          ? 'border-white bg-[#18181B]'
-                          : 'border-[#262626] bg-[#141416] hover:border-[#3F3F46]'
-                      }`}
-                    >
-                      <div className="text-xs font-semibold text-white mb-1">
-                        {t('workspace.gatewayGlobal')}
-                      </div>
-                      <p className="text-[11px] text-[#8E8E93] leading-relaxed">
-                        {t('workspace.gatewayGlobalDesc')}
-                      </p>
-                    </button>
-                  </div>
+                  {renderLocalizationCard()}
                 </div>
 
-                {renderLocalizationCard()}
+                {/* Форма «Реквизиты плательщика» (сохранение в companies.billing_details) */}
+                <form
+                  onSubmit={handleSaveBillingDetails}
+                  className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4"
+                >
+                  <div className="flex items-center justify-between border-b border-[#1F1F1F] pb-3.5">
+                    <div className="flex items-center gap-2.5">
+                      <Receipt className="w-4 h-4 text-emerald-400" />
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                          Реквизиты плательщика ({paymentRegion === 'RU' ? 'РФ и СНГ' : 'Global'})
+                        </h3>
+                        <p className="text-[11px] text-[#8E8E93] mt-0.5">
+                          Юридические данные автоматически подставляются в закрывающие документы и B2B-счета
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {paymentRegion === 'RU' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          Наименование юрлица (ООО / АО / ИП)
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={payerLegalName}
+                          onChange={(e) => setPayerLegalName(e.target.value)}
+                          placeholder='ООО «Сигма Технологии»'
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          ИНН
+                        </label>
+                        <input
+                          type="text"
+                          value={payerTaxId}
+                          onChange={(e) => setPayerTaxId(e.target.value)}
+                          placeholder="7701234567"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          КПП
+                        </label>
+                        <input
+                          type="text"
+                          value={payerRegNumber}
+                          onChange={(e) => setPayerRegNumber(e.target.value)}
+                          placeholder="770101001"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          Юридический адрес
+                        </label>
+                        <input
+                          type="text"
+                          value={payerLegalAddress}
+                          onChange={(e) => setPayerLegalAddress(e.target.value)}
+                          placeholder="г. Москва, Пресненская наб., д. 12"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          Email для счетов и ЭДО
+                        </label>
+                        <input
+                          type="email"
+                          value={payerBillingEmail}
+                          onChange={(e) => setPayerBillingEmail(e.target.value)}
+                          placeholder="finance@company.ru"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          Company Legal Name
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={payerLegalName}
+                          onChange={(e) => setPayerLegalName(e.target.value)}
+                          placeholder="Sigma Enterprise Holdings Inc."
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          VAT / Tax ID
+                        </label>
+                        <input
+                          type="text"
+                          value={payerTaxId}
+                          onChange={(e) => setPayerTaxId(e.target.value)}
+                          placeholder="EU-992018412"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          Country / Jurisdiction
+                        </label>
+                        <input
+                          type="text"
+                          value={payerCountry}
+                          onChange={(e) => setPayerCountry(e.target.value)}
+                          placeholder="United Kingdom / Germany / UAE"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                          Billing Email
+                        </label>
+                        <input
+                          type="email"
+                          value={payerBillingEmail}
+                          onChange={(e) => setPayerBillingEmail(e.target.value)}
+                          placeholder="billing@company.com"
+                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-1 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCheckoutModalPlan(selectedPlan === 'Trial' ? 'Business' : selectedPlan)
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#2C2C34] bg-[#17171C] hover:bg-[#222229] text-xs font-medium text-white transition-colors"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Сформировать B2B-счет</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={isSavingBillingDetails}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
+                    >
+                      {isSavingBillingDetails ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      <span>Сохранить реквизиты</span>
+                    </button>
+                  </div>
+                </form>
               </div>
 
+              {/* 4. Таблица «История счетов и платежей» (billing_invoices) */}
+              <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <FileText className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                      История счетов и платежей (B2B Invoices)
+                    </h3>
+                    <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded">
+                      {safeInvoices.length}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCheckoutModalPlan(selectedPlan === 'Trial' ? 'Business' : selectedPlan)
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Выставить новый счет</span>
+                  </button>
+                </div>
+
+                {safeInvoices.length === 0 ? (
+                  <div className="p-8 text-center space-y-2">
+                    <div className="text-xs font-medium text-white">
+                      По вашей организации пока нет выставленных счетов
+                    </div>
+                    <p className="text-[11px] text-[#71717A]">
+                      Выберите тариф «Business» или «Enterprise», чтобы сформировать официальный B2B-счет на оплату или оплатить подписку картой.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                          <th className="py-3 px-5">№ счета</th>
+                          <th className="py-3 px-5">Дата</th>
+                          <th className="py-3 px-5">Тариф и период</th>
+                          <th className="py-3 px-5">Сумма</th>
+                          <th className="py-3 px-5">Статус</th>
+                          <th className="py-3 px-5 text-right">Документ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1A1A1C] text-xs">
+                        {safeInvoices.map((inv) => {
+                          const isPaid = inv.status === 'Paid';
+                          const dateStr = inv.created_at
+                            ? new Date(inv.created_at).toLocaleDateString('ru-RU')
+                            : '—';
+                          return (
+                            <tr key={inv.id} className="hover:bg-[#161618] transition-colors">
+                              <td className="py-3.5 px-5 font-mono font-semibold text-white">
+                                {inv.invoice_number}
+                              </td>
+                              <td className="py-3.5 px-5 text-[#A1A1AA]">{dateStr}</td>
+                              <td className="py-3.5 px-5">
+                                <span className="font-medium text-white">Тариф {inv.plan}</span>
+                                <span className="text-[11px] text-[#71717A] ml-1.5">
+                                  ({inv.billing_cycle === 'yearly' ? '12 месяцев, -20%' : '1 месяц'})
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-5 font-mono font-semibold text-white">
+                                {formatMoney(Number(inv.amount || 0))}
+                              </td>
+                              <td className="py-3.5 px-5">
+                                {isPaid ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-medium text-emerald-400">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>Оплачен</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] font-medium text-amber-300">
+                                    <Clock className="w-3 h-3" />
+                                    <span>Ожидает оплаты</span>
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3.5 px-5 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => setPrintableInvoice(inv)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2C2C34] bg-[#18181D] hover:bg-white hover:text-black text-xs font-medium text-white transition-colors whitespace-nowrap"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                  <span>Открыть счет (Печать / PDF)</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Экспорт реестров CSV */}
               {perms.data_export && (
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
                   <div className="flex items-center gap-2.5">
@@ -3283,6 +4019,80 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* 5. БЛОК 5: ЖУРНАЛ БЕЗОПАСНОСТИ И АУДИТА ДЕЙСТВИЙ (AUDIT LOG) */}
+              <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <History className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                        Журнал безопасности и аудита действий (Audit Log)
+                      </h3>
+                      <p className="text-[11px] text-[#8E8E93] mt-0.5">
+                        Неизменяемый реестр критически важных событий безопасности и изменений в {companyName}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded">
+                    {safeAuditLogs.length} событий
+                  </span>
+                </div>
+
+                {safeAuditLogs.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[#71717A]">
+                    Журнал аудита инициализирован. Все последующие операции создания/удаления задач, сделок, изменения прав и счетов фиксируются автоматически.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                          <th className="py-3 px-5">Время</th>
+                          <th className="py-3 px-5">Сотрудник (Инициатор)</th>
+                          <th className="py-3 px-5">Действие</th>
+                          <th className="py-3 px-5">Объект</th>
+                          <th className="py-3 px-5">Детали</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1A1A1C] text-xs">
+                        {safeAuditLogs.slice(0, 40).map((log) => {
+                          const timeFormatted = log.created_at
+                            ? new Date(log.created_at).toLocaleString('ru-RU', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '—';
+                          return (
+                            <tr key={log.id} className="hover:bg-[#161618] transition-colors">
+                              <td className="py-3 px-5 font-mono text-[11px] text-[#8E8E93] whitespace-nowrap">
+                                {timeFormatted}
+                              </td>
+                              <td className="py-3 px-5">
+                                <div className="font-medium text-white">{log.actor_name}</div>
+                                {log.actor_role && (
+                                  <div className="text-[10px] text-[#71717A]">{log.actor_role}</div>
+                                )}
+                              </td>
+                              <td className="py-3 px-5">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181D] border border-[#2C2C34] text-[11px] font-mono font-medium text-emerald-300">
+                                  {log.action_type || (log as any).action}
+                                </span>
+                              </td>
+                              <td className="py-3 px-5 text-[#A1A1AA] font-mono text-[11px]">
+                                {log.entity_type}
+                              </td>
+                              <td className="py-3 px-5 text-[#D4D4D8]">{log.details}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </main>
@@ -3346,6 +4156,82 @@ export const Dashboard: React.FC<DashboardProps> = ({
               }
             : undefined
         }
+      />
+
+      {/* TedCloud AI Copilot Drawer (БЛОК 2) */}
+      <TedCloudAiDrawer
+        isOpen={isAiDrawerOpen}
+        onClose={() => setIsAiDrawerOpen(false)}
+        company={company}
+        currentProfile={currentProfile}
+        nodes={safeNodes}
+        tasks={visibleTasks}
+        leads={visibleLeads}
+        messages={visibleMessages}
+      />
+
+      {/* Global Command Bar & Omnisearch (Cmd+K / БЛОК 3) */}
+      <CommandBarModal
+        isOpen={isCommandBarOpen}
+        onClose={() => setIsCommandBarOpen(false)}
+        tasks={visibleTasks}
+        leads={visibleLeads}
+        nodes={safeNodes}
+        messages={visibleMessages}
+        canCreateTasks={canCreateOrEditTasks}
+        canViewCrm={perms.crm_view}
+        onSelectTask={(taskId) => {
+          setDrawerSelection({ kind: 'task', id: taskId });
+        }}
+        onSelectLead={(leadId) => {
+          setDrawerSelection({ kind: 'lead', id: leadId });
+        }}
+        onSelectSection={(sec) => {
+          setActiveSection(sec);
+        }}
+        onCreateTask={() => {
+          setModalType('tasks');
+        }}
+        onOpenAiCopilot={() => {
+          setIsAiDrawerOpen(true);
+        }}
+      />
+
+      {/* Subscription Checkout & B2B Invoice Generator Modal (БЛОК 4) */}
+      <SubscriptionCheckoutModal
+        isOpen={Boolean(checkoutModalPlan)}
+        initialPlan={checkoutModalPlan || selectedPlan}
+        paymentRegion={paymentRegion}
+        companyName={companyName}
+        billingDetails={{
+          legal_name: payerLegalName || companyName,
+          tax_id: payerTaxId,
+          reg_number: payerRegNumber,
+          legal_address: payerLegalAddress,
+          billing_email: payerBillingEmail,
+          country: payerCountry,
+          region: paymentRegion,
+        }}
+        onClose={() => setCheckoutModalPlan(null)}
+        onConfirmSubscription={handleConfirmSubscription}
+      />
+
+      {/* Printable Official B2B Invoice Modal (БЛОК 4) */}
+      <PrintableInvoiceModal
+        invoice={printableInvoice}
+        companyName={companyName}
+        paymentRegion={paymentRegion}
+        fallbackBillingDetails={{
+          legal_name: payerLegalName || companyName,
+          tax_id: payerTaxId,
+          reg_number: payerRegNumber,
+          legal_address: payerLegalAddress,
+          billing_email: payerBillingEmail,
+          country: payerCountry,
+          region: paymentRegion,
+        }}
+        onClose={() => setPrintableInvoice(null)}
+        onMarkPaid={handleMarkInvoicePaid}
       />
 
       {/* Inspect Employee Invite Deep-Link Modal */}

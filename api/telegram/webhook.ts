@@ -1,4 +1,9 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { GoogleGenAI } from '@google/genai';
+import {
+  parseTelegramUrgentMessage,
+  runBuiltInAiAssistant,
+} from '../../src/utils/enterpriseLogic';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +31,8 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'owner_node_id',
     'company_id',
     'created_by',
+    'checklist',
+    'ai_summary',
   ],
   organization_nodes: [
     'name',
@@ -222,11 +229,12 @@ function resolveUserPermissions(user: any): {
   };
 }
 
-// БЛОК 5: Главное меню командного центра с кнопкой «Связь с коллегами / Отделом» (ZERO EMOJI)
+// Главное меню командного центра с кнопками «Аналитика TedCloud AI» и «Связь с коллегами / Отделом» (ZERO EMOJI)
 function buildRoleCommandCenterKeyboard(siteUrl: string, chatId: string, user: any) {
   const { canAssignTasks, canViewCrm } = resolveUserPermissions(user);
   const rows: any[][] = [
     [{ text: 'Мои активные задачи', callback_data: 'menu_my_tasks' }],
+    [{ text: 'Аналитика TedCloud AI', callback_data: 'menu_ai_brief' }],
     [{ text: 'Связь с коллегами / Отделом', callback_data: 'menu_comm' }],
   ];
 
@@ -486,12 +494,107 @@ export default async function handler(req: any, res: any) {
         '',
         'Доступные команды:',
         '/menu — Интерактивный командный центр',
+        '/ai — Аналитика и сводка TedCloud AI',
         '/tasks — Список моих активных задач',
         '/new — Поставить новую задачу',
         '/digest — Финансовая сводка CRM и задач',
       ].join('\n');
 
       await sendTelegramMessage(targetChatId, menuHtml, {
+        reply_markup: buildRoleCommandCenterKeyboard(siteUrl, targetChatId, user),
+      });
+    };
+
+    // БЛОК 2: ИИ-ассистент TedCloud AI в Telegram-боте (/ai и кнопка «Аналитика TedCloud AI»)
+    const sendTedCloudAiBrief = async (
+      targetChatId: string,
+      user: any,
+      customQuestion?: string
+    ) => {
+      const companyId = user?.company_id || null;
+      let tasksQuery = supabase.from('tasks').select('*');
+      let leadsQuery = supabase.from('crm_leads').select('*');
+      let nodesQuery = supabase.from('organization_nodes').select('*');
+      let msgsQuery = supabase.from('workspace_messages').select('*').limit(100);
+
+      if (companyId) {
+        tasksQuery = tasksQuery.eq('company_id', companyId);
+        leadsQuery = leadsQuery.eq('company_id', companyId);
+        nodesQuery = nodesQuery.eq('company_id', companyId);
+        msgsQuery = msgsQuery.eq('company_id', companyId);
+      }
+
+      const [tasksRes, leadsRes, nodesRes, msgsRes, compRes] = await Promise.all([
+        tasksQuery,
+        leadsQuery,
+        nodesQuery,
+        msgsQuery,
+        companyId
+          ? supabase.from('companies').select('name').eq('id', companyId).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const companyName = compRes?.data?.name || 'TedCloud';
+      const companyTasks = (tasksRes.data || []).filter(
+        (t: any) => !companyId || String(t.company_id || '') === String(companyId)
+      );
+      const companyLeads = (leadsRes.data || []).filter(
+        (l: any) => !companyId || String(l.company_id || '') === String(companyId)
+      );
+      const companyNodes = (nodesRes.data || []).filter(
+        (n: any) => !companyId || String(n.company_id || '') === String(companyId)
+      );
+      const companyMessages = (msgsRes.data || []).filter(
+        (m: any) => !companyId || String(m.company_id || '') === String(companyId)
+      );
+
+      const { canViewCrm } = resolveUserPermissions(user);
+      const filteredLeadsForAi = canViewCrm ? companyLeads : [];
+
+      const aiMode = customQuestion && customQuestion.trim() ? 'custom' : 'daily_brief';
+      const builtIn = runBuiltInAiAssistant({
+        mode: aiMode,
+        prompt: customQuestion || '',
+        companyName,
+        currentUser: user,
+        nodes: companyNodes,
+        tasks: companyTasks,
+        leads: filteredLeadsForAi,
+        messages: companyMessages,
+      });
+
+      let replyBody = builtIn.reply;
+
+      const geminiApiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+      if (geminiApiKey) {
+        try {
+          const ai = new GoogleGenAI({
+            apiKey: geminiApiKey,
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+          });
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Ты — корпоративный ИИ-ассистент TedCloud AI (Jira Rovo style) в Telegram.
+Сотрудник: ${user.name} (${user.role_type || 'Специалист'}).
+Базовая сводка по данным компании «${companyName}»:
+${builtIn.reply}
+${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
+Сформируй четкий, деловой ответ на русском языке без эмодзи (до 900 символов).`,
+          });
+          if (response.text && response.text.trim()) {
+            replyBody = response.text.trim();
+          }
+        } catch (err) {
+          console.warn('[WEBHOOK] Gemini fallback to built-in engine:', err);
+        }
+      }
+
+      const aiHtml = [
+        '<b>TEDCLOUD AI | ИНТЕЛЛЕКТУАЛЬНЫЙ КОПИЛОТ</b>',
+        escapeHtml(replyBody),
+      ].join('\n\n');
+
+      await sendTelegramMessage(targetChatId, aiHtml, {
         reply_markup: buildRoleCommandCenterKeyboard(siteUrl, targetChatId, user),
       });
     };
@@ -686,6 +789,13 @@ export default async function handler(req: any, res: any) {
         return res.status(200).send('OK');
       }
 
+      // 2b. БЛОК 2: Аналитика TedCloud AI
+      if (cbData === 'menu_ai_brief') {
+        if (cbId) await answerCallbackQuery(cbId, 'Запуск аналитики TedCloud AI');
+        await sendTedCloudAiBrief(cbChatId, user);
+        return res.status(200).send('OK');
+      }
+
       // 3. Мои активные задачи
       if (cbData === 'menu_my_tasks') {
         if (cbId) await answerCallbackQuery(cbId, 'Загрузка списка задач');
@@ -700,7 +810,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).send('OK');
       }
 
-      // 5. БЛОК 5: Меню «Связь с коллегами / Отделом»
+      // 5. Меню «Связь с коллегами / Отделом»
       if (cbData === 'menu_comm') {
         if (cbId) await answerCallbackQuery(cbId, 'Выберите контур связи');
         await sendTelegramMessage(
@@ -822,7 +932,7 @@ export default async function handler(req: any, res: any) {
           [
             '<b>ОБЩЕЕ ОПОВЕЩЕНИЕ ПО КОМПАНИИ</b>',
             'Отправьте текст сообщения следующим ответом в чат.',
-            'Сообщение будет доставлено всем сотрудникам в Telegram и сохранено в едином инфополе TedCloud.',
+            'Для пометки «Срочно» начните сообщение с символа «!» (например: <code>!Собрание руководителей в 15:00</code>).',
           ].join('\n'),
           {
             reply_markup: {
@@ -864,7 +974,7 @@ export default async function handler(req: any, res: any) {
             '<b>ОТПРАВКА СООБЩЕНИЯ КОЛЛЕГЕ</b>',
             `Получатель: <b>${escapeHtml(targetName)} (${escapeHtml(targetRole)})</b>`,
             '',
-            'Введите текст ответа следующим сообщением в этот чат.',
+            'Введите текст ответа следующим сообщением в этот чат (для пометки «Срочно» начните с символа «!»).',
           ].join('\n'),
           {
             reply_markup: {
@@ -889,7 +999,7 @@ export default async function handler(req: any, res: any) {
             '<b>ОТПРАВКА СООБЩЕНИЯ В ОТДЕЛ</b>',
             `Подразделение: <b>${escapeHtml(targetDept)}</b>`,
             '',
-            'Введите текст сообщения следующим ответом в чат.',
+            'Введите текст сообщения следующим ответом в чат (для пометки «Срочно» начните с символа «!»).',
           ].join('\n'),
           {
             reply_markup: {
@@ -1050,21 +1160,29 @@ export default async function handler(req: any, res: any) {
       return res.status(200).send('OK');
     }
 
-    // 2. КОМАНДА /tasks — Список активных задач
+    // 2. КОМАНДА /ai — ИИ-ассистент TedCloud AI
+    if (rawText === '/ai' || rawText.startsWith('/ai ') || rawText.startsWith('/ai@')) {
+      const user = await findOrCreateUserByChatId(chatId, firstName);
+      const customQuestion = rawText.replace(/^\/ai(@\S+)?\s*/i, '').trim();
+      await sendTedCloudAiBrief(chatId, user, customQuestion);
+      return res.status(200).send('OK');
+    }
+
+    // 3. КОМАНДА /tasks — Список активных задач
     if (rawText === '/tasks' || rawText.startsWith('/tasks@')) {
       const user = await findOrCreateUserByChatId(chatId, firstName);
       await sendActiveTasksList(chatId, user);
       return res.status(200).send('OK');
     }
 
-    // 3. КОМАНДА /digest — Финансовая сводка CRM и задач
+    // 4. КОМАНДА /digest — Финансовая сводка CRM и задач
     if (rawText === '/digest' || rawText.startsWith('/digest@')) {
       const user = await findOrCreateUserByChatId(chatId, firstName);
       await sendFinancialCrmDigest(chatId, user);
       return res.status(200).send('OK');
     }
 
-    // 4. КОМАНДА /new — Создание задачи
+    // 5. КОМАНДА /new — Создание задачи
     if (rawText === '/new' || rawText.startsWith('/new@')) {
       const user = await findOrCreateUserByChatId(chatId, firstName);
       await sendTelegramMessage(
@@ -1082,7 +1200,7 @@ export default async function handler(req: any, res: any) {
       const companyId = user.company_id || (await resolveCompanyId());
       const { rawPerms, canAssignTasks } = resolveUserPermissions(user);
 
-      // БЛОК 5: Проверяем, находится ли пользователь в режиме отправки сообщения коллеге / отделу / компании
+      // Проверяем, находится ли пользователь в режиме отправки сообщения коллеге / отделу / компании
       const activeCommState: PendingCommState | null =
         pendingCommMap.get(chatId) ||
         (rawPerms.pending_comm && typeof rawPerms.pending_comm === 'object'
@@ -1101,7 +1219,21 @@ export default async function handler(req: any, res: any) {
           (n: any) => !companyId || String(n.company_id || '') === String(companyId)
         );
 
-        const msgBody = String(rawText || '').trim();
+        // БЛОК 1: is_urgent ставится ТОЛЬКО если сообщение начинается с "!" (символ "!" убирается)
+        const { isUrgent: isUrgentMsg, cleanText: msgBody } =
+          parseTelegramUrgentMessage(rawText);
+
+        if (!msgBody) {
+          await sendTelegramMessage(
+            chatId,
+            '<b>ОШИБКА</b>\nТекст сообщения не может быть пустым.',
+            {
+              reply_markup: buildRoleCommandCenterKeyboard(siteUrl, chatId, user),
+            }
+          );
+          return res.status(200).send('OK');
+        }
+
         let targetNodes: any[] = [];
         let contourLabel = 'Общее оповещение по компании';
         let recipientLabel = 'Вся компания';
@@ -1145,7 +1277,6 @@ export default async function handler(req: any, res: any) {
           targetNodes = nodesList.filter((n: any) => String(n.id) !== String(user.id));
         }
 
-        // Железобетонное сохранение текста и адресата в таблицу workspace_messages
         await safeWebhookInsert(supabase, 'workspace_messages', {
           company_id: companyId,
           sender_id: user.id,
@@ -1156,14 +1287,14 @@ export default async function handler(req: any, res: any) {
           target_label: resolvedTargetLabel,
           message_text: msgBody,
           text: msgBody,
-          is_urgent: true,
+          is_urgent: isUrgentMsg,
           is_read: false,
         });
 
         const incomingHtml = [
           '<b>ВХОДЯЩЕЕ СООБЩЕНИЕ TEDCLOUD</b>',
           `От: ${escapeHtml(user.name)} (${escapeHtml(user.role_type || 'Специалист')})`,
-          `Контур: ${escapeHtml(contourLabel)}`,
+          `Контур: ${escapeHtml(contourLabel)}${isUrgentMsg ? ' | СРОЧНО' : ''}`,
           '',
           escapeHtml(msgBody),
         ].join('\n');
@@ -1202,6 +1333,7 @@ export default async function handler(req: any, res: any) {
           [
             '<b>СООБЩЕНИЕ ОТПРАВЛЕНО</b>',
             `Адресат: ${escapeHtml(recipientLabel)}`,
+            `Статус: ${isUrgentMsg ? 'Срочное уведомление' : 'Стандартное сообщение'}`,
             `Доставлено в Telegram: ${deliveredCount} сотр.`,
             'Запись синхронизирована с вкладкой «Инфополе и Связь» в TedCloud.',
           ].join('\n'),

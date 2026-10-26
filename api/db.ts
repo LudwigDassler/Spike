@@ -1,9 +1,26 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { GoogleGenAI, Type } from '@google/genai';
+import {
+  AiAssistantMode,
+  TaskChecklistItem,
+} from '../src/types/database';
+import {
+  buildBuiltInChecklistForTask,
+  generateInvoiceNumber,
+  runBuiltInAiAssistant,
+} from '../src/utils/enterpriseLogic';
 
 export const dynamic = 'force-dynamic';
 
 const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
-  companies: ['name', 'plan', 'payment_region', 'departments'],
+  companies: [
+    'name',
+    'plan',
+    'billing_cycle',
+    'payment_region',
+    'billing_details',
+    'departments',
+  ],
   tasks: [
     'title',
     'description',
@@ -16,6 +33,8 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'owner_node_id',
     'company_id',
     'created_by',
+    'checklist',
+    'ai_summary',
   ],
   organization_nodes: [
     'name',
@@ -68,6 +87,30 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'is_read',
     'created_at',
   ],
+  billing_invoices: [
+    'company_id',
+    'invoice_number',
+    'plan',
+    'billing_cycle',
+    'amount',
+    'currency',
+    'status',
+    'payment_method',
+    'payer_details',
+    'created_by',
+    'created_at',
+    'paid_at',
+  ],
+  audit_logs: [
+    'company_id',
+    'actor_id',
+    'actor_name',
+    'action_type',
+    'entity_type',
+    'entity_id',
+    'details',
+    'created_at',
+  ],
 };
 
 // Оверлей для сохранения расширенных атрибутов и комментариев, если схема удаленной БД еще обновляется
@@ -103,7 +146,7 @@ async function safeSupabaseInsert(
   const payload = sanitizeByWhitelist(table, rawPayload);
   const strippedColumns: string[] = [];
 
-  for (let attempt = 0; attempt < 20; attempt++) {
+  for (let attempt = 0; attempt < 25; attempt++) {
     const { data, error } = await supabase.from(table).insert([payload]).select().single();
     if (!error) {
       return { data, error: null, strippedColumns };
@@ -151,7 +194,7 @@ async function safeSupabaseUpdate(
   const payload = sanitizeByWhitelist(table, rawUpdates);
   const strippedColumns: string[] = [];
 
-  for (let attempt = 0; attempt < 20; attempt++) {
+  for (let attempt = 0; attempt < 25; attempt++) {
     if (Object.keys(payload).length === 0) {
       const { data: existing, error: fetchErr } = await supabase
         .from(table)
@@ -369,6 +412,8 @@ interface InMemoryStore {
   tasks: Record<string, any>[];
   crm_leads: Record<string, any>[];
   workspace_messages: Record<string, any>[];
+  billing_invoices: Record<string, any>[];
+  audit_logs: Record<string, any>[];
 }
 
 const localStore: InMemoryStore = {
@@ -377,6 +422,8 @@ const localStore: InMemoryStore = {
   tasks: [],
   crm_leads: [],
   workspace_messages: [],
+  billing_invoices: [],
+  audit_logs: [],
 };
 
 function getAdminSupabaseOrNull(): SupabaseClient | null {
@@ -407,7 +454,9 @@ async function resolveDefaultCompanyId(
       id: crypto.randomUUID(),
       name: preferredName,
       plan: 'Business',
+      billing_cycle: 'monthly',
       payment_region: 'RU',
+      billing_details: {},
       departments: [],
       created_at: new Date().toISOString(),
     };
@@ -487,7 +536,75 @@ async function fetchAllCompanyNodes(
   return rows;
 }
 
-// БЛОК 2: Отправка Telegram-уведомления конкретному исполнителю ИЛИ всему подразделению (отделу) строго внутри companyId
+// БЛОК 5: Автоматическая запись события в журнал безопасности и аудита (audit_logs)
+async function recordAuditLog(params: {
+  supabase: SupabaseClient | null;
+  companyId: string;
+  actorId?: string | null;
+  actorName?: string | null;
+  actionType: string;
+  entityType: string;
+  entityId?: string | null;
+  details: string;
+}): Promise<any> {
+  const {
+    supabase,
+    companyId,
+    actorId = null,
+    actorName = 'Система TedCloud',
+    actionType,
+    entityType,
+    entityId = null,
+    details,
+  } = params;
+
+  let resolvedActorName = actorName;
+  if (!resolvedActorName || resolvedActorName === 'Сотрудник TedCloud') {
+    const matchedActor =
+      (actorId &&
+        localStore.organization_nodes.find((n) => String(n.id) === String(actorId))) ||
+      localStore.organization_nodes.find(
+        (n) => String(n.company_id) === String(companyId) && n.access_level === 'root'
+      ) ||
+      localStore.organization_nodes.find((n) => String(n.company_id) === String(companyId));
+    if (matchedActor?.name) {
+      resolvedActorName = matchedActor.name;
+    }
+  }
+
+  const rawAudit: Record<string, any> = {
+    company_id: companyId,
+    actor_id: actorId,
+    actor_name: resolvedActorName || 'Руководитель организации',
+    action_type: actionType,
+    entity_type: entityType,
+    entity_id: entityId ? String(entityId) : null,
+    details,
+    created_at: new Date().toISOString(),
+  };
+
+  const localEntry = {
+    id: crypto.randomUUID(),
+    ...rawAudit,
+  };
+
+  localStore.audit_logs.unshift(localEntry);
+
+  if (supabase) {
+    try {
+      const { data } = await safeSupabaseInsert(supabase, 'audit_logs', rawAudit);
+      if (data?.id) {
+        return { ...localEntry, ...data };
+      }
+    } catch (err) {
+      console.warn('[API /api/db] Audit log fallback to memory:', err);
+    }
+  }
+
+  return localEntry;
+}
+
+// Отправка Telegram-уведомления конкретному исполнителю ИЛИ всему подразделению (отделу) строго внутри companyId
 async function sendTelegramTaskOrDepartmentPush(params: {
   supabase: SupabaseClient | null;
   companyId?: string | null;
@@ -604,7 +721,7 @@ async function sendTelegramTaskOrDepartmentPush(params: {
   return { pushed: pushedCount > 0, count: pushedCount };
 }
 
-// БЛОК 4: Мгновенная доставка сообщения из единого инфополя (workspace_messages) в Telegram
+// Мгновенная доставка сообщения из единого инфополя (workspace_messages) в Telegram
 async function sendTelegramWorkspaceMessagePush(params: {
   supabase: SupabaseClient | null;
   messageRecord: Record<string, any>;
@@ -782,9 +899,22 @@ function normalizeCompanyRow(row: any) {
       departments = [];
     }
   }
+  let billingDetails = row.billing_details ?? extras?.billing_details ?? null;
+  if (typeof billingDetails === 'string') {
+    try {
+      billingDetails = JSON.parse(billingDetails);
+    } catch {
+      billingDetails = null;
+    }
+  }
   return {
     ...row,
     ...(extras || {}),
+    plan: row.plan ?? extras?.plan ?? 'Business',
+    billing_cycle: row.billing_cycle ?? extras?.billing_cycle ?? 'monthly',
+    payment_region: row.payment_region ?? extras?.payment_region ?? 'RU',
+    billing_details:
+      billingDetails && typeof billingDetails === 'object' ? billingDetails : null,
     departments: Array.isArray(departments) ? departments : [],
   };
 }
@@ -795,6 +925,22 @@ function normalizeTaskRow(row: any) {
   const noteText =
     row.description ?? row.notes ?? overlay?.description ?? overlay?.notes ?? null;
 
+  let rawChecklist = row.checklist ?? extras?.checklist ?? [];
+  if (typeof rawChecklist === 'string') {
+    try {
+      rawChecklist = JSON.parse(rawChecklist);
+    } catch {
+      rawChecklist = [];
+    }
+  }
+  const checklist: TaskChecklistItem[] = Array.isArray(rawChecklist)
+    ? rawChecklist.map((item: any, idx: number) => ({
+        id: String(item?.id || `chk_${idx + 1}`),
+        title: String(item?.title || '').trim(),
+        done: Boolean(item?.done),
+      }))
+    : [];
+
   return {
     ...row,
     ...(extras || {}),
@@ -804,6 +950,8 @@ function normalizeTaskRow(row: any) {
     priority: row.priority || 'Medium',
     status: row.status || 'Todo',
     department: row.department ?? extras?.department ?? null,
+    checklist,
+    ai_summary: row.ai_summary ?? extras?.ai_summary ?? null,
     assigned_to:
       row.assigned_to !== undefined
         ? row.assigned_to
@@ -973,6 +1121,44 @@ function normalizeMessageRow(row: any) {
   };
 }
 
+function normalizeInvoiceRow(row: any) {
+  const extras = row.id ? recordExtrasOverlay.get(`billing_invoices:${row.id}`) : undefined;
+  const merged = { ...(extras || {}), ...row };
+  let payerDetails = merged.payer_details ?? null;
+  if (typeof payerDetails === 'string') {
+    try {
+      payerDetails = JSON.parse(payerDetails);
+    } catch {
+      payerDetails = null;
+    }
+  }
+  return {
+    ...merged,
+    invoice_number: merged.invoice_number || generateInvoiceNumber(),
+    plan: merged.plan || 'Business',
+    billing_cycle: merged.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+    amount: Number(merged.amount ?? 0),
+    currency: merged.currency || 'RUB',
+    status: merged.status || 'Issued',
+    payment_method: merged.payment_method || 'b2b_invoice',
+    payer_details: payerDetails,
+    created_at: merged.created_at || new Date().toISOString(),
+  };
+}
+
+function normalizeAuditLogRow(row: any) {
+  const actionCode = row.action_type || row.action || 'SYSTEM_EVENT';
+  return {
+    ...row,
+    actor_name: row.actor_name || 'Руководитель организации',
+    action_type: actionCode,
+    action: actionCode,
+    entity_type: row.entity_type || 'workspace',
+    details: row.details || '',
+    created_at: row.created_at || new Date().toISOString(),
+  };
+}
+
 /**
  * Серверная фильтрация приватности сообщений workspace_messages для текущего пользователя
  */
@@ -998,7 +1184,6 @@ function canServerUserSeeMessage(msg: any, currentUser: any | null): boolean {
     .trim()
     .toLowerCase();
 
-  // Если msg.target_type === 'direct': видят ТОЛЬКО отправитель и получатель!
   if (tType === 'direct') {
     if (senderId && senderId === userId) return true;
     if (targetId && targetId === userId) return true;
@@ -1006,7 +1191,6 @@ function canServerUserSeeMessage(msg: any, currentUser: any | null): boolean {
     return false;
   }
 
-  // Если msg.target_type === 'department': видят сотрудники этого отдела и администраторы (root)
   if (tType === 'department') {
     if (userAccess === 'root') return true;
     if (senderId && senderId === userId) return true;
@@ -1014,7 +1198,6 @@ function canServerUserSeeMessage(msg: any, currentUser: any | null): boolean {
     return userDept === targetId.toLowerCase() || userDept === targetLabelLower;
   }
 
-  // general, broadcast, task, deal — видят сотрудники компании
   return true;
 }
 
@@ -1080,6 +1263,8 @@ export default async function handler(req: any, res: any) {
             tasks: [],
             leads: [],
             messages: [],
+            invoices: [],
+            auditLogs: [],
           });
         }
 
@@ -1101,6 +1286,13 @@ export default async function handler(req: any, res: any) {
               String(m.company_id || '') === String(activeCompanyId) &&
               (!currentProfile || canServerUserSeeMessage(m, currentProfile))
           );
+        const companyInvoices = localStore.billing_invoices
+          .map(normalizeInvoiceRow)
+          .filter((inv) => String(inv.company_id || '') === String(activeCompanyId));
+        const companyAuditLogs = localStore.audit_logs
+          .map(normalizeAuditLogRow)
+          .filter((log) => String(log.company_id || '') === String(activeCompanyId))
+          .slice(0, 60);
 
         return res.status(200).json({
           ok: true,
@@ -1111,15 +1303,27 @@ export default async function handler(req: any, res: any) {
           tasks: companyTasks,
           leads: companyLeads,
           messages: companyMessages,
+          invoices: companyInvoices,
+          auditLogs: companyAuditLogs,
         });
       }
 
-      const [companiesRes, nodesRes, tasksRes, leadsRes, messagesRes] = await Promise.all([
+      const [
+        companiesRes,
+        nodesRes,
+        tasksRes,
+        leadsRes,
+        messagesRes,
+        invoicesRes,
+        auditLogsRes,
+      ] = await Promise.all([
         safeSelectTable(supabase, 'companies', false, 100),
         safeSelectTable(supabase, 'organization_nodes', true),
         safeSelectTable(supabase, 'tasks', false),
         safeSelectTable(supabase, 'crm_leads', false),
         safeSelectTable(supabase, 'workspace_messages', false, 300),
+        safeSelectTable(supabase, 'billing_invoices', false, 100),
+        safeSelectTable(supabase, 'audit_logs', false, 100),
       ]);
 
       if (nodesRes.error) {
@@ -1160,6 +1364,8 @@ export default async function handler(req: any, res: any) {
           tasks: [],
           leads: [],
           messages: [],
+          invoices: [],
+          auditLogs: [],
         });
       }
 
@@ -1204,6 +1410,34 @@ export default async function handler(req: any, res: any) {
         }
       }
 
+      // Merge remote billing_invoices with in-memory fallback invoices strictly for activeCompanyId
+      const remoteInvoices = Array.isArray(invoicesRes.data) ? invoicesRes.data : [];
+      const seenInvIds = new Set<string>();
+      const mergedInvoices: any[] = [];
+      for (const inv of [...remoteInvoices, ...localStore.billing_invoices]) {
+        if (inv && inv.id && !seenInvIds.has(inv.id)) {
+          seenInvIds.add(inv.id);
+          const norm = normalizeInvoiceRow(inv);
+          if (String(norm.company_id || '') === String(activeCompanyId)) {
+            mergedInvoices.push(norm);
+          }
+        }
+      }
+
+      // Merge remote audit_logs with in-memory fallback audit logs strictly for activeCompanyId
+      const remoteAudits = Array.isArray(auditLogsRes.data) ? auditLogsRes.data : [];
+      const seenAuditIds = new Set<string>();
+      const mergedAuditLogs: any[] = [];
+      for (const log of [...remoteAudits, ...localStore.audit_logs]) {
+        if (log && log.id && !seenAuditIds.has(log.id)) {
+          seenAuditIds.add(log.id);
+          const norm = normalizeAuditLogRow(log);
+          if (String(norm.company_id || '') === String(activeCompanyId)) {
+            mergedAuditLogs.push(norm);
+          }
+        }
+      }
+
       return res.status(200).json({
         ok: true,
         mode: 'supabase',
@@ -1213,11 +1447,269 @@ export default async function handler(req: any, res: any) {
         tasks: companyTasks,
         leads: companyLeads,
         messages: mergedMessages,
+        invoices: mergedInvoices,
+        auditLogs: mergedAuditLogs.slice(0, 60),
       });
     }
 
     if (method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+
+      // БЛОК 2: Корпоративный ИИ-ассистент TedCloud AI (в стиле Jira Rovo — Веб + Telegram)
+      if (body.action === 'ai_assistant') {
+        const mode: AiAssistantMode =
+          body.mode === 'daily_brief' ||
+          body.mode === 'decompose_task' ||
+          body.mode === 'workload_analysis'
+            ? body.mode
+            : 'custom';
+        const requestedCompanyId = body.company_id || body.companyId || null;
+        const profileId = body.profile_id || body.profileId || null;
+        const taskId = body.task_id || body.taskId || null;
+        const promptText = String(body.prompt || body.question || '').trim();
+        const taskTitle = String(body.taskTitle || body.title || '').trim();
+        const taskDescription = String(body.taskDescription || body.description || '').trim();
+
+        let companyNodes: any[] = [];
+        let companyTasks: any[] = [];
+        let companyLeads: any[] = [];
+        let companyMessages: any[] = [];
+        let companyName = String(body.companyName || 'TedCloud');
+
+        if (!supabase) {
+          companyNodes = localStore.organization_nodes
+            .map(normalizeNodeRow)
+            .filter((n) => !requestedCompanyId || String(n.company_id) === String(requestedCompanyId));
+          companyTasks = localStore.tasks
+            .map(normalizeTaskRow)
+            .filter((t) => !requestedCompanyId || String(t.company_id) === String(requestedCompanyId));
+          companyLeads = localStore.crm_leads
+            .map(normalizeLeadRow)
+            .filter((l) => !requestedCompanyId || String(l.company_id) === String(requestedCompanyId));
+          companyMessages = localStore.workspace_messages
+            .map(normalizeMessageRow)
+            .filter((m) => !requestedCompanyId || String(m.company_id) === String(requestedCompanyId));
+        } else {
+          const [nodesRes, tasksRes, leadsRes, messagesRes, compRes] = await Promise.all([
+            safeSelectTable(supabase, 'organization_nodes', true),
+            safeSelectTable(supabase, 'tasks', false),
+            safeSelectTable(supabase, 'crm_leads', false),
+            safeSelectTable(supabase, 'workspace_messages', false, 150),
+            requestedCompanyId
+              ? supabase.from('companies').select('*').eq('id', requestedCompanyId).maybeSingle()
+              : Promise.resolve({ data: null }),
+          ]);
+          if (compRes?.data?.name) {
+            companyName = compRes.data.name;
+          }
+          companyNodes = (nodesRes.data || [])
+            .map(normalizeNodeRow)
+            .filter((n) => !requestedCompanyId || String(n.company_id) === String(requestedCompanyId));
+          companyTasks = (tasksRes.data || [])
+            .map(normalizeTaskRow)
+            .filter((t) => !requestedCompanyId || String(t.company_id) === String(requestedCompanyId));
+          companyLeads = (leadsRes.data || [])
+            .map(normalizeLeadRow)
+            .filter((l) => !requestedCompanyId || String(l.company_id) === String(requestedCompanyId));
+          companyMessages = (messagesRes.data || [])
+            .map(normalizeMessageRow)
+            .filter((m) => !requestedCompanyId || String(m.company_id) === String(requestedCompanyId));
+        }
+
+        const currentUser = profileId
+          ? companyNodes.find((n) => String(n.id) === String(profileId)) || null
+          : null;
+
+        const targetTaskRecord = taskId
+          ? companyTasks.find((t) => String(t.id) === String(taskId)) || null
+          : null;
+        const resolvedTaskTitle = taskTitle || targetTaskRecord?.title || '';
+        const resolvedTaskDescription =
+          taskDescription || targetTaskRecord?.description || targetTaskRecord?.notes || '';
+
+        // First compute deterministic analysis & checklist as baseline / fallback
+        const builtInResult = runBuiltInAiAssistant({
+          mode,
+          prompt: promptText,
+          taskTitle: resolvedTaskTitle,
+          taskDescription: resolvedTaskDescription,
+          companyName,
+          currentUser,
+          nodes: companyNodes,
+          tasks: companyTasks,
+          leads: companyLeads,
+          messages: companyMessages,
+        });
+
+        let finalResult = builtInResult;
+
+        // If GEMINI_API_KEY is configured, enhance response via Google Gemini (gemini-2.5-flash)
+        const geminiApiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+        if (geminiApiKey) {
+          try {
+            const ai = new GoogleGenAI({
+              apiKey: geminiApiKey,
+              httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+            });
+
+            if (mode === 'decompose_task') {
+              const targetTitle = taskTitle || promptText || 'Корпоративное поручение';
+              const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: `Ты — корпоративный ИИ-ассистент TedCloud AI (уровень Atlassian Rovo / Linear).
+Декомпозируй корпоративную задачу «${targetTitle}» ${
+                  taskDescription ? `(Описание: ${taskDescription})` : ''
+                } на 4–5 конкретных, деловых подзадач для чек-листа и напиши краткое резюме (1 предложение). Отвечай строго на русском языке без эмодзи.`,
+                config: {
+                  responseMimeType: 'application/json',
+                  responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                      subtasks: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                      },
+                      summary: {
+                        type: Type.STRING,
+                      },
+                    },
+                    required: ['subtasks', 'summary'],
+                  },
+                },
+              });
+
+              if (response.text) {
+                const parsed = JSON.parse(response.text);
+                if (Array.isArray(parsed.subtasks) && parsed.subtasks.length > 0) {
+                  const checklist: TaskChecklistItem[] = parsed.subtasks
+                    .slice(0, 6)
+                    .map((st: string, i: number) => ({
+                      id: `chk_${Date.now()}_${i + 1}`,
+                      title: String(st || '').trim(),
+                      done: false,
+                    }))
+                    .filter((item: TaskChecklistItem) => Boolean(item.title));
+
+                  if (checklist.length > 0) {
+                    const summary = String(parsed.summary || builtInResult.aiSummary || '').trim();
+                    finalResult = {
+                      mode: 'decompose_task',
+                      checklist,
+                      aiSummary: summary,
+                      reply: [
+                        `ИИ-декомпозиция задачи «${targetTitle}» (${checklist.length} шага):`,
+                        '',
+                        ...checklist.map((c, idx) => `${idx + 1}. ${c.title}`),
+                        '',
+                        summary,
+                      ].join('\n'),
+                      provider: 'gemini',
+                    };
+                  }
+                }
+              }
+            } else {
+              const contextDigest = JSON.stringify({
+                company: companyName,
+                currentUser: currentUser
+                  ? {
+                      name: currentUser.name,
+                      role: currentUser.role_type,
+                      department: currentUser.department,
+                    }
+                  : null,
+                employeesCount: companyNodes.length,
+                employees: companyNodes.slice(0, 15).map((n) => ({
+                  name: n.name,
+                  role: n.role_type,
+                  department: n.department,
+                })),
+                tasks: companyTasks.slice(0, 20).map((t) => ({
+                  title: t.title,
+                  status: t.status,
+                  priority: t.priority,
+                  department: t.department,
+                })),
+                crmDeals: companyLeads.slice(0, 15).map((l) => ({
+                  client: l.client_name,
+                  amount: l.amount,
+                  status: l.status,
+                  tax_id: l.tax_id,
+                  department: l.department,
+                })),
+              });
+
+              const systemTaskInstruction =
+                mode === 'daily_brief'
+                  ? 'Сформируй деловую персональную сводку дня для текущего сотрудника по его активным задачам, срочным поручениям и сделкам компании.'
+                  : mode === 'workload_analysis'
+                  ? 'Проведи управленческий анализ распределения задач по сотрудникам/отделам и конверсии сделок CRM, дай 2–3 конкретные рекомендации.'
+                  : `Ответь на вопрос сотрудника: «${promptText}» строго на основе данных компании.`;
+
+              const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: `Ты — корпоративный ИИ-ассистент TedCloud AI (стиль Atlassian Rovo / Linear). Отвечай емко, структурно, деловым русским языком без лишней воды.
+Контекст компании (JSON): ${contextDigest}
+Базовая аналитическая выжимка:
+${builtInResult.reply}
+
+Задание: ${systemTaskInstruction}`,
+              });
+
+              if (response.text && response.text.trim()) {
+                finalResult = {
+                  ...builtInResult,
+                  reply: response.text.trim(),
+                  provider: 'gemini',
+                };
+              }
+            }
+          } catch (aiErr) {
+            console.warn('[API /api/db] Gemini fallback to built-in engine:', aiErr);
+          }
+        }
+
+        // If taskId is provided during decompose_task, persist checklist & ai_summary to DB
+        let updatedTaskRecord: any = null;
+        if (mode === 'decompose_task' && taskId && finalResult.checklist) {
+          const prevExtras = recordExtrasOverlay.get(`tasks:${taskId}`) || {};
+          recordExtrasOverlay.set(`tasks:${taskId}`, {
+            ...prevExtras,
+            checklist: finalResult.checklist,
+            ai_summary: finalResult.aiSummary || null,
+          });
+
+          if (!supabase) {
+            const idx = localStore.tasks.findIndex((t) => String(t.id) === String(taskId));
+            if (idx !== -1) {
+              localStore.tasks[idx] = {
+                ...localStore.tasks[idx],
+                checklist: finalResult.checklist,
+                ai_summary: finalResult.aiSummary || null,
+              };
+              updatedTaskRecord = normalizeTaskRow(localStore.tasks[idx]);
+            }
+          } else {
+            const { data: updated } = await safeSupabaseUpdate(supabase, 'tasks', String(taskId), {
+              checklist: finalResult.checklist,
+              ai_summary: finalResult.aiSummary || null,
+            });
+            if (updated) {
+              updatedTaskRecord = normalizeTaskRow({
+                ...updated,
+                checklist: finalResult.checklist,
+                ai_summary: finalResult.aiSummary || null,
+              });
+            }
+          }
+        }
+
+        return res.status(200).json({
+          ok: true,
+          ...finalResult,
+          updatedTask: updatedTaskRecord,
+        });
+      }
 
       // Универсальный вход сотрудника по любому из 5 идентификаторов (Telegram ID, Invite Code, Email, UUID, ФИО)
       if (body.action === 'login') {
@@ -1304,7 +1796,9 @@ export default async function handler(req: any, res: any) {
             id: crypto.randomUUID(),
             name: companyName,
             plan: 'Business',
+            billing_cycle: 'monthly',
             payment_region: 'RU',
+            billing_details: { legal_name: companyName },
             departments: initialDepts,
             created_at: new Date().toISOString(),
           };
@@ -1328,6 +1822,17 @@ export default async function handler(req: any, res: any) {
           };
           localStore.organization_nodes.push(rootNode);
 
+          await recordAuditLog({
+            supabase: null,
+            companyId: newCompany.id,
+            actorId: rootNode.id,
+            actorName: leaderName,
+            actionType: 'WORKSPACE_CREATED',
+            entityType: 'companies',
+            entityId: newCompany.id,
+            details: `Создано корпоративное пространство «${companyName}» (Руководитель: ${leaderName})`,
+          });
+
           return res.status(200).json({
             ok: true,
             company: normalizeCompanyRow(newCompany),
@@ -1341,6 +1846,7 @@ export default async function handler(req: any, res: any) {
           {
             name: companyName,
             plan: 'Business',
+            billing_cycle: 'monthly',
             payment_region: 'RU',
             departments: initialDepts,
           }
@@ -1354,6 +1860,7 @@ export default async function handler(req: any, res: any) {
 
         recordExtrasOverlay.set(`companies:${createdCompany.id}`, {
           departments: initialDepts,
+          billing_cycle: 'monthly',
         });
 
         const rawRootNode = {
@@ -1382,6 +1889,17 @@ export default async function handler(req: any, res: any) {
             error: nodeErr?.message || 'Не удалось создать корневой профиль руководителя.',
           });
         }
+
+        await recordAuditLog({
+          supabase,
+          companyId: createdCompany.id,
+          actorId: createdNode.id,
+          actorName: leaderName,
+          actionType: 'WORKSPACE_CREATED',
+          entityType: 'companies',
+          entityId: createdCompany.id,
+          details: `Зарегистрирована организация «${companyName}» (Root: ${leaderName})`,
+        });
 
         return res.status(200).json({
           ok: true,
@@ -1418,6 +1936,8 @@ export default async function handler(req: any, res: any) {
           fallbackNodeId ||
           null;
 
+        const checklist = Array.isArray(payload.checklist) ? payload.checklist : [];
+
         const rawInsertPayload: Record<string, any> = {
           company_id: companyId,
           title,
@@ -1430,6 +1950,8 @@ export default async function handler(req: any, res: any) {
           assigned_to: explicitAssignee || null,
           owner_node_id: resolvedOwnerNodeId,
           created_by: payload.created_by || resolvedOwnerNodeId || null,
+          checklist,
+          ai_summary: payload.ai_summary || null,
         };
 
         let savedTask: any;
@@ -1460,8 +1982,23 @@ export default async function handler(req: any, res: any) {
           recordExtrasOverlay.set(`tasks:${savedTask.id}`, {
             department: taskDept,
             assigned_to: explicitAssignee || null,
+            checklist,
+            ai_summary: payload.ai_summary || null,
           });
         }
+
+        await recordAuditLog({
+          supabase,
+          companyId,
+          actorId: payload.created_by || resolvedOwnerNodeId,
+          actorName: payload.actor_name || 'Сотрудник TedCloud',
+          actionType: 'TASK_CREATED',
+          entityType: 'tasks',
+          entityId: savedTask?.id,
+          details: `Создана задача «${title}» [${rawInsertPayload.priority}]${
+            taskDept ? ` (${taskDept})` : ''
+          }`,
+        });
 
         const pushStatus = await sendTelegramTaskOrDepartmentPush({
           supabase,
@@ -1513,36 +2050,48 @@ export default async function handler(req: any, res: any) {
           });
         }
 
+        let createdEmployee: any;
         if (!supabase) {
-          const newRecord = {
+          createdEmployee = {
             id: crypto.randomUUID(),
             ...rawInsertPayload,
             created_at: new Date().toISOString(),
           };
-          localStore.organization_nodes.push(newRecord);
-          return res.status(200).json({ ok: true, data: normalizeNodeRow(newRecord) });
+          localStore.organization_nodes.push(createdEmployee);
+        } else {
+          const { data, error } = await safeSupabaseInsert(
+            supabase,
+            'organization_nodes',
+            rawInsertPayload
+          );
+
+          if (error) {
+            console.error('[API /api/db] Supabase INSERT error in organization_nodes:', error);
+            return res.status(400).json({ error: error.message, details: error });
+          }
+
+          if (data?.id && rawInsertPayload.avatar_url) {
+            recordExtrasOverlay.set(`organization_nodes:${data.id}`, {
+              avatar_url: rawInsertPayload.avatar_url,
+            });
+          }
+          createdEmployee = { ...rawInsertPayload, ...data };
         }
 
-        const { data, error } = await safeSupabaseInsert(
+        await recordAuditLog({
           supabase,
-          'organization_nodes',
-          rawInsertPayload
-        );
-
-        if (error) {
-          console.error('[API /api/db] Supabase INSERT error in organization_nodes:', error);
-          return res.status(400).json({ error: error.message, details: error });
-        }
-
-        if (data?.id && rawInsertPayload.avatar_url) {
-          recordExtrasOverlay.set(`organization_nodes:${data.id}`, {
-            avatar_url: rawInsertPayload.avatar_url,
-          });
-        }
+          companyId,
+          actorId: payload.actor_id || null,
+          actorName: payload.actor_name || 'Руководитель',
+          actionType: 'EMPLOYEE_ADDED',
+          entityType: 'organization_nodes',
+          entityId: createdEmployee?.id,
+          details: `Добавлен сотрудник ${rawInsertPayload.name} (${rawInsertPayload.role_type}, код: ${generatedInviteCode})`,
+        });
 
         return res.status(200).json({
           ok: true,
-          data: normalizeNodeRow({ ...rawInsertPayload, ...data }),
+          data: normalizeNodeRow(createdEmployee),
         });
       }
 
@@ -1632,6 +2181,19 @@ export default async function handler(req: any, res: any) {
           });
         }
 
+        await recordAuditLog({
+          supabase,
+          companyId,
+          actorId: leadAssignee || payload.owner_node_id || null,
+          actorName: payload.actor_name || 'Менеджер CRM',
+          actionType: 'DEAL_CREATED',
+          entityType: 'crm_leads',
+          entityId: savedLead?.id,
+          details: `Создана сделка CRM «${clientName}» на сумму ${Math.round(amount).toLocaleString(
+            'ru-RU'
+          )} RUB${taxId ? ` (ИНН/VAT: ${taxId})` : ''}`,
+        });
+
         let telegramPush: { pushed: boolean; count?: number; reason?: string } = {
           pushed: false,
         };
@@ -1654,7 +2216,122 @@ export default async function handler(req: any, res: any) {
         });
       }
 
-      // БЛОК 4: Единое инфополе и мгновенная связь между сотрудниками (workspace_messages)
+      // БЛОК 4: Оформление подписки и генерация B2B-счета (billing_invoices)
+      if (table === 'billing_invoices') {
+        const invoiceNumber = payload.invoice_number
+          ? String(payload.invoice_number).trim()
+          : generateInvoiceNumber();
+        const plan = payload.plan || 'Business';
+        const billingCycle = payload.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+        const amount = Number(payload.amount ?? 0);
+        const currency = payload.currency || 'RUB';
+        const paymentMethod = payload.payment_method || 'b2b_invoice';
+        const status =
+          payload.status || (paymentMethod === 'card_sbp' ? 'Paid' : 'Issued');
+        const payerDetails = payload.payer_details || null;
+
+        const rawInvoicePayload: Record<string, any> = {
+          company_id: companyId,
+          invoice_number: invoiceNumber,
+          plan,
+          billing_cycle: billingCycle,
+          amount,
+          currency,
+          status,
+          payment_method: paymentMethod,
+          payer_details: payerDetails,
+          created_by: payload.created_by || null,
+          created_at: new Date().toISOString(),
+          paid_at: status === 'Paid' ? new Date().toISOString() : null,
+        };
+
+        let savedInvoice: any = {
+          id: crypto.randomUUID(),
+          ...rawInvoicePayload,
+        };
+
+        if (supabase) {
+          const { data } = await safeSupabaseInsert(
+            supabase,
+            'billing_invoices',
+            rawInvoicePayload
+          );
+          if (data?.id) {
+            savedInvoice = { ...rawInvoicePayload, ...data };
+          }
+        }
+
+        recordExtrasOverlay.set(`billing_invoices:${savedInvoice.id}`, rawInvoicePayload);
+        localStore.billing_invoices.unshift(savedInvoice);
+
+        // Также обновим тарифный план и период компании
+        if (companyId) {
+          const prevCompExtras = recordExtrasOverlay.get(`companies:${companyId}`) || {};
+          recordExtrasOverlay.set(`companies:${companyId}`, {
+            ...prevCompExtras,
+            plan,
+            billing_cycle: billingCycle,
+            ...(payerDetails ? { billing_details: payerDetails } : {}),
+          });
+          if (!supabase) {
+            const cIdx = localStore.companies.findIndex((c) => String(c.id) === String(companyId));
+            if (cIdx !== -1) {
+              localStore.companies[cIdx] = {
+                ...localStore.companies[cIdx],
+                plan,
+                billing_cycle: billingCycle,
+                ...(payerDetails ? { billing_details: payerDetails } : {}),
+              };
+            }
+          } else {
+            await safeSupabaseUpdate(supabase, 'companies', companyId, {
+              plan,
+              billing_cycle: billingCycle,
+              ...(payerDetails ? { billing_details: payerDetails } : {}),
+            });
+          }
+        }
+
+        await recordAuditLog({
+          supabase,
+          companyId,
+          actorId: payload.created_by || null,
+          actorName: payload.actor_name || 'Администратор биллинга',
+          actionType: status === 'Paid' ? 'INVOICE_PAID' : 'INVOICE_ISSUED',
+          entityType: 'billing_invoices',
+          entityId: savedInvoice.id,
+          details: `${
+            status === 'Paid' ? 'Оплачена подписка' : 'Выставлен B2B-счет'
+          } № ${invoiceNumber} по тарифу ${plan} (${
+            billingCycle === 'yearly' ? '1 год' : '1 мес.'
+          }) на сумму ${Math.round(amount).toLocaleString('ru-RU')} ${currency}`,
+        });
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeInvoiceRow(savedInvoice),
+        });
+      }
+
+      // БЛОК 5: Запись произвольного события в audit_logs
+      if (table === 'audit_logs') {
+        const entry = await recordAuditLog({
+          supabase,
+          companyId,
+          actorId: payload.actor_id || null,
+          actorName: payload.actor_name || 'Сотрудник TedCloud',
+          actionType: payload.action_type || 'CUSTOM_EVENT',
+          entityType: payload.entity_type || 'workspace',
+          entityId: payload.entity_id || null,
+          details: payload.details || '',
+        });
+        return res.status(200).json({
+          ok: true,
+          data: normalizeAuditLogRow(entry),
+        });
+      }
+
+      // Единое инфополе и мгновенная связь между сотрудниками (workspace_messages)
       if (table === 'workspace_messages') {
         const msgBody = String(
           payload.message_text || payload.text || payload.content || payload.message || ''
@@ -1829,14 +2506,40 @@ export default async function handler(req: any, res: any) {
         const rawUpdates: Record<string, any> = {};
         if (updates.name !== undefined) rawUpdates.name = String(updates.name).trim();
         if (updates.plan !== undefined) rawUpdates.plan = updates.plan;
+        if (updates.billing_cycle !== undefined) rawUpdates.billing_cycle = updates.billing_cycle;
         if (updates.payment_region !== undefined)
           rawUpdates.payment_region = updates.payment_region;
+        if (updates.billing_details !== undefined) {
+          rawUpdates.billing_details = updates.billing_details;
+        }
         if (updates.departments !== undefined) {
           rawUpdates.departments = Array.isArray(updates.departments) ? updates.departments : [];
-          const prevExtras = recordExtrasOverlay.get(`companies:${id}`) || {};
-          recordExtrasOverlay.set(`companies:${id}`, {
-            ...prevExtras,
-            departments: rawUpdates.departments,
+        }
+
+        const prevExtras = recordExtrasOverlay.get(`companies:${id}`) || {};
+        recordExtrasOverlay.set(`companies:${id}`, {
+          ...prevExtras,
+          ...rawUpdates,
+        });
+
+        if (updates.billing_details !== undefined || updates.plan !== undefined) {
+          await recordAuditLog({
+            supabase,
+            companyId: id,
+            actorId: body.actor_id || null,
+            actorName: body.actor_name || 'Администратор биллинга',
+            actionType:
+              updates.billing_details !== undefined
+                ? 'BILLING_DETAILS_UPDATED'
+                : 'COMPANY_PLAN_UPDATED',
+            entityType: 'companies',
+            entityId: id,
+            details:
+              updates.billing_details !== undefined
+                ? `Обновлены юридические реквизиты плательщика (${
+                    updates.billing_details?.legal_name || 'Организация'
+                  })`
+                : `Обновлен тарифный план компании: ${updates.plan}`,
           });
         }
 
@@ -1860,6 +2563,54 @@ export default async function handler(req: any, res: any) {
           .json({ ok: true, data: normalizeCompanyRow({ id, ...rawUpdates, ...data }) });
       }
 
+      if (table === 'billing_invoices') {
+        const rawUpdates: Record<string, any> = {};
+        if (updates.status !== undefined) {
+          rawUpdates.status = updates.status;
+          if (updates.status === 'Paid') {
+            rawUpdates.paid_at = new Date().toISOString();
+          }
+        }
+        const prevInvExtras = recordExtrasOverlay.get(`billing_invoices:${id}`) || {};
+        recordExtrasOverlay.set(`billing_invoices:${id}`, {
+          ...prevInvExtras,
+          ...rawUpdates,
+        });
+
+        const localIdx = localStore.billing_invoices.findIndex((inv) => inv.id === id);
+        if (localIdx !== -1) {
+          localStore.billing_invoices[localIdx] = {
+            ...localStore.billing_invoices[localIdx],
+            ...rawUpdates,
+          };
+        }
+
+        if (supabase) {
+          await safeSupabaseUpdate(supabase, 'billing_invoices', id, rawUpdates);
+        }
+
+        const updatedInv =
+          localIdx !== -1
+            ? localStore.billing_invoices[localIdx]
+            : { id, ...prevInvExtras, ...rawUpdates };
+
+        if (updatedInv.company_id && rawUpdates.status === 'Paid') {
+          await recordAuditLog({
+            supabase,
+            companyId: updatedInv.company_id,
+            actionType: 'INVOICE_PAID',
+            entityType: 'billing_invoices',
+            entityId: id,
+            details: `Подтверждена оплата счета № ${updatedInv.invoice_number || id}`,
+          });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeInvoiceRow(updatedInv),
+        });
+      }
+
       if (table === 'tasks') {
         const rawUpdates: Record<string, any> = {};
         if (updates.status !== undefined) rawUpdates.status = updates.status;
@@ -1878,6 +2629,12 @@ export default async function handler(req: any, res: any) {
         }
         if (updates.title !== undefined) rawUpdates.title = String(updates.title).trim();
         if (updates.type !== undefined) rawUpdates.type = updates.type;
+        if (updates.checklist !== undefined) {
+          rawUpdates.checklist = Array.isArray(updates.checklist) ? updates.checklist : [];
+        }
+        if (updates.ai_summary !== undefined) {
+          rawUpdates.ai_summary = updates.ai_summary;
+        }
         if (updates.description !== undefined || updates.notes !== undefined) {
           const noteVal =
             updates.description !== undefined ? updates.description : updates.notes;
@@ -1891,6 +2648,8 @@ export default async function handler(req: any, res: any) {
           ...prevExtras,
           ...(rawUpdates.department !== undefined ? { department: rawUpdates.department } : {}),
           ...(rawUpdates.assigned_to !== undefined ? { assigned_to: rawUpdates.assigned_to } : {}),
+          ...(rawUpdates.checklist !== undefined ? { checklist: rawUpdates.checklist } : {}),
+          ...(rawUpdates.ai_summary !== undefined ? { ai_summary: rawUpdates.ai_summary } : {}),
         });
 
         let updatedTask: any = null;
@@ -2096,10 +2855,26 @@ export default async function handler(req: any, res: any) {
           if (idx === -1) {
             return res.status(404).json({ error: 'Сотрудник не найден.' });
           }
+          const prevNode = localStore.organization_nodes[idx];
           localStore.organization_nodes[idx] = {
-            ...localStore.organization_nodes[idx],
+            ...prevNode,
             ...rawUpdates,
           };
+
+          if (updates.access_level !== undefined || updates.permissions !== undefined) {
+            await recordAuditLog({
+              supabase: null,
+              companyId: prevNode.company_id,
+              actorName: 'Администратор безопасности',
+              actionType: 'PERMISSIONS_UPDATED',
+              entityType: 'organization_nodes',
+              entityId: id,
+              details: `Изменена матрица прав доступа сотрудника ${prevNode.name} (Уровень: ${
+                rawUpdates.access_level || prevNode.access_level
+              })`,
+            });
+          }
+
           return res.status(200).json({
             ok: true,
             data: normalizeNodeRow(localStore.organization_nodes[idx]),
@@ -2122,6 +2897,23 @@ export default async function handler(req: any, res: any) {
         if (error) {
           console.error('[API /api/db] Supabase PATCH error in organization_nodes:', error);
           return res.status(400).json({ error: error.message, details: error });
+        }
+
+        if (
+          existing?.company_id &&
+          (updates.access_level !== undefined || updates.permissions !== undefined)
+        ) {
+          await recordAuditLog({
+            supabase,
+            companyId: existing.company_id,
+            actorName: 'Администратор безопасности',
+            actionType: 'PERMISSIONS_UPDATED',
+            entityType: 'organization_nodes',
+            entityId: id,
+            details: `Обновлены полномочия RBAC для сотрудника ${
+              existing.name || id
+            } (Уровень: ${rawUpdates.access_level || existing.access_level})`,
+          });
         }
 
         return res.status(200).json({
@@ -2151,15 +2943,40 @@ export default async function handler(req: any, res: any) {
       }
 
       if (!supabase) {
+        let deletedItem: any = null;
         if (table === 'tasks') {
+          deletedItem = localStore.tasks.find((t) => t.id === id);
           localStore.tasks = localStore.tasks.filter((t) => t.id !== id);
         } else if (table === 'crm_leads') {
+          deletedItem = localStore.crm_leads.find((l) => l.id === id);
           localStore.crm_leads = localStore.crm_leads.filter((l) => l.id !== id);
         } else if (table === 'organization_nodes') {
+          deletedItem = localStore.organization_nodes.find((n) => n.id === id);
           localStore.organization_nodes = localStore.organization_nodes.filter((n) => n.id !== id);
         }
+
+        if (deletedItem?.company_id) {
+          await recordAuditLog({
+            supabase: null,
+            companyId: deletedItem.company_id,
+            actorName: 'Администратор',
+            actionType: `${table.toUpperCase()}_DELETED`,
+            entityType: table,
+            entityId: id,
+            details: `Удалена запись из «${table}»: ${
+              deletedItem.title || deletedItem.client_name || deletedItem.name || id
+            }`,
+          });
+        }
+
         return res.status(200).json({ ok: true, id });
       }
+
+      const { data: existingToDelete } = await supabase
+        .from(table)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
 
       if (table === 'organization_nodes') {
         await supabase.from('tasks').update({ assigned_to: null }).eq('assigned_to', id);
@@ -2171,6 +2988,23 @@ export default async function handler(req: any, res: any) {
       if (error) {
         console.error(`[API /api/db] Supabase DELETE error in ${table}:`, error);
         return res.status(400).json({ error: error.message, details: error });
+      }
+
+      if (existingToDelete?.company_id) {
+        await recordAuditLog({
+          supabase,
+          companyId: existingToDelete.company_id,
+          actorName: 'Администратор',
+          actionType: `${table.toUpperCase()}_DELETED`,
+          entityType: table,
+          entityId: id,
+          details: `Удален объект (${table}): ${
+            existingToDelete.title ||
+            existingToDelete.client_name ||
+            existingToDelete.name ||
+            id
+          }`,
+        });
       }
 
       return res.status(200).json({ ok: true, id });

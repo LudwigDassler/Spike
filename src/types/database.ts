@@ -30,6 +30,8 @@ export type CounterpartyJurisdiction = 'RU' | 'GLOBAL';
 
 export type SubscriptionPlanTier = 'Trial' | 'Business' | 'Enterprise';
 
+export type BillingCycle = 'monthly' | 'yearly';
+
 export type PaymentGatewayRegion = 'RU' | 'GLOBAL';
 
 export type LanguageCode = 'ru' | 'en';
@@ -44,11 +46,23 @@ export type DashboardSection =
   | 'profile'
   | 'workspace';
 
+export interface CompanyBillingDetails {
+  region?: PaymentGatewayRegion;
+  legal_name?: string;
+  tax_id?: string;
+  reg_number?: string;
+  legal_address?: string;
+  country?: string;
+  billing_email?: string;
+}
+
 export interface Company {
   id: string;
   name: string;
   plan?: SubscriptionPlanTier;
+  billing_cycle?: BillingCycle;
   payment_region?: PaymentGatewayRegion;
+  billing_details?: CompanyBillingDetails | null;
   departments?: string[] | null;
   created_at?: string;
 }
@@ -74,6 +88,12 @@ export interface OrganizationNode {
   created_at?: string;
 }
 
+export interface TaskChecklistItem {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
 export interface TaskRecord {
   id: string;
   company_id: string;
@@ -87,6 +107,8 @@ export interface TaskRecord {
   created_by?: string | null;
   description?: string | null;
   notes?: string | null;
+  checklist?: TaskChecklistItem[] | null;
+  ai_summary?: string | null;
   due_date?: string | null;
   created_at?: string;
 }
@@ -152,6 +174,45 @@ export interface WorkspaceMessageRecord {
   is_read?: boolean;
   created_at?: string;
 }
+
+export type BillingInvoiceStatus = 'Paid' | 'Issued' | 'Pending';
+export type BillingPaymentMethod = 'card_sbp' | 'b2b_invoice';
+
+export interface BillingInvoiceRecord {
+  id: string;
+  company_id: string;
+  invoice_number: string;
+  plan: SubscriptionPlanTier;
+  billing_cycle: BillingCycle;
+  amount: number;
+  currency: CurrencyCode | string;
+  status: BillingInvoiceStatus | string;
+  payment_method: BillingPaymentMethod | string;
+  payer_details?: CompanyBillingDetails | Record<string, any> | null;
+  created_by?: string | null;
+  created_at?: string;
+  paid_at?: string | null;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  company_id: string;
+  actor_id?: string | null;
+  actor_name?: string | null;
+  actor_role?: string | null;
+  action_type: string;
+  action?: string;
+  entity_type: string;
+  entity_id?: string | null;
+  details?: string | null;
+  created_at?: string;
+}
+
+export type AiAssistantMode =
+  | 'daily_brief'
+  | 'decompose_task'
+  | 'workload_analysis'
+  | 'custom';
 
 export interface DashboardKpis {
   totalDealValue: number;

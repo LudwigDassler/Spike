@@ -3,6 +3,8 @@ import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { AuthGate } from './components/AuthGate';
 import {
+  AuditLogRecord,
+  BillingInvoiceRecord,
   Company,
   CrmLeadRecord,
   OrganizationNode,
@@ -94,6 +96,8 @@ function AppContent() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [leads, setLeads] = useState<CrmLeadRecord[]>([]);
   const [messages, setMessages] = useState<WorkspaceMessageRecord[]>([]);
+  const [invoices, setInvoices] = useState<BillingInvoiceRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -157,6 +161,8 @@ function AppContent() {
       setTasks(Array.isArray(payload.tasks) ? payload.tasks : []);
       setLeads(Array.isArray(payload.leads) ? payload.leads : []);
       setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+      setInvoices(Array.isArray(payload.invoices) ? payload.invoices : []);
+      setAuditLogs(Array.isArray(payload.auditLogs) ? payload.auditLogs : []);
 
       if (payload.currentProfile) {
         setCurrentProfile(payload.currentProfile);
@@ -230,6 +236,8 @@ function AppContent() {
       setTasks([]);
       setLeads([]);
       setMessages([]);
+      setInvoices([]);
+      setAuditLogs([]);
       setCurrentProfile(profile);
       setCompany(authCompany);
       await loadWorkspaceData(false);
@@ -239,7 +247,7 @@ function AppContent() {
 
   const handlePatchRecord = useCallback(
     async (
-      table: 'tasks' | 'crm_leads' | 'organization_nodes' | 'companies',
+      table: 'tasks' | 'crm_leads' | 'organization_nodes' | 'companies' | 'billing_invoices',
       id: string,
       updates: Record<string, any>
     ): Promise<{ ok: boolean; pushSent?: boolean }> => {
@@ -247,7 +255,16 @@ function AppContent() {
         const response = await fetch('/api/db', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table, id, updates }),
+          body: JSON.stringify({
+            table,
+            id,
+            updates: {
+              ...updates,
+              actor_id: currentProfile?.id,
+              actor_name: currentProfile?.name,
+              actor_role: currentProfile?.role_type,
+            },
+          }),
         });
         const result = await response.json();
 
@@ -276,7 +293,15 @@ function AppContent() {
           setCurrentProfile((prev) => (prev && prev.id === id ? result.data : prev));
         } else if (table === 'companies' && result.data) {
           setCompany((prev) => (prev ? { ...prev, ...result.data } : result.data));
+        } else if (table === 'billing_invoices' && result.data) {
+          setInvoices((prev) =>
+            (Array.isArray(prev) ? prev : []).map((item) =>
+              item.id === id ? result.data : item
+            )
+          );
         }
+
+        void loadWorkspaceData(false, true);
 
         return {
           ok: true,
@@ -288,7 +313,50 @@ function AppContent() {
         return { ok: false };
       }
     },
-    []
+    [currentProfile, loadWorkspaceData]
+  );
+
+  const handleCreateInvoice = useCallback(
+    async (
+      invoicePayload: Record<string, any>
+    ): Promise<{ ok: boolean; invoice?: BillingInvoiceRecord }> => {
+      try {
+        const response = await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table: 'billing_invoices',
+            payload: {
+              ...invoicePayload,
+              actor_id: currentProfile?.id,
+              actor_name: currentProfile?.name,
+              actor_role: currentProfile?.role_type,
+            },
+          }),
+        });
+        const result = await response.json();
+
+        if (!response.ok || result.error) {
+          throw new Error(result.error || `HTTP ${response.status}`);
+        }
+
+        if (result.data) {
+          setInvoices((prev) => [result.data, ...(Array.isArray(prev) ? prev : [])]);
+        }
+
+        void loadWorkspaceData(false, true);
+
+        return {
+          ok: true,
+          invoice: result.data,
+        };
+      } catch (err: any) {
+        console.error('[App] POST billing_invoices error:', err);
+        setErrorMessage(err?.message || String(err));
+        return { ok: false };
+      }
+    },
+    [currentProfile, loadWorkspaceData]
   );
 
   const handleSendMessage = useCallback(
@@ -333,7 +401,13 @@ function AppContent() {
         const response = await fetch('/api/db', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table, id }),
+          body: JSON.stringify({
+            table,
+            id,
+            actor_id: currentProfile?.id,
+            actor_name: currentProfile?.name,
+            actor_role: currentProfile?.role_type,
+          }),
         });
         const result = await response.json();
 
@@ -349,6 +423,8 @@ function AppContent() {
           setNodes((prev) => (Array.isArray(prev) ? prev : []).filter((item) => item.id !== id));
         }
 
+        void loadWorkspaceData(false, true);
+
         return true;
       } catch (err: any) {
         console.error(`[App] DELETE ${table} error:`, err);
@@ -356,7 +432,7 @@ function AppContent() {
         return false;
       }
     },
-    []
+    [currentProfile, loadWorkspaceData]
   );
 
   const handleResetSession = useCallback(() => {
@@ -374,6 +450,8 @@ function AppContent() {
     setTasks([]);
     setLeads([]);
     setMessages([]);
+    setInvoices([]);
+    setAuditLogs([]);
   }, []);
 
   if (isLoading) {
@@ -433,11 +511,14 @@ function AppContent() {
       tasks={tasks}
       leads={leads}
       messages={messages}
+      invoices={invoices}
+      auditLogs={auditLogs}
       isSyncing={isSyncing}
       onRefresh={() => loadWorkspaceData(false)}
       onPatchRecord={handlePatchRecord}
       onDeleteRecord={handleDeleteRecord}
       onSendMessage={handleSendMessage}
+      onCreateInvoice={handleCreateInvoice}
       onResetSession={handleResetSession}
     />
   );

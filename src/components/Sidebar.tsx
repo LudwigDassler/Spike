@@ -88,9 +88,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const visibleNavItems = allNavItems.filter((item) => item.visible);
 
   return (
-    <aside className="w-64 shrink-0 border-r border-[#1F1F1F] bg-[#0D0D0D] flex flex-col justify-between select-none font-sans">
-      <div>
-        <div className="h-14 px-5 flex items-center justify-between border-b border-[#1F1F1F]">
+    <aside className="w-64 shrink-0 border-r border-[#1F1F1F] bg-[#0D0D0D] h-screen sticky top-0 flex flex-col justify-between overflow-hidden pb-4 select-none font-sans">
+      <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
+        <div className="h-14 px-5 shrink-0 flex items-center justify-between border-b border-[#1F1F1F]">
           <div className="flex items-center gap-2.5">
             <div className="w-6 h-6 rounded-md bg-white text-black flex items-center justify-center font-bold text-xs tracking-tight">
               TC
@@ -102,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </span>
         </div>
 
-        <nav className="p-3 space-y-1" aria-label="Main Navigation">
+        <nav className="p-3 space-y-1 overflow-y-auto flex-1" aria-label="Main Navigation">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
@@ -137,7 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {currentProfile && (
-        <div className="p-3 border-t border-[#1F1F1F] space-y-2">
+        <div className="px-3 pt-3 border-t border-[#1F1F1F] shrink-0">
           <div className="rounded-lg border border-[#1F1F1F] bg-[#121212] p-3 space-y-2.5">
             <button
               type="button"
