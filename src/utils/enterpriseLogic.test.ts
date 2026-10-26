@@ -7,6 +7,7 @@ import {
   calculateSubscriptionPricing,
   generateInvoiceNumber,
   searchWorkspaceEntities,
+  formatError,
 } from './enterpriseLogic';
 
 test('parseTelegramUrgentMessage: sets isUrgent=false for standard messages', () => {
@@ -139,3 +140,12 @@ test('searchWorkspaceEntities: matches tasks, CRM leads by tax_id, nodes, and me
   assert.equal(res.leads.length, 1);
   assert.equal(res.leads[0].client_name, 'ПАО Сбербанк');
 });
+
+test('formatError: never returns [object Object] for PostgREST/Vercel error objects', () => {
+  assert.equal(formatError('Simple error'), 'Simple error');
+  assert.equal(formatError({ message: 'Relation billing_invoices does not exist' }), 'Relation billing_invoices does not exist');
+  assert.equal(formatError({ details: 'Missing column', hint: 'Run migration' }), 'Missing column');
+  assert.equal(formatError({ code: '500', status: 500 }), '{"code":"500","status":500}');
+  assert.equal(formatError(new Error('[object Object]')), 'Unknown error');
+});
+

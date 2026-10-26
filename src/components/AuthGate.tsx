@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Company, OrganizationNode } from '../types/database';
 import { useLocale, SupportedLocale } from '../i18n/LocaleContext';
+import { formatError } from '../utils/enterpriseLogic';
 
 interface AuthGateProps {
   existingNodes: OrganizationNode[];
@@ -57,7 +58,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
           input: input.trim(),
         }),
       });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({}));
 
       if (response.ok && payload.profile) {
         onAuthenticated(payload.profile, payload.company || null);
@@ -75,7 +76,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
       );
 
       if (!matchedNode) {
-        setErrorMessage(payload.error || t('auth.userNotFound'));
+        setErrorMessage(formatError(payload?.error || t('auth.userNotFound')));
         return;
       }
 
@@ -86,7 +87,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
           : null
       );
     } catch (err: any) {
-      setErrorMessage(err?.message || String(err));
+      setErrorMessage(formatError(err));
     } finally {
       setIsLoading(false);
     }
@@ -115,15 +116,15 @@ export const AuthGate: React.FC<AuthGateProps> = ({
         }),
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
 
       if (!response.ok || result.error || !result.profile) {
-        throw new Error(result.error || `HTTP ${response.status}`);
+        throw new Error(formatError(result?.error || `HTTP ${response.status}`));
       }
 
       onAuthenticated(result.profile, result.company || null);
     } catch (err: any) {
-      setErrorMessage(err?.message || String(err));
+      setErrorMessage(formatError(err));
     } finally {
       setIsLoading(false);
     }

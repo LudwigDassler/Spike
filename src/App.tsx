@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCw, LogOut } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { AuthGate } from './components/AuthGate';
 import {
@@ -12,10 +12,21 @@ import {
   WorkspaceMessageRecord,
 } from './types/database';
 import { LocaleProvider, useLocale } from './i18n/LocaleContext';
+import { formatError } from './utils/enterpriseLogic';
 
 const SESSION_PROFILE_ID_KEY = 'tedcloud_session_profile_id';
 const SESSION_CHAT_ID_KEY = 'tedcloud_chat_id';
 const SESSION_COMPANY_ID_KEY = 'tedcloud_session_company_id';
+
+async function safeParseJson(response: Response): Promise<any> {
+  const rawText = await response.text();
+  if (!rawText) return {};
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { error: `HTTP ${response.status}: ${rawText.slice(0, 180)}` };
+  }
+}
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -34,7 +45,7 @@ class GlobalErrorBoundary extends React.Component<
   static getDerivedStateFromError(error: any): ErrorBoundaryState {
     return {
       hasError: true,
-      errorText: error?.message || String(error),
+      errorText: formatError(error),
     };
   }
 
@@ -147,10 +158,10 @@ function AppContent() {
         cache: 'no-store',
       });
 
-      const payload = await response.json();
+      const payload = await safeParseJson(response);
 
-      if (!response.ok || payload.error) {
-        throw new Error(payload.error || `HTTP ${response.status}`);
+      if (!response.ok || payload?.error) {
+        throw new Error(formatError(payload?.error || `HTTP ${response.status}`));
       }
 
       const loadedNodes: OrganizationNode[] = Array.isArray(payload.nodes)
@@ -198,7 +209,7 @@ function AppContent() {
     } catch (err: any) {
       if (!silent) {
         console.error('[App] Failed to fetch workspace data from /api/db:', err);
-        setErrorMessage(err?.message || 'Не удалось загрузить данные из /api/db');
+        setErrorMessage(formatError(err));
       }
     } finally {
       if (isInitial) setIsLoading(false);
@@ -266,10 +277,10 @@ function AppContent() {
             },
           }),
         });
-        const result = await response.json();
+        const result = await safeParseJson(response);
 
-        if (!response.ok || result.error) {
-          throw new Error(result.error || `HTTP ${response.status}`);
+        if (!response.ok || result?.error) {
+          throw new Error(formatError(result?.error || `HTTP ${response.status}`));
         }
 
         if (table === 'tasks' && result.data) {
@@ -309,7 +320,7 @@ function AppContent() {
         };
       } catch (err: any) {
         console.error(`[App] PATCH ${table} error:`, err);
-        setErrorMessage(err?.message || String(err));
+        setErrorMessage(formatError(err));
         return { ok: false };
       }
     },
@@ -334,10 +345,10 @@ function AppContent() {
             },
           }),
         });
-        const result = await response.json();
+        const result = await safeParseJson(response);
 
-        if (!response.ok || result.error) {
-          throw new Error(result.error || `HTTP ${response.status}`);
+        if (!response.ok || result?.error) {
+          throw new Error(formatError(result?.error || `HTTP ${response.status}`));
         }
 
         if (result.data) {
@@ -352,7 +363,7 @@ function AppContent() {
         };
       } catch (err: any) {
         console.error('[App] POST billing_invoices error:', err);
-        setErrorMessage(err?.message || String(err));
+        setErrorMessage(formatError(err));
         return { ok: false };
       }
     },
@@ -369,10 +380,10 @@ function AppContent() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ table: 'workspace_messages', payload: messagePayload }),
         });
-        const result = await response.json();
+        const result = await safeParseJson(response);
 
-        if (!response.ok || result.error) {
-          throw new Error(result.error || `HTTP ${response.status}`);
+        if (!response.ok || result?.error) {
+          throw new Error(formatError(result?.error || `HTTP ${response.status}`));
         }
 
         if (result.data) {
@@ -385,7 +396,7 @@ function AppContent() {
         };
       } catch (err: any) {
         console.error('[App] POST workspace_messages error:', err);
-        setErrorMessage(err?.message || String(err));
+        setErrorMessage(formatError(err));
         return { ok: false };
       }
     },
@@ -409,10 +420,10 @@ function AppContent() {
             actor_role: currentProfile?.role_type,
           }),
         });
-        const result = await response.json();
+        const result = await safeParseJson(response);
 
-        if (!response.ok || result.error) {
-          throw new Error(result.error || `HTTP ${response.status}`);
+        if (!response.ok || result?.error) {
+          throw new Error(formatError(result?.error || `HTTP ${response.status}`));
         }
 
         if (table === 'tasks') {
@@ -428,7 +439,7 @@ function AppContent() {
         return true;
       } catch (err: any) {
         console.error(`[App] DELETE ${table} error:`, err);
-        setErrorMessage(err?.message || String(err));
+        setErrorMessage(formatError(err));
         return false;
       }
     },
@@ -436,17 +447,22 @@ function AppContent() {
   );
 
   const handleResetSession = useCallback(() => {
-    localStorage.removeItem(SESSION_PROFILE_ID_KEY);
-    localStorage.removeItem(SESSION_CHAT_ID_KEY);
-    localStorage.removeItem(SESSION_COMPANY_ID_KEY);
+    try {
+      localStorage.removeItem(SESSION_PROFILE_ID_KEY);
+      localStorage.removeItem(SESSION_CHAT_ID_KEY);
+      localStorage.removeItem(SESSION_COMPANY_ID_KEY);
+      localStorage.removeItem('tedcloud_custom_departments');
+    } catch {}
     const url = new URL(window.location.href);
     url.searchParams.delete('chatId');
     url.searchParams.delete('tg_id');
     url.searchParams.delete('invite');
     window.history.replaceState({}, '', url.toString());
+    setErrorMessage(null);
     setActiveChatId(null);
     setCurrentProfile(null);
     setCompany(null);
+    setNodes([]);
     setTasks([]);
     setLeads([]);
     setMessages([]);
@@ -472,21 +488,32 @@ function AppContent() {
   ) {
     return (
       <div className="min-h-screen bg-[#09090B] text-white flex items-center justify-center p-6 font-sans">
-        <div className="max-w-md w-full rounded-xl border border-[#262626] bg-[#121214] p-6 space-y-4">
+        <div className="max-w-md w-full rounded-xl border border-[#262626] bg-[#121214] p-6 space-y-4 shadow-2xl">
           <div className="flex items-center gap-2.5 text-red-400">
             <AlertTriangle className="w-5 h-5 shrink-0" />
             <h2 className="text-sm font-semibold">{t('system.connectionError')}</h2>
           </div>
           <p className="text-xs text-[#A1A1AA] leading-relaxed break-words bg-[#18181B] p-3 rounded-lg border border-[#27272A]">
-            {errorMessage}
+            {formatError(errorMessage)}
           </p>
-          <button
-            onClick={() => loadWorkspaceData(true)}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white text-black text-xs font-semibold hover:bg-[#E4E4E7] transition-colors"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>{t('system.retry')}</span>
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => loadWorkspaceData(true)}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white text-black text-xs font-semibold hover:bg-[#E4E4E7] transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{t('system.retry')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleResetSession}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[#27272A] bg-[#18181B] text-[#E4E4E7] text-xs font-medium hover:bg-[#222226] transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Сбросить сессию / Войти заново</span>
+            </button>
+          </div>
         </div>
       </div>
     );

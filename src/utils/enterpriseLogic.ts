@@ -10,6 +10,31 @@ import {
 } from '../types/database';
 
 /**
+ * Нормализация любой ошибки (PostgREST, Error, объект, строка) в гарантированную чистую строку без [object Object]
+ */
+export function formatError(err: any): string {
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') {
+    return err === '[object Object]' ? 'Unknown error' : err;
+  }
+  const extracted =
+    err.message ||
+    err.error_description ||
+    err.details ||
+    err.hint ||
+    (typeof err.error === 'string' ? err.error : err.error?.message);
+  if (typeof extracted === 'string' && extracted !== '[object Object]') {
+    return extracted;
+  }
+  try {
+    const json = JSON.stringify(err);
+    return json && json !== '{}' ? json : 'Unknown error';
+  } catch {
+    return 'Unknown error';
+  }
+}
+
+/**
  * БЛОК 1: Разбор срочности сообщения из Telegram-бота.
  * is_urgent = true ТОЛЬКО если сообщение начинается с символа "!" (сам символ "!" убирается).
  */

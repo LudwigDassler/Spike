@@ -1,11 +1,59 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
-import {
-  parseTelegramUrgentMessage,
-  runBuiltInAiAssistant,
-} from '../../src/utils/enterpriseLogic';
 
 export const dynamic = 'force-dynamic';
+
+function parseTelegramUrgentMessage(rawText: string): {
+  isUrgent: boolean;
+  cleanText: string;
+} {
+  const trimmed = String(rawText || '').trim();
+  if (trimmed.startsWith('!')) {
+    return {
+      isUrgent: true,
+      cleanText: trimmed.slice(1).trim(),
+    };
+  }
+  return {
+    isUrgent: false,
+    cleanText: trimmed,
+  };
+}
+
+function runBuiltInAiAssistant(params: {
+  mode: string;
+  prompt?: string;
+  companyName?: string;
+  currentUser?: any;
+  nodes?: any[];
+  tasks?: any[];
+  leads?: any[];
+  messages?: any[];
+}): { reply: string } {
+  const companyTitle = params.companyName || 'TedCloud';
+  const userName = params.currentUser?.name || 'Сотрудник';
+  const userRole = params.currentUser?.role_type || 'Специалист';
+  const tasks = Array.isArray(params.tasks) ? params.tasks : [];
+  const leads = Array.isArray(params.leads) ? params.leads : [];
+  const messages = Array.isArray(params.messages) ? params.messages : [];
+
+  const openTasks = tasks.filter((t) => t.status !== 'Done');
+  const highTasks = openTasks.filter((t) => t.priority === 'High');
+  const activeLeads = leads.filter((l) => (l.status || l.stage || 'New') !== 'Lost');
+  const pipelineSum = activeLeads.reduce((s, l) => s + Number(l.amount ?? l.deal_value ?? 0), 0);
+  const urgentMessages = messages.filter((m) => Boolean(m.is_urgent));
+
+  return {
+    reply: [
+      `Оперативная сводка для ${userName} (${userRole}) — ${companyTitle}:`,
+      `• Открытых задач: ${openTasks.length} (высокий приоритет: ${highTasks.length})`,
+      `• Активных сделок CRM: ${activeLeads.length} на сумму ${new Intl.NumberFormat('ru-RU').format(pipelineSum)} ₽`,
+      `• Срочных сообщений в инфополе: ${urgentMessages.length}`,
+      highTasks.length > 0
+        ? `Фокус внимания: «${highTasks[0].title}» (${highTasks[0].department || 'Общий контур'}).`
+        : 'Критичных блокеров по задачам не зафиксировано.',
+    ].join('\n'),
+  };
+}
 
 // Серверная память ожидающих делегирования чатов и отправки корпоративных сообщений
 const pendingDelegateMap = new Map<string, string>();
@@ -568,21 +616,37 @@ export default async function handler(req: any, res: any) {
       const geminiApiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
       if (geminiApiKey) {
         try {
-          const ai = new GoogleGenAI({
-            apiKey: geminiApiKey,
-            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-          });
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Ты — корпоративный ИИ-ассистент TedCloud AI (Jira Rovo style) в Telegram.
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+          const geminiRes = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'aistudio-build',
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      text: `Ты — корпоративный ИИ-ассистент TedCloud AI (Jira Rovo style) в Telegram.
 Сотрудник: ${user.name} (${user.role_type || 'Специалист'}).
 Базовая сводка по данным компании «${companyName}»:
 ${builtIn.reply}
 ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
 Сформируй четкий, деловой ответ на русском языке без эмодзи (до 900 символов).`,
+                    },
+                  ],
+                },
+              ],
+            }),
           });
-          if (response.text && response.text.trim()) {
-            replyBody = response.text.trim();
+          if (geminiRes.ok) {
+            const geminiJson: any = await geminiRes.json();
+            const textOut = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (textOut && String(textOut).trim()) {
+              replyBody = String(textOut).trim();
+            }
           }
         } catch (err) {
           console.warn('[WEBHOOK] Gemini fallback to built-in engine:', err);

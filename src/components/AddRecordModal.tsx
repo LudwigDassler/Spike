@@ -27,6 +27,7 @@ import {
   getDefaultPermissionsForAccessLevel,
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
+import { formatError } from '../utils/enterpriseLogic';
 
 export type ModalRecordType = 'tasks' | 'organization_nodes' | 'crm_leads' | null;
 
@@ -302,10 +303,10 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         body: JSON.stringify({ table: type, payload }),
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
 
       if (!response.ok || result.error) {
-        throw new Error(result.error || `HTTP ${response.status}`);
+        throw new Error(formatError(result?.error || `HTTP ${response.status}`));
       }
 
       const pushSent = Boolean(result.telegramPush?.pushed);
@@ -328,7 +329,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error(`[AddRecordModal] Failed to insert into ${type}:`, err);
-      setErrorMessage(err?.message || String(err));
+      setErrorMessage(formatError(err));
     } finally {
       setIsSubmitting(false);
     }

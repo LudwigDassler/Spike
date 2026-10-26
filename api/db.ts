@@ -1,16 +1,416 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { GoogleGenAI, Type } from '@google/genai';
-import {
-  AiAssistantMode,
-  TaskChecklistItem,
-} from '../src/types/database';
-import {
-  buildBuiltInChecklistForTask,
-  generateInvoiceNumber,
-  runBuiltInAiAssistant,
-} from '../src/utils/enterpriseLogic';
 
 export const dynamic = 'force-dynamic';
+
+export type AiAssistantMode =
+  | 'daily_brief'
+  | 'decompose_task'
+  | 'workload_analysis'
+  | 'custom';
+
+export interface TaskChecklistItem {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+export function formatError(err: any): string {
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') {
+    return err === '[object Object]' ? 'Unknown error' : err;
+  }
+  const extracted =
+    err.message ||
+    err.error_description ||
+    err.details ||
+    err.hint ||
+    (typeof err.error === 'string' ? err.error : err.error?.message);
+  if (typeof extracted === 'string' && extracted !== '[object Object]') {
+    return extracted;
+  }
+  try {
+    const json = JSON.stringify(err);
+    return json && json !== '{}' ? json : 'Unknown error';
+  } catch {
+    return 'Unknown error';
+  }
+}
+
+function generateInvoiceNumber(date = new Date()): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const rand = String(Math.floor(1000 + Math.random() * 9000));
+  return `TC-${yyyy}${mm}${dd}-${rand}`;
+}
+
+function buildBuiltInChecklistForTask(
+  taskTitle: string,
+  taskDescription?: string | null
+): { checklist: TaskChecklistItem[]; summary: string } {
+  const titleClean = String(taskTitle || 'Корпоративное поручение').trim();
+  const lower = `${titleClean} ${taskDescription || ''}`.toLowerCase();
+
+  let steps: string[] = [];
+  if (
+    lower.includes('договор') ||
+    lower.includes('контракт') ||
+    lower.includes('юрид') ||
+    lower.includes('сделк') ||
+    lower.includes('инн') ||
+    lower.includes('кп') ||
+    lower.includes('коммерческ')
+  ) {
+    steps = [
+      `Проверить юридические реквизиты контрагента (ИНН/КПП) по задаче «${titleClean}»`,
+      'Согласовать финансовые условия, спецификацию и график расчетов',
+      'Провести правовую экспертизу проекта документа с профильным отделом',
+      'Направить финальную редакцию на подписание и зафиксировать номер в CRM',
+      'Обновить статус поручения и уведомить ответственного руководителя',
+    ];
+  } else if (
+    lower.includes('отчет') ||
+    lower.includes('финанс') ||
+    lower.includes('бюджет') ||
+    lower.includes('аудит') ||
+    lower.includes('сверк') ||
+    lower.includes('экономи')
+  ) {
+    steps = [
+      `Собрать первичные данные и выгрузки по задаче «${titleClean}»`,
+      'Выполнить сверку показателей с реестром сделок CRM и счетами биллинга',
+      'Сформировать аналитическую сводку с отклонениями и выводами',
+      'Согласовать итоговый расчет с руководителем подразделения',
+    ];
+  } else if (
+    lower.includes('клиент') ||
+    lower.includes('продаж') ||
+    lower.includes('презентац') ||
+    lower.includes('встреч') ||
+    lower.includes('звонок')
+  ) {
+    steps = [
+      `Подготовить повестку и материалы по клиенту для «${titleClean}»`,
+      'Провести квалификацию потребностей и зафиксировать ключевые возражения',
+      'Сформировать персональное коммерческое предложение со сметой',
+      'Зафиксировать итоги переговоров и следующий шаг в карточке сделки CRM',
+    ];
+  } else {
+    steps = [
+      `Уточнить входные требования и критерии готовности по задаче «${titleClean}»`,
+      'Распределить зону ответственности и согласовать ресурсы внутри отдела',
+      'Выполнить основной этап работ и промежуточную проверку качества',
+      'Подготовить итоговый результат и зафиксировать выполнение в TedCloud',
+    ];
+  }
+
+  const checklist: TaskChecklistItem[] = steps.map((stepTitle, idx) => ({
+    id: `chk_${Date.now()}_${idx + 1}`,
+    title: stepTitle,
+    done: false,
+  }));
+
+  const summary = `Задача декомпозирована на ${checklist.length} последовательных этапа с контролем исполнения в рабочем контуре TedCloud.`;
+  return { checklist, summary };
+}
+
+function runBuiltInAiAssistant(input: {
+  mode: AiAssistantMode;
+  prompt?: string;
+  taskTitle?: string;
+  taskDescription?: string;
+  companyName?: string;
+  currentUser?: any | null;
+  nodes: any[];
+  tasks: any[];
+  leads: any[];
+  messages: any[];
+}): {
+  mode: AiAssistantMode;
+  reply: string;
+  checklist?: TaskChecklistItem[];
+  aiSummary?: string;
+  provider: 'gemini' | 'tedcloud-engine';
+} {
+  const {
+    mode,
+    prompt = '',
+    taskTitle = '',
+    taskDescription = '',
+    companyName = 'TedCloud',
+    currentUser,
+    nodes = [],
+    tasks = [],
+    leads = [],
+    messages = [],
+  } = input;
+
+  if (mode === 'decompose_task') {
+    const { checklist, summary } = buildBuiltInChecklistForTask(
+      taskTitle || prompt || 'Поручение',
+      taskDescription
+    );
+    const replyLines = [
+      `ИИ-декомпозиция задачи «${taskTitle || prompt || 'Поручение'}» выполнена (${checklist.length} шага):`,
+      '',
+      ...checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
+      '',
+      summary,
+    ];
+    return {
+      mode: 'decompose_task',
+      reply: replyLines.join('\n'),
+      checklist,
+      aiSummary: summary,
+      provider: 'tedcloud-engine',
+    };
+  }
+
+  const openTasks = tasks.filter((t) => t.status !== 'Done');
+  const highPriorityTasks = openTasks.filter((t) => t.priority === 'High');
+  const doneTasks = tasks.filter((t) => t.status === 'Done');
+
+  const userTasks = currentUser?.id
+    ? openTasks.filter(
+        (t) =>
+          t.assigned_to === currentUser.id ||
+          t.owner_node_id === currentUser.id ||
+          (currentUser.department &&
+            t.department &&
+            String(t.department).toLowerCase() === String(currentUser.department).toLowerCase())
+      )
+    : openTasks;
+
+  const urgentMessages = messages.filter((m) => Boolean(m.is_urgent));
+  const activeLeads = leads.filter((l) => (l.status || l.stage) !== 'Lost');
+  const wonLeads = leads.filter((l) => (l.status || l.stage) === 'Won');
+  const activePipelineSum = activeLeads.reduce(
+    (acc, l) => acc + Number(l.amount ?? l.deal_value ?? 0),
+    0
+  );
+  const wonPipelineSum = wonLeads.reduce(
+    (acc, l) => acc + Number(l.amount ?? l.deal_value ?? 0),
+    0
+  );
+  const conversionRate =
+    leads.length > 0 ? Math.round((wonLeads.length / leads.length) * 100) : 0;
+
+  if (mode === 'daily_brief') {
+    const userName = currentUser?.name || 'Сотрудник';
+    const userRole = currentUser?.role_type || 'Специалист';
+    const topUserTasks = userTasks.slice(0, 4);
+
+    const lines: string[] = [
+      `ПЕРСОНАЛЬНАЯ СВОДКА ДНЯ — ${userName} (${userRole})`,
+      `Организация: ${companyName}`,
+      '',
+      '1. ОПЕРАЦИОННЫЙ КОНТУР ЗАДАЧ:',
+      `• Активных задач в вашей зоне ответственности: ${userTasks.length} (всего по компании открыто: ${openTasks.length}, выполнено: ${doneTasks.length}).`,
+      `• Срочных поручений высокого приоритета (High): ${
+        userTasks.filter((t) => t.priority === 'High').length
+      }.`,
+    ];
+
+    if (topUserTasks.length > 0) {
+      lines.push('• Приоритетный фокус на сегодня:');
+      topUserTasks.forEach((t, idx) => {
+        lines.push(
+          `  ${idx + 1}) [${t.priority || 'Medium'} | ${t.status || 'Todo'}] ${t.title}${
+            t.department ? ` (${t.department})` : ''
+          }`
+        );
+      });
+    } else {
+      lines.push('• Все текущие задачи закрыты или ожидают новых назначений.');
+    }
+
+    lines.push('');
+    lines.push('2. ИНФОПОЛЕ И КОММУНИКАЦИИ:');
+    lines.push(
+      `• Всего сообщений в рабочем контуре: ${messages.length} (срочных уведомлений: ${urgentMessages.length}).`
+    );
+
+    lines.push('');
+    lines.push('3. КОММЕРЧЕСКИЙ КОНТУР CRM:');
+    lines.push(
+      `• Активных сделок в воронке: ${activeLeads.length} на сумму ${Math.round(
+        activePipelineSum
+      ).toLocaleString('ru-RU')} RUB.`
+    );
+    lines.push(
+      `• Закрыто контрактов (Won): ${wonLeads.length} на сумму ${Math.round(
+        wonPipelineSum
+      ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`
+    );
+
+    return {
+      mode: 'daily_brief',
+      reply: lines.join('\n'),
+      provider: 'tedcloud-engine',
+    };
+  }
+
+  if (mode === 'workload_analysis') {
+    const nodeLoad = nodes.map((n) => {
+      const assignedOpen = openTasks.filter(
+        (t) => t.assigned_to === n.id || t.owner_node_id === n.id
+      ).length;
+      const highCount = openTasks.filter(
+        (t) => (t.assigned_to === n.id || t.owner_node_id === n.id) && t.priority === 'High'
+      ).length;
+      return {
+        name: n.name || 'Сотрудник',
+        role: n.role_type || 'Специалист',
+        dept: n.department || 'Без отдела',
+        openCount: assignedOpen,
+        highCount,
+      };
+    });
+
+    nodeLoad.sort((a, b) => b.openCount - a.openCount);
+    const overloaded = nodeLoad.filter((n) => n.openCount >= 3);
+    const underloaded = nodeLoad.filter((n) => n.openCount === 0);
+
+    const lines: string[] = [
+      `АНАЛИЗ ЗАГРУЗКИ КОМАНДЫ И ВОРОНКИ CRM — ${companyName}`,
+      '',
+      `1. БАЛАНС НАГРУЗКИ ПО ШТАТУ (${nodes.length} сотр. / ${openTasks.length} активных задач):`,
+    ];
+
+    if (nodeLoad.length === 0) {
+      lines.push('• Штатное расписание пусто.');
+    } else {
+      nodeLoad.slice(0, 6).forEach((item) => {
+        const statusIndicator =
+          item.openCount >= 3
+            ? 'Высокая нагрузка'
+            : item.openCount >= 1
+            ? 'Оптимально'
+            : 'Свободен';
+        lines.push(
+          `• ${item.name} (${item.role}, ${item.dept}): ${item.openCount} акт. задач (High: ${item.highCount}) — [${statusIndicator}]`
+        );
+      });
+    }
+
+    lines.push('');
+    lines.push('2. АУДИТ КОММЕРЧЕСКОЙ ВОРОНКИ CRM:');
+    lines.push(
+      `• Всего сделок: ${leads.length} | На согласовании (Negotiation): ${
+        leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
+      } | Успешно закрыто (Won): ${wonLeads.length}.`
+    );
+    lines.push(
+      `• Объем активного пайплайна: ${Math.round(activePipelineSum).toLocaleString(
+        'ru-RU'
+      )} RUB | Конверсия в контракт: ${conversionRate}%.`
+    );
+
+    lines.push('');
+    lines.push('3. УПРАВЛЕНЧЕСКИЕ РЕКОМЕНДАЦИИ TEDCLOUD AI:');
+    if (overloaded.length > 0 && underloaded.length > 0) {
+      lines.push(
+        `• Рекомендуется перераспределить часть задач от ${overloaded[0].name} (${overloaded[0].openCount} зад.) сотруднику ${underloaded[0].name} (0 активных поручений).`
+      );
+    } else if (highPriorityTasks.length > 0) {
+      lines.push(
+        `• В контуре ${highPriorityTasks.length} задач с высоким приоритетом (High) — рекомендуется провести декомпозицию на чек-листы и зафиксировать промежуточный статус.`
+      );
+    } else {
+      lines.push(
+        '• Распределение задач сбалансировано, критических блокировок по подразделениям не выявлено.'
+      );
+    }
+
+    return {
+      mode: 'workload_analysis',
+      reply: lines.join('\n'),
+      provider: 'tedcloud-engine',
+    };
+  }
+
+  const q = prompt.trim().toLowerCase();
+  const matchedTasks = tasks.filter(
+    (t) =>
+      (t.title || '').toLowerCase().includes(q) ||
+      (t.department || '').toLowerCase().includes(q) ||
+      (t.description || '').toLowerCase().includes(q)
+  );
+  const matchedLeads = leads.filter(
+    (l) =>
+      (l.client_name || '').toLowerCase().includes(q) ||
+      (l.title || '').toLowerCase().includes(q) ||
+      (l.tax_id || '').toLowerCase().includes(q) ||
+      (l.contract_number || '').toLowerCase().includes(q)
+  );
+  const matchedNodes = nodes.filter(
+    (n) =>
+      (n.name || '').toLowerCase().includes(q) ||
+      (n.role_type || '').toLowerCase().includes(q) ||
+      (n.department || '').toLowerCase().includes(q)
+  );
+
+  const lines: string[] = [
+    `ОТВЕТ TEDCLOUD AI ПО ЗАПРОСУ: «${prompt.trim() || 'Обзор компании'}»`,
+    '',
+  ];
+
+  if (matchedLeads.length > 0) {
+    lines.push(`Найденные сделки CRM (${matchedLeads.length}):`);
+    matchedLeads.slice(0, 4).forEach((l) => {
+      lines.push(
+        `• ${l.client_name || l.title} — ${Math.round(
+          Number(l.amount ?? l.deal_value ?? 0)
+        ).toLocaleString('ru-RU')} RUB | Статус: ${l.status || 'New'}${
+          l.tax_id ? ` | ИНН/VAT: ${l.tax_id}` : ''
+        }${l.contract_number ? ` | Договор: ${l.contract_number}` : ''}`
+      );
+    });
+    lines.push('');
+  }
+
+  if (matchedTasks.length > 0) {
+    lines.push(`Найденные задачи (${matchedTasks.length}):`);
+    matchedTasks.slice(0, 4).forEach((t) => {
+      lines.push(
+        `• [${t.priority || 'Medium'} | ${t.status || 'Todo'}] ${t.title}${
+          t.department ? ` (${t.department})` : ''
+        }`
+      );
+    });
+    lines.push('');
+  }
+
+  if (matchedNodes.length > 0) {
+    lines.push(`Профильные сотрудники (${matchedNodes.length}):`);
+    matchedNodes.slice(0, 4).forEach((n) => {
+      lines.push(
+        `• ${n.name} — ${n.role_type || 'Специалист'}${
+          n.department ? ` · Отдел: ${n.department}` : ''
+        }`
+      );
+    });
+    lines.push('');
+  }
+
+  if (matchedLeads.length === 0 && matchedTasks.length === 0 && matchedNodes.length === 0) {
+    lines.push(
+      `Сводная статистика пространства «${companyName}»:`,
+      `• Сотрудников в штате: ${nodes.length}`,
+      `• Открытых задач: ${openTasks.length} (высокого приоритета: ${highPriorityTasks.length})`,
+      `• Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${Math.round(
+        activePipelineSum
+      ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
+      'Для точечного поиска укажите название контрагента, ИНН, фамилию сотрудника или тему поручения.'
+    );
+  }
+
+  return {
+    mode: 'custom',
+    reply: lines.join('\n'),
+    provider: 'tedcloud-engine',
+  };
+}
 
 const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
   companies: [
@@ -238,27 +638,65 @@ async function safeSupabaseUpdate(
   };
 }
 
+/**
+ * Безопасная обертка чтения таблиц Supabase (НИКОГДА не выбрасывает исключение и не роняет /api/db со статусом 500)
+ */
+async function safeSelect(
+  supabase: any,
+  table: string,
+  queryBuilder?: (q: any) => any
+): Promise<any[]> {
+  if (!supabase) return [];
+  try {
+    let query = supabase.from(table).select('*');
+    if (typeof queryBuilder === 'function') {
+      query = queryBuilder(query);
+    }
+    const firstRes = await query;
+    if (!firstRes?.error && Array.isArray(firstRes?.data)) {
+      return firstRes.data;
+    }
+    if (firstRes?.error) {
+      console.warn(
+        `[API /api/db] safeSelect primary warning on "${table}":`,
+        formatError(firstRes.error)
+      );
+    }
+
+    const fallbackRes = await supabase.from(table).select('*');
+    if (!fallbackRes?.error && Array.isArray(fallbackRes?.data)) {
+      return fallbackRes.data;
+    }
+    if (fallbackRes?.error) {
+      console.warn(
+        `[API /api/db] safeSelect fallback warning on "${table}" (returning []):`,
+        formatError(fallbackRes.error)
+      );
+    }
+    return [];
+  } catch (err: any) {
+    console.warn(
+      `[API /api/db] safeSelect exception on "${table}" (returning []):`,
+      formatError(err)
+    );
+    return [];
+  }
+}
+
 async function safeSelectTable(
   supabase: SupabaseClient,
   table: string,
   ascending = false,
   limitCount?: number
 ): Promise<{ data: any[]; error: any }> {
-  let query = supabase.from(table).select('*').order('created_at', { ascending });
-  if (limitCount) {
-    query = query.limit(limitCount);
-  }
-  const firstRes = await query;
-  if (!firstRes.error) {
-    return { data: firstRes.data || [], error: null };
-  }
-
-  let fallbackQuery = supabase.from(table).select('*');
-  if (limitCount) {
-    fallbackQuery = fallbackQuery.limit(limitCount);
-  }
-  const secondRes = await fallbackQuery;
-  return { data: secondRes.data || [], error: secondRes.error };
+  const rows = await safeSelect(supabase, table, (q) => {
+    let next = q.order('created_at', { ascending });
+    if (limitCount) {
+      next = next.limit(limitCount);
+    }
+    return next;
+  });
+  return { data: rows, error: null };
 }
 
 function generateInviteCode(): string {
@@ -547,61 +985,66 @@ async function recordAuditLog(params: {
   entityId?: string | null;
   details: string;
 }): Promise<any> {
-  const {
-    supabase,
-    companyId,
-    actorId = null,
-    actorName = 'Система TedCloud',
-    actionType,
-    entityType,
-    entityId = null,
-    details,
-  } = params;
+  try {
+    const {
+      supabase,
+      companyId,
+      actorId = null,
+      actorName = 'Система TedCloud',
+      actionType,
+      entityType,
+      entityId = null,
+      details,
+    } = params;
 
-  let resolvedActorName = actorName;
-  if (!resolvedActorName || resolvedActorName === 'Сотрудник TedCloud') {
-    const matchedActor =
-      (actorId &&
-        localStore.organization_nodes.find((n) => String(n.id) === String(actorId))) ||
-      localStore.organization_nodes.find(
-        (n) => String(n.company_id) === String(companyId) && n.access_level === 'root'
-      ) ||
-      localStore.organization_nodes.find((n) => String(n.company_id) === String(companyId));
-    if (matchedActor?.name) {
-      resolvedActorName = matchedActor.name;
-    }
-  }
-
-  const rawAudit: Record<string, any> = {
-    company_id: companyId,
-    actor_id: actorId,
-    actor_name: resolvedActorName || 'Руководитель организации',
-    action_type: actionType,
-    entity_type: entityType,
-    entity_id: entityId ? String(entityId) : null,
-    details,
-    created_at: new Date().toISOString(),
-  };
-
-  const localEntry = {
-    id: crypto.randomUUID(),
-    ...rawAudit,
-  };
-
-  localStore.audit_logs.unshift(localEntry);
-
-  if (supabase) {
-    try {
-      const { data } = await safeSupabaseInsert(supabase, 'audit_logs', rawAudit);
-      if (data?.id) {
-        return { ...localEntry, ...data };
+    let resolvedActorName = actorName;
+    if (!resolvedActorName || resolvedActorName === 'Сотрудник TedCloud') {
+      const matchedActor =
+        (actorId &&
+          localStore.organization_nodes.find((n) => String(n.id) === String(actorId))) ||
+        localStore.organization_nodes.find(
+          (n) => String(n.company_id) === String(companyId) && n.access_level === 'root'
+        ) ||
+        localStore.organization_nodes.find((n) => String(n.company_id) === String(companyId));
+      if (matchedActor?.name) {
+        resolvedActorName = matchedActor.name;
       }
-    } catch (err) {
-      console.warn('[API /api/db] Audit log fallback to memory:', err);
     }
-  }
 
-  return localEntry;
+    const rawAudit: Record<string, any> = {
+      company_id: companyId,
+      actor_id: actorId,
+      actor_name: resolvedActorName || 'Руководитель организации',
+      action_type: actionType,
+      entity_type: entityType,
+      entity_id: entityId ? String(entityId) : null,
+      details,
+      created_at: new Date().toISOString(),
+    };
+
+    const localEntry = {
+      id: crypto.randomUUID(),
+      ...rawAudit,
+    };
+
+    localStore.audit_logs.unshift(localEntry);
+
+    if (supabase) {
+      try {
+        const { data } = await safeSupabaseInsert(supabase, 'audit_logs', rawAudit);
+        if (data?.id) {
+          return { ...localEntry, ...data };
+        }
+      } catch (err) {
+        console.warn('[API /api/db] Audit log fallback to memory:', formatError(err));
+      }
+    }
+
+    return localEntry;
+  } catch (outerErr) {
+    console.warn('[API /api/db] Audit log ignored:', formatError(outerErr));
+    return null;
+  }
 }
 
 // Отправка Telegram-уведомления конкретному исполнителю ИЛИ всему подразделению (отделу) строго внутри companyId
@@ -1309,31 +1752,27 @@ export default async function handler(req: any, res: any) {
       }
 
       const [
-        companiesRes,
-        nodesRes,
-        tasksRes,
-        leadsRes,
-        messagesRes,
-        invoicesRes,
-        auditLogsRes,
+        companiesData,
+        nodesData,
+        tasksData,
+        leadsData,
+        messagesData,
+        invoicesData,
+        auditLogsData,
       ] = await Promise.all([
-        safeSelectTable(supabase, 'companies', false, 100),
-        safeSelectTable(supabase, 'organization_nodes', true),
-        safeSelectTable(supabase, 'tasks', false),
-        safeSelectTable(supabase, 'crm_leads', false),
-        safeSelectTable(supabase, 'workspace_messages', false, 300),
-        safeSelectTable(supabase, 'billing_invoices', false, 100),
-        safeSelectTable(supabase, 'audit_logs', false, 100),
+        safeSelect(supabase, 'companies', (q) => q.order('created_at', { ascending: false }).limit(100)),
+        safeSelect(supabase, 'organization_nodes', (q) => q.order('created_at', { ascending: true })),
+        safeSelect(supabase, 'tasks', (q) => q.order('created_at', { ascending: false })),
+        safeSelect(supabase, 'crm_leads', (q) => q.order('created_at', { ascending: false })),
+        safeSelect(supabase, 'workspace_messages', (q) => q.order('created_at', { ascending: false }).limit(300)),
+        safeSelect(supabase, 'billing_invoices', (q) => q.order('created_at', { ascending: false }).limit(100)),
+        safeSelect(supabase, 'audit_logs', (q) => q.order('created_at', { ascending: false }).limit(100)),
       ]);
 
-      if (nodesRes.error) {
-        throw new Error(`[organization_nodes] ${nodesRes.error.message}`);
-      }
-
-      const rawCompanies = (companiesRes.data || []).map(normalizeCompanyRow);
-      const rawNodes = (nodesRes.data || []).map(normalizeNodeRow);
-      const rawTasks = (tasksRes.data || []).map(normalizeTaskRow);
-      const rawLeads = (leadsRes.data || []).map(normalizeLeadRow);
+      const rawCompanies = (companiesData || []).map(normalizeCompanyRow);
+      const rawNodes = (nodesData || []).map(normalizeNodeRow);
+      const rawTasks = (tasksData || []).map(normalizeTaskRow);
+      const rawLeads = (leadsData || []).map(normalizeLeadRow);
 
       let currentProfile = null;
       if (profileId) {
@@ -1372,13 +1811,11 @@ export default async function handler(req: any, res: any) {
       let activeCompany =
         rawCompanies.find((c: any) => String(c?.id) === String(activeCompanyId)) || null;
       if (!activeCompany) {
-        const { data: singleCompany } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('id', activeCompanyId)
-          .maybeSingle();
-        if (singleCompany) {
-          activeCompany = normalizeCompanyRow(singleCompany);
+        const singleCompanyRows = await safeSelect(supabase, 'companies', (q) =>
+          q.eq('id', activeCompanyId).limit(1)
+        );
+        if (singleCompanyRows[0]) {
+          activeCompany = normalizeCompanyRow(singleCompanyRows[0]);
         }
       }
 
@@ -1394,7 +1831,7 @@ export default async function handler(req: any, res: any) {
       );
 
       // Merge remote workspace_messages with in-memory fallback messages strictly for activeCompanyId
-      const remoteMessages = Array.isArray(messagesRes.data) ? messagesRes.data : [];
+      const remoteMessages = Array.isArray(messagesData) ? messagesData : [];
       const seenMsgIds = new Set<string>();
       const mergedMessages: any[] = [];
       for (const m of [...remoteMessages, ...localStore.workspace_messages]) {
@@ -1411,7 +1848,7 @@ export default async function handler(req: any, res: any) {
       }
 
       // Merge remote billing_invoices with in-memory fallback invoices strictly for activeCompanyId
-      const remoteInvoices = Array.isArray(invoicesRes.data) ? invoicesRes.data : [];
+      const remoteInvoices = Array.isArray(invoicesData) ? invoicesData : [];
       const seenInvIds = new Set<string>();
       const mergedInvoices: any[] = [];
       for (const inv of [...remoteInvoices, ...localStore.billing_invoices]) {
@@ -1425,7 +1862,7 @@ export default async function handler(req: any, res: any) {
       }
 
       // Merge remote audit_logs with in-memory fallback audit logs strictly for activeCompanyId
-      const remoteAudits = Array.isArray(auditLogsRes.data) ? auditLogsRes.data : [];
+      const remoteAudits = Array.isArray(auditLogsData) ? auditLogsData : [];
       const seenAuditIds = new Set<string>();
       const mergedAuditLogs: any[] = [];
       for (const log of [...remoteAudits, ...localStore.audit_logs]) {
@@ -1543,68 +1980,78 @@ export default async function handler(req: any, res: any) {
 
         let finalResult = builtInResult;
 
-        // If GEMINI_API_KEY is configured, enhance response via Google Gemini (gemini-2.5-flash)
+        // If GEMINI_API_KEY is configured, enhance response via native fetch (zero external SDK dependency)
         const geminiApiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
         if (geminiApiKey) {
           try {
-            const ai = new GoogleGenAI({
-              apiKey: geminiApiKey,
-              httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-            });
+            const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
+              geminiApiKey
+            )}`;
 
             if (mode === 'decompose_task') {
-              const targetTitle = taskTitle || promptText || 'Корпоративное поручение';
-              const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: `Ты — корпоративный ИИ-ассистент TedCloud AI (уровень Atlassian Rovo / Linear).
-Декомпозируй корпоративную задачу «${targetTitle}» ${
-                  taskDescription ? `(Описание: ${taskDescription})` : ''
-                } на 4–5 конкретных, деловых подзадач для чек-листа и напиши краткое резюме (1 предложение). Отвечай строго на русском языке без эмодзи.`,
-                config: {
-                  responseMimeType: 'application/json',
-                  responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                      subtasks: {
-                        type: Type.ARRAY,
-                        items: { type: Type.STRING },
-                      },
-                      summary: {
-                        type: Type.STRING,
-                      },
-                    },
-                    required: ['subtasks', 'summary'],
-                  },
+              const targetTitle =
+                resolvedTaskTitle || promptText || 'Корпоративное поручение';
+              const geminiRes = await fetch(geminiEndpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'aistudio-build',
                 },
+                body: JSON.stringify({
+                  contents: [
+                    {
+                      parts: [
+                        {
+                          text: `Ты — корпоративный ИИ-ассистент TedCloud AI (уровень Atlassian Rovo / Linear).
+Декомпозируй корпоративную задачу «${targetTitle}» ${
+                            resolvedTaskDescription
+                              ? `(Описание: ${resolvedTaskDescription})`
+                              : ''
+                          } на 4–5 конкретных, деловых подзадач для чек-листа и напиши краткое резюме (1 предложение). Отвечай строго в формате JSON {"subtasks": ["..."], "summary": "..."} на русском языке без эмодзи.`,
+                        },
+                      ],
+                    },
+                  ],
+                  generationConfig: {
+                    responseMimeType: 'application/json',
+                  },
+                }),
               });
 
-              if (response.text) {
-                const parsed = JSON.parse(response.text);
-                if (Array.isArray(parsed.subtasks) && parsed.subtasks.length > 0) {
-                  const checklist: TaskChecklistItem[] = parsed.subtasks
-                    .slice(0, 6)
-                    .map((st: string, i: number) => ({
-                      id: `chk_${Date.now()}_${i + 1}`,
-                      title: String(st || '').trim(),
-                      done: false,
-                    }))
-                    .filter((item: TaskChecklistItem) => Boolean(item.title));
+              if (geminiRes.ok) {
+                const geminiJson: any = await geminiRes.json();
+                const rawText =
+                  geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (rawText) {
+                  const parsed = JSON.parse(rawText);
+                  if (Array.isArray(parsed.subtasks) && parsed.subtasks.length > 0) {
+                    const checklist: TaskChecklistItem[] = parsed.subtasks
+                      .slice(0, 6)
+                      .map((st: string, i: number) => ({
+                        id: `chk_${Date.now()}_${i + 1}`,
+                        title: String(st || '').trim(),
+                        done: false,
+                      }))
+                      .filter((item: TaskChecklistItem) => Boolean(item.title));
 
-                  if (checklist.length > 0) {
-                    const summary = String(parsed.summary || builtInResult.aiSummary || '').trim();
-                    finalResult = {
-                      mode: 'decompose_task',
-                      checklist,
-                      aiSummary: summary,
-                      reply: [
-                        `ИИ-декомпозиция задачи «${targetTitle}» (${checklist.length} шага):`,
-                        '',
-                        ...checklist.map((c, idx) => `${idx + 1}. ${c.title}`),
-                        '',
-                        summary,
-                      ].join('\n'),
-                      provider: 'gemini',
-                    };
+                    if (checklist.length > 0) {
+                      const summary = String(
+                        parsed.summary || builtInResult.aiSummary || ''
+                      ).trim();
+                      finalResult = {
+                        mode: 'decompose_task',
+                        checklist,
+                        aiSummary: summary,
+                        reply: [
+                          `ИИ-декомпозиция задачи «${targetTitle}» (${checklist.length} шага):`,
+                          '',
+                          ...checklist.map((c, idx) => `${idx + 1}. ${c.title}`),
+                          '',
+                          summary,
+                        ].join('\n'),
+                        provider: 'gemini',
+                      };
+                    }
                   }
                 }
               }
@@ -1646,26 +2093,49 @@ export default async function handler(req: any, res: any) {
                   ? 'Проведи управленческий анализ распределения задач по сотрудникам/отделам и конверсии сделок CRM, дай 2–3 конкретные рекомендации.'
                   : `Ответь на вопрос сотрудника: «${promptText}» строго на основе данных компании.`;
 
-              const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: `Ты — корпоративный ИИ-ассистент TedCloud AI (стиль Atlassian Rovo / Linear). Отвечай емко, структурно, деловым русским языком без лишней воды.
+              const geminiRes = await fetch(geminiEndpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'aistudio-build',
+                },
+                body: JSON.stringify({
+                  contents: [
+                    {
+                      parts: [
+                        {
+                          text: `Ты — корпоративный ИИ-ассистент TedCloud AI (стиль Atlassian Rovo / Linear). Отвечай емко, структурно, деловым русским языком без лишней воды.
 Контекст компании (JSON): ${contextDigest}
 Базовая аналитическая выжимка:
 ${builtInResult.reply}
 
 Задание: ${systemTaskInstruction}`,
+                        },
+                      ],
+                    },
+                  ],
+                }),
               });
 
-              if (response.text && response.text.trim()) {
-                finalResult = {
-                  ...builtInResult,
-                  reply: response.text.trim(),
-                  provider: 'gemini',
-                };
+              if (geminiRes.ok) {
+                const geminiJson: any = await geminiRes.json();
+                const rawText = String(
+                  geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+                ).trim();
+                if (rawText) {
+                  finalResult = {
+                    ...builtInResult,
+                    reply: rawText,
+                    provider: 'gemini',
+                  };
+                }
               }
             }
           } catch (aiErr) {
-            console.warn('[API /api/db] Gemini fallback to built-in engine:', aiErr);
+            console.warn(
+              '[API /api/db] Gemini fetch fallback to built-in engine:',
+              formatError(aiErr)
+            );
           }
         }
 
@@ -1730,7 +2200,7 @@ ${builtInResult.reply}
             safeSelectTable(supabase, 'companies', false, 100),
           ]);
           if (nodesRes.error) {
-            return res.status(400).json({ error: nodesRes.error.message });
+            return res.status(400).json({ error: formatError(nodesRes.error) });
           }
           nodes = (nodesRes.data || []).map(normalizeNodeRow);
           companies = (companiesRes.data || []).map(normalizeCompanyRow);
@@ -1854,7 +2324,7 @@ ${builtInResult.reply}
 
         if (compErr || !createdCompany) {
           return res.status(400).json({
-            error: compErr?.message || 'Не удалось создать организацию.',
+            error: formatError(compErr) || 'Не удалось создать организацию.',
           });
         }
 
@@ -1886,7 +2356,7 @@ ${builtInResult.reply}
 
         if (nodeErr || !createdNode) {
           return res.status(400).json({
-            error: nodeErr?.message || 'Не удалось создать корневой профиль руководителя.',
+            error: formatError(nodeErr) || 'Не удалось создать корневой профиль руководителя.',
           });
         }
 
@@ -1967,7 +2437,7 @@ ${builtInResult.reply}
           const { data, error } = await safeSupabaseInsert(supabase, 'tasks', rawInsertPayload);
           if (error) {
             console.error('[API /api/db] Supabase INSERT error in tasks:', error);
-            return res.status(400).json({ error: error.message, details: error });
+            return res.status(400).json({ error: formatError(error) });
           }
           savedTask = { ...rawInsertPayload, ...data, assigned_to: explicitAssignee || null };
         }
@@ -2067,7 +2537,7 @@ ${builtInResult.reply}
 
           if (error) {
             console.error('[API /api/db] Supabase INSERT error in organization_nodes:', error);
-            return res.status(400).json({ error: error.message, details: error });
+            return res.status(400).json({ error: formatError(error) });
           }
 
           if (data?.id && rawInsertPayload.avatar_url) {
@@ -2158,7 +2628,7 @@ ${builtInResult.reply}
 
           if (error) {
             console.error('[API /api/db] Supabase INSERT error in crm_leads:', error);
-            return res.status(400).json({ error: error.message, details: error });
+            return res.status(400).json({ error: formatError(error) });
           }
 
           savedLead = { ...rawInsertPayload, ...data };
@@ -2556,7 +3026,7 @@ ${builtInResult.reply}
 
         const { data, error } = await safeSupabaseUpdate(supabase, 'companies', id, rawUpdates);
         if (error) {
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: formatError(error) });
         }
         return res
           .status(200)
@@ -2677,7 +3147,7 @@ ${builtInResult.reply}
           const { data, error } = await safeSupabaseUpdate(supabase, 'tasks', id, rawUpdates);
           if (error) {
             console.error('[API /api/db] Supabase PATCH error in tasks:', error);
-            return res.status(400).json({ error: error.message, details: error });
+            return res.status(400).json({ error: formatError(error) });
           }
           updatedTask = { ...existing, ...rawUpdates, ...data };
         }
@@ -2803,7 +3273,7 @@ ${builtInResult.reply}
 
         if (error) {
           console.error('[API /api/db] Supabase PATCH error in crm_leads:', error);
-          return res.status(400).json({ error: error.message, details: error });
+          return res.status(400).json({ error: formatError(error) });
         }
 
         return res.status(200).json({
@@ -2896,7 +3366,7 @@ ${builtInResult.reply}
 
         if (error) {
           console.error('[API /api/db] Supabase PATCH error in organization_nodes:', error);
-          return res.status(400).json({ error: error.message, details: error });
+          return res.status(400).json({ error: formatError(error) });
         }
 
         if (
@@ -2987,7 +3457,7 @@ ${builtInResult.reply}
 
       if (error) {
         console.error(`[API /api/db] Supabase DELETE error in ${table}:`, error);
-        return res.status(400).json({ error: error.message, details: error });
+        return res.status(400).json({ error: formatError(error) });
       }
 
       if (existingToDelete?.company_id) {
@@ -3014,7 +3484,7 @@ ${builtInResult.reply}
   } catch (err: any) {
     console.error('[API /api/db] Fatal Error:', err);
     return res.status(500).json({
-      error: err?.message || 'Внутренняя ошибка серверного шлюза /api/db',
+      error: formatError(err) || 'Внутренняя ошибка серверного шлюза /api/db',
     });
   }
 }
