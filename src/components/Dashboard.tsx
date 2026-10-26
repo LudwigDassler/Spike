@@ -30,6 +30,9 @@ import {
   FileText,
   MessageSquare,
   Reply,
+  Hash,
+  Radio,
+  AlertCircle,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -54,11 +57,18 @@ import {
 } from '../types/database';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
-import { AddRecordModal, ModalRecordType } from './AddRecordModal';
+import { AddRecordModal, InitialTaskDraft, ModalRecordType } from './AddRecordModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { PermissionsMatrixModal } from './PermissionsMatrixModal';
 import { SlideOverDrawer, DrawerTarget } from './SlideOverDrawer';
 import { useLocale } from '../i18n/LocaleContext';
+import {
+  ActiveMessengerThread,
+  canUserSeeWorkspaceMessage,
+  extractMessageText,
+  filterMessagesForActiveThread,
+  isDirectMessageBetweenUsers,
+} from '../utils/messengerLogic';
 
 interface DashboardProps {
   company: Company | null;
@@ -140,14 +150,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   });
   const [newDeptName, setNewDeptName] = useState('');
 
-  // Communications / Инфополе state (БЛОК 4)
-  const [commScope, setCommScope] = useState<'direct' | 'department' | 'broadcast'>('direct');
-  const [commRecipientId, setCommRecipientId] = useState<string>('');
-  const [commTargetDept, setCommTargetDept] = useState<string>('');
+  // Split-View Corporate Messenger state (Инфополе и Связь)
+  const [activeCommThread, setActiveCommThread] = useState<ActiveMessengerThread>({
+    type: 'broadcast',
+    id: 'general',
+    label: 'Общий поток (Циркуляры компании)',
+  });
   const [commText, setCommText] = useState<string>('');
   const [commUrgent, setCommUrgent] = useState<boolean>(true);
   const [isSendingComm, setIsSendingComm] = useState<boolean>(false);
-  const [commFilter, setCommFilter] = useState<'all' | 'direct' | 'department' | 'entities'>('all');
+  const [initialTaskDraft, setInitialTaskDraft] = useState<InitialTaskDraft | null>(null);
 
   // Confirm Dialog state
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmAction | null>(null);
@@ -204,15 +216,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return Array.from(set);
   }, [company, safeNodes, safeTasks, safeLeads, localDepartments]);
 
-  useEffect(() => {
-    if (!commRecipientId && safeNodes.length > 0) {
-      const other = safeNodes.find((n) => n.id !== currentProfile?.id) || safeNodes[0];
-      if (other) setCommRecipientId(other.id);
-    }
-    if (!commTargetDept && companyDepartments.length > 0) {
-      setCommTargetDept(currentProfile?.department || companyDepartments[0]);
-    }
-  }, [safeNodes, companyDepartments, currentProfile, commRecipientId, commTargetDept]);
+  // Colleagues list for Direct Messages (excluding current user)
+  const colleagueNodes = useMemo(
+    () =>
+      safeNodes.filter(
+        (n) => n && n.id && String(n.id) !== String(currentProfile?.id || '')
+      ),
+    [safeNodes, currentProfile]
+  );
 
   // My Profile editable state
   const [profileName, setProfileName] = useState(currentProfile?.name || '');
@@ -275,50 +286,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return safeLeads;
   }, [safeLeads, perms.crm_view]);
 
-  // Visible corporate messages in Инфополе (БЛОК 4)
+  // Strict Message Privacy: Direct messages are visible ONLY to sender and recipient
   const visibleMessages = useMemo(() => {
-    if (!currentProfile) return safeMessages;
-    return safeMessages.filter((msg) => {
-      if (!msg) return false;
-      if (perms.team_manage || perms.billing_admin) return true;
-      if (msg.scope_type === 'broadcast') return true;
-      if (msg.sender_id === currentProfile.id || msg.recipient_id === currentProfile.id) {
-        return true;
-      }
-      if (
-        msg.target_department &&
-        currentProfile.department &&
-        msg.target_department.toLowerCase() === currentProfile.department.toLowerCase()
-      ) {
-        return true;
-      }
-      if (msg.task_id || msg.lead_id || msg.entity_id) return true;
-      return false;
-    });
-  }, [safeMessages, currentProfile, perms.team_manage, perms.billing_admin]);
+    return safeMessages.filter((msg) => canUserSeeWorkspaceMessage(msg, currentProfile));
+  }, [safeMessages, currentProfile]);
 
-  const filteredMessages = useMemo(() => {
-    return visibleMessages.filter((msg) => {
-      if (commFilter === 'direct') {
-        return (
-          msg.scope_type === 'direct' ||
-          msg.recipient_id === currentProfile?.id ||
-          msg.sender_id === currentProfile?.id
-        );
-      }
-      if (commFilter === 'department') {
-        return Boolean(msg.target_department) || msg.scope_type === 'department';
-      }
-      if (commFilter === 'entities') {
-        return (
-          msg.scope_type === 'task' ||
-          msg.scope_type === 'deal' ||
-          Boolean(msg.task_id || msg.lead_id || msg.entity_id)
-        );
-      }
-      return true;
-    });
-  }, [visibleMessages, commFilter, currentProfile]);
+  // Active thread messages in the Split-View Messenger (chronological order: oldest to newest or newest to oldest)
+  const activeThreadMessages = useMemo(() => {
+    return filterMessagesForActiveThread(visibleMessages, activeCommThread, currentProfile);
+  }, [visibleMessages, activeCommThread, currentProfile]);
+
+  const broadcastMessagesCount = useMemo(
+    () =>
+      filterMessagesForActiveThread(
+        visibleMessages,
+        { type: 'broadcast', id: 'general', label: 'Общий поток' },
+        currentProfile
+      ).length,
+    [visibleMessages, currentProfile]
+  );
 
   const kpis = useMemo(
     () => computeDashboardKpis(visibleLeads, visibleTasks, safeNodes),
@@ -581,23 +567,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  // Send Corporate Message from Инфополе и Связь (БЛОК 4)
-  const handleSendCorporateMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!commText.trim() || !onSendMessage) return;
+  // Send Corporate Message from Split-View Messenger (Инфополе и Связь)
+  const submitCurrentCommMessage = async () => {
+    const msgBody = commText.trim();
+    if (!msgBody || !onSendMessage || isSendingComm) return;
 
     setIsSendingComm(true);
     try {
+      let targetType: 'direct' | 'department' | 'broadcast' = 'broadcast';
+      let targetId = 'general';
+      let targetLabel = 'Циркуляр по компании';
+      let recipientId: string | null = null;
+      let targetDepartment: string | null = null;
+
+      if (activeCommThread.type === 'direct') {
+        const recipientNode = safeNodes.find(
+          (n) => String(n.id) === String(activeCommThread.id)
+        );
+        targetType = 'direct';
+        targetId = String(recipientNode?.id || activeCommThread.id);
+        targetLabel = recipientNode?.name || activeCommThread.label;
+        recipientId = targetId;
+      } else if (activeCommThread.type === 'department') {
+        targetType = 'department';
+        targetId = activeCommThread.id;
+        targetLabel = activeCommThread.label;
+        targetDepartment = activeCommThread.id;
+      }
+
       const payload: Record<string, any> = {
         company_id: companyId,
-        sender_id: currentProfile?.id || null,
+        sender_id: currentProfile?.id ? String(currentProfile.id) : null,
         sender_name: currentProfile?.name || 'Сотрудник TedCloud',
         sender_role: currentProfile?.role_type || '',
-        scope_type: commScope,
-        recipient_id: commScope === 'direct' ? commRecipientId || null : null,
-        target_department: commScope === 'department' ? commTargetDept || null : null,
-        text: commText.trim(),
+        target_type: targetType,
+        target_id: targetId,
+        target_label: targetLabel,
+        scope_type: targetType,
+        recipient_id: recipientId,
+        target_department: targetDepartment,
+        message_text: msgBody,
+        text: msgBody,
         is_urgent: commUrgent,
+        is_read: false,
       };
 
       const res = await onSendMessage(payload);
@@ -608,6 +620,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
     } finally {
       setIsSendingComm(false);
     }
+  };
+
+  const handleSendCorporateMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitCurrentCommMessage();
+  };
+
+  const handleConvertMessageToTask = (msg: WorkspaceMessageRecord) => {
+    const bodyText = extractMessageText(msg);
+    const firstLine = bodyText.split('\n')[0]?.trim() || 'Поручение из Инфополя';
+    const taskTitle =
+      firstLine.length > 72 ? `${firstLine.slice(0, 72).trim()}...` : firstLine;
+
+    let defaultAssigneeId = currentProfile?.id || '';
+    if (activeCommThread.type === 'direct') {
+      defaultAssigneeId = activeCommThread.id;
+    } else if (
+      msg.sender_id &&
+      String(msg.sender_id) !== String(currentProfile?.id || '')
+    ) {
+      defaultAssigneeId = String(msg.sender_id);
+    } else if (
+      msg.target_type === 'direct' &&
+      msg.target_id &&
+      String(msg.target_id) !== String(currentProfile?.id || '')
+    ) {
+      defaultAssigneeId = String(msg.target_id);
+    }
+
+    const assigneeNode = defaultAssigneeId ? nodeMap.get(defaultAssigneeId) : null;
+    const resolvedDept =
+      activeCommThread.type === 'department'
+        ? activeCommThread.id
+        : assigneeNode?.department || currentProfile?.department || '';
+
+    setInitialTaskDraft({
+      title: taskTitle,
+      description: bodyText,
+      assigned_to: defaultAssigneeId,
+      department: resolvedDept,
+      priority: msg.is_urgent ? 'High' : 'Medium',
+    });
+    setModalType('tasks');
   };
 
   const requestDeleteRecord = (
@@ -1787,183 +1842,297 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 4: ИНФОПОЛЕ И СВЯЗЬ / COMMUNICATIONS (БЛОК 4)
+              TAB 4: ИНФОПОЛЕ И СВЯЗЬ / SPLIT-VIEW CORPORATE MESSENGER
           ================================================================== */}
           {activeSection === 'communications' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Левая колонка: Отправка сообщения коллеге / в отдел / по компании */}
-              <div className="lg:col-span-1">
-                <form
-                  onSubmit={handleSendCorporateMessage}
-                  className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4 sticky top-20"
-                >
-                  <div className="flex items-center gap-2.5 border-b border-[#1F1F1F] pb-3.5">
+            <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden flex flex-col lg:flex-row min-h-[640px]">
+              {/* ЛЕВАЯ ПАНЕЛЬ (Ширина 300px на десктопе): Каналы и Личные диалоги */}
+              <aside className="w-full lg:w-[300px] shrink-0 border-b lg:border-b-0 lg:border-r border-[#1F1F1F] bg-[#0D0D0F] flex flex-col">
+                <div className="px-4 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div>
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
-                        {t('comm.composeTitle')}
-                      </h2>
-                      <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                        {t('comm.composeSubtitle')}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                      {t('comm.scopeLabel')}
-                    </label>
-                    <select
-                      value={commScope}
-                      onChange={(e) =>
-                        setCommScope(e.target.value as 'direct' | 'department' | 'broadcast')
-                      }
-                      className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
-                    >
-                      <option value="direct">{t('comm.scopeDirect')}</option>
-                      <option value="department">{t('comm.scopeDepartment')}</option>
-                      <option value="broadcast">{t('comm.scopeBroadcast')}</option>
-                    </select>
-                  </div>
-
-                  {commScope === 'direct' && (
-                    <div>
-                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                        {t('comm.selectEmployee')}
-                      </label>
-                      <select
-                        value={commRecipientId}
-                        onChange={(e) => setCommRecipientId(e.target.value)}
-                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
-                      >
-                        {safeNodes.map((n) => (
-                          <option key={n.id} value={n.id}>
-                            {n.name} — {n.role_type}
-                            {n.department ? ` (${n.department})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {commScope === 'department' && (
-                    <div>
-                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                        {t('comm.selectDepartment')}
-                      </label>
-                      {companyDepartments.length > 0 ? (
-                        <select
-                          value={commTargetDept}
-                          onChange={(e) => setCommTargetDept(e.target.value)}
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
-                        >
-                          {companyDepartments.map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={commTargetDept}
-                          onChange={(e) => setCommTargetDept(e.target.value)}
-                          placeholder={t('dept.inputPlaceholder')}
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:outline-none"
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                      {t('comm.messageLabel')}
-                    </label>
-                    <textarea
-                      rows={4}
-                      required
-                      value={commText}
-                      onChange={(e) => setCommText(e.target.value)}
-                      placeholder={t('comm.messagePlaceholder')}
-                      className="w-full rounded-lg border border-[#262626] bg-[#17171A] p-3 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none leading-relaxed"
-                    />
-                  </div>
-
-                  <label className="flex items-center gap-2 text-xs text-[#D4D4D8] cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={commUrgent}
-                      onChange={(e) => setCommUrgent(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F]"
-                    />
-                    <span>{t('comm.urgentLabel')}</span>
-                  </label>
-
-                  <button
-                    type="submit"
-                    disabled={isSendingComm || !commText.trim()}
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
-                  >
-                    {isSendingComm ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5" />
-                    )}
-                    <span>{isSendingComm ? t('comm.sendingBtn') : t('comm.sendBtn')}</span>
-                  </button>
-                </form>
-              </div>
-
-              {/* Правая колонка: Корпоративная лента сообщений */}
-              <div className="lg:col-span-2 rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden flex flex-col">
-                <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <MessageSquare className="w-4 h-4 text-[#A1A1AA]" />
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
-                      {t('comm.feedTitle')}
-                    </h2>
-                    <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded">
-                      {filteredMessages.length}
+                    <span className="text-xs font-semibold uppercase tracking-wider text-white">
+                      Каналы и Диалоги
                     </span>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {(
-                      [
-                        { id: 'all', label: t('comm.filterAll') },
-                        { id: 'direct', label: t('comm.filterDirect') },
-                        { id: 'department', label: t('comm.filterDept') },
-                        { id: 'entities', label: t('comm.filterEntities') },
-                      ] as const
-                    ).map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => setCommFilter(f.id)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                          commFilter === f.id
-                            ? 'bg-white text-black font-semibold'
-                            : 'bg-[#17171A] text-[#A1A1AA] hover:text-white border border-[#262626]'
-                        }`}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
+                  <span className="text-[10px] font-mono text-[#71717A] bg-[#17171A] border border-[#262626] px-1.5 py-0.5 rounded">
+                    Live · 5s
+                  </span>
                 </div>
 
-                {filteredMessages.length === 0 ? (
-                  <div className="p-12 text-center space-y-2">
-                    <div className="text-sm font-medium text-white">{t('comm.emptyTitle')}</div>
-                    <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('comm.emptyDesc')}</p>
+                <div className="flex-1 overflow-y-auto p-3 space-y-5">
+                  {/* Блок 1: Корпоративные каналы */}
+                  <div className="space-y-1">
+                    <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
+                      Корпоративные каналы
+                    </div>
+
+                    {/* Общий поток (Циркуляры компании) */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveCommThread({
+                          type: 'broadcast',
+                          id: 'general',
+                          label: 'Общий поток (Циркуляры компании)',
+                        })
+                      }
+                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                        activeCommThread.type === 'broadcast'
+                          ? 'bg-[#1C1C21] text-white border border-[#2E2E36]'
+                          : 'text-[#A1A1AA] hover:bg-[#151518] hover:text-white border border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="text-xs font-medium truncate">
+                          Общий поток (Циркуляры компании)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                        {broadcastMessagesCount}
+                      </span>
+                    </button>
+
+                    {/* Список отделов компании */}
+                    {companyDepartments.map((dept) => {
+                      const isSelected =
+                        activeCommThread.type === 'department' &&
+                        activeCommThread.id.toLowerCase() === dept.toLowerCase();
+                      const deptMsgCount = filterMessagesForActiveThread(
+                        visibleMessages,
+                        { type: 'department', id: dept, label: dept },
+                        currentProfile
+                      ).length;
+
+                      return (
+                        <button
+                          key={dept}
+                          type="button"
+                          onClick={() =>
+                            setActiveCommThread({
+                              type: 'department',
+                              id: dept,
+                              label: dept,
+                            })
+                          }
+                          className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                            isSelected
+                              ? 'bg-[#1C1C21] text-white border border-[#2E2E36]'
+                              : 'text-[#A1A1AA] hover:bg-[#151518] hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Hash className="w-3.5 h-3.5 text-[#71717A] shrink-0" />
+                            <span className="text-xs font-medium truncate">{dept}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                            {deptMsgCount}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                ) : (
-                  <div className="divide-y divide-[#1A1A1C]">
-                    {filteredMessages.map((msg) => {
-                      const sender = msg.sender_id ? nodeMap.get(msg.sender_id) : null;
-                      const recipient = msg.recipient_id ? nodeMap.get(msg.recipient_id) : null;
-                      const senderName = sender?.name || msg.sender_name || 'Сотрудник TedCloud';
-                      const senderRole = sender?.role_type || msg.sender_role || '';
+
+                  {/* Блок 2: Личные диалоги (Сотрудники) */}
+                  <div className="space-y-1">
+                    <div className="px-2 pb-1 flex items-center justify-between">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
+                        Личные диалоги (Сотрудники)
+                      </span>
+                      <span className="text-[10px] font-mono text-[#71717A]">
+                        {colleagueNodes.length}
+                      </span>
+                    </div>
+
+                    {colleagueNodes.length === 0 ? (
+                      <div className="px-2.5 py-3 rounded-lg border border-[#1C1C1F] bg-[#121215] text-[11px] text-[#71717A]">
+                        В штате пока нет других сотрудников для личного диалога.
+                      </div>
+                    ) : (
+                      colleagueNodes.map((colleague) => {
+                        const isSelected =
+                          activeCommThread.type === 'direct' &&
+                          String(activeCommThread.id) === String(colleague.id);
+                        const hasTelegram = Boolean(colleague.telegram_chat_id);
+                        const dialogCount = currentProfile
+                          ? visibleMessages.filter((m) =>
+                              isDirectMessageBetweenUsers(
+                                m,
+                                currentProfile.id,
+                                currentProfile.name,
+                                colleague.id,
+                                colleague.name
+                              )
+                            ).length
+                          : 0;
+
+                        return (
+                          <button
+                            key={colleague.id}
+                            type="button"
+                            onClick={() =>
+                              setActiveCommThread({
+                                type: 'direct',
+                                id: String(colleague.id),
+                                label: colleague.name,
+                                subtitle: colleague.role_type,
+                                telegramConnected: hasTelegram,
+                              })
+                            }
+                            className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                              isSelected
+                                ? 'bg-[#1C1C21] text-white border border-[#2E2E36]'
+                                : 'text-[#A1A1AA] hover:bg-[#151518] hover:text-white border border-transparent'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-white truncate">
+                                  {colleague.name}
+                                </span>
+                                {hasTelegram && (
+                                  <span
+                                    title="Telegram подключен"
+                                    className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0"
+                                  >
+                                    TG
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-[#71717A] truncate">
+                                {colleague.role_type}
+                                {colleague.department ? ` · ${colleague.department}` : ''}
+                              </div>
+                            </div>
+
+                            <span className="text-[10px] font-mono text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                              {dialogCount}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </aside>
+
+              {/* ПРАВАЯ ПАНЕЛЬ: Окно выбранного чата / канала */}
+              <section className="flex-1 flex flex-col min-w-0 bg-[#111113]">
+                {/* Шапка диалога */}
+                {(() => {
+                  const selectedColleague =
+                    activeCommThread.type === 'direct'
+                      ? safeNodes.find((n) => String(n.id) === String(activeCommThread.id)) || null
+                      : null;
+                  const headerTitle =
+                    activeCommThread.type === 'direct'
+                      ? selectedColleague?.name || activeCommThread.label
+                      : activeCommThread.type === 'department'
+                      ? `# ${activeCommThread.label}`
+                      : 'Общий поток (Циркуляры компании)';
+                  const headerSubtitle =
+                    activeCommThread.type === 'direct'
+                      ? [selectedColleague?.role_type, selectedColleague?.department]
+                          .filter(Boolean)
+                          .join(' · ') || 'Личный защищенный диалог (Direct)'
+                      : activeCommThread.type === 'department'
+                      ? 'Канал подразделения · Сообщения видны сотрудникам отдела и руководству'
+                      : 'Публичный корпоративный поток · Виден всем сотрудникам компании';
+
+                  const tgActive =
+                    activeCommThread.type === 'direct'
+                      ? Boolean(selectedColleague?.telegram_chat_id)
+                      : safeNodes.some((n) => Boolean(n.telegram_chat_id));
+
+                  return (
+                    <div className="px-5 py-3.5 border-b border-[#1F1F1F] bg-[#131316] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-sm font-semibold text-white truncate">
+                            {headerTitle}
+                          </h2>
+                          {activeCommThread.type === 'direct' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#1C1C22] text-[#A1A1AA] border border-[#2C2C35]">
+                              <Lock className="w-2.5 h-2.5 text-emerald-400" />
+                              <span>Приватный диалог</span>
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#8E8E93] truncate mt-0.5">
+                          {headerSubtitle}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border ${
+                            tgActive
+                              ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                              : 'bg-[#18181B] text-[#71717A] border-[#27272A]'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              tgActive ? 'bg-emerald-400' : 'bg-[#52525B]'
+                            }`}
+                          />
+                          <span>
+                            {tgActive
+                              ? 'Доставка в Telegram активна'
+                              : 'Telegram не привязан у получателя'}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Поток сообщений */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-3 max-h-[520px]">
+                  {activeThreadMessages.length === 0 ? (
+                    <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-center p-6 space-y-2">
+                      <MessageSquare className="w-6 h-6 text-[#52525B]" />
+                      <div className="text-sm font-medium text-white">
+                        В выбранном потоке пока нет сообщений
+                      </div>
+                      <p className="text-xs text-[#71717A] max-w-md">
+                        {activeCommThread.type === 'direct'
+                          ? 'Отправьте личное сообщение сотруднику. Оно будет видно исключительно вам и получателю, а также мгновенно доставлено в Telegram.'
+                          : activeCommThread.type === 'department'
+                          ? `Напишите сообщение в подразделение «${activeCommThread.label}». Все сотрудники отдела получат уведомление.`
+                          : 'Опубликуйте циркуляр или оперативное сообщение для всей команды компании.'}
+                      </p>
+                    </div>
+                  ) : (
+                    activeThreadMessages.map((msg) => {
+                      const isOutgoing =
+                        Boolean(currentProfile?.id) &&
+                        String(msg.sender_id || '') === String(currentProfile?.id || '');
+                      const senderNode = msg.sender_id
+                        ? nodeMap.get(String(msg.sender_id))
+                        : null;
+                      const recipientNode = msg.target_id
+                        ? nodeMap.get(String(msg.target_id))
+                        : msg.recipient_id
+                        ? nodeMap.get(String(msg.recipient_id))
+                        : null;
+
+                      const senderName =
+                        senderNode?.name || msg.sender_name || 'Сотрудник TedCloud';
+                      const senderRole = senderNode?.role_type || msg.sender_role || '';
+
+                      const recipientLabel =
+                        msg.target_label ||
+                        recipientNode?.name ||
+                        msg.target_department ||
+                        (msg.target_type === 'direct' || msg.scope_type === 'direct'
+                          ? 'Лично сотруднику'
+                          : 'Всем');
+
+                      const messageBody =
+                        msg.message_text || msg.text || msg.content || '';
+
                       const createdTime = msg.created_at
                         ? new Date(msg.created_at).toLocaleString('ru-RU', {
                             day: '2-digit',
@@ -1973,72 +2142,127 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           })
                         : '';
 
-                      let contourLabel = t('comm.badgeBroadcast');
-                      if (msg.scope_type === 'direct' || recipient) {
-                        contourLabel = `${t('comm.badgeDirect')}${
-                          recipient ? `: ${recipient.name}` : ''
-                        }`;
-                      } else if (msg.scope_type === 'department' || msg.target_department) {
-                        contourLabel = `${t('comm.badgeDept')}: ${msg.target_department}`;
-                      } else if (msg.scope_type === 'task' || msg.task_id) {
-                        contourLabel = `${t('comm.badgeTask')}${
-                          msg.entity_title ? `: ${msg.entity_title}` : ''
-                        }`;
-                      } else if (msg.scope_type === 'deal' || msg.lead_id) {
-                        contourLabel = `${t('comm.badgeDeal')}${
-                          msg.entity_title ? `: ${msg.entity_title}` : ''
-                        }`;
-                      }
-
                       return (
                         <div
                           key={msg.id}
-                          className="p-5 hover:bg-[#151518] transition-colors space-y-2"
+                          className={`flex flex-col ${
+                            isOutgoing ? 'items-end' : 'items-start'
+                          }`}
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-xs font-semibold text-white truncate">
-                                {senderName}
-                              </span>
-                              {senderRole && (
-                                <span className="text-[11px] text-[#8E8E93] truncate">
-                                  · {senderRole}
+                          <div
+                            className={`w-full max-w-2xl rounded-xl border p-4 space-y-2.5 transition-colors ${
+                              isOutgoing
+                                ? 'bg-emerald-950/25 border-emerald-500/30'
+                                : 'bg-[#16161A] border-[#26262C]'
+                            }`}
+                          >
+                            {/* Верхняя строка: Отправитель, должность, Кому, время и действия */}
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                <span className="text-xs font-semibold text-white">
+                                  {senderName}
                                 </span>
-                              )}
-                              <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#1C1C20] border border-[#2C2C32] text-[10px] font-medium text-[#D4D4D8]">
-                                {contourLabel}
-                              </span>
+                                {senderRole && (
+                                  <span className="text-[11px] text-[#8E8E93]">
+                                    · {senderRole}
+                                  </span>
+                                )}
+                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#1F1F26] border border-[#2E2E38] text-[10px] font-medium text-[#D4D4D8]">
+                                  Кому: {recipientLabel}
+                                </span>
+                                {msg.is_urgent && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/15 border border-red-500/30 text-[10px] font-semibold text-red-300">
+                                    <AlertCircle className="w-2.5 h-2.5" />
+                                    <span>Срочно</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2.5 shrink-0">
+                                <span className="text-[11px] font-mono text-[#71717A]">
+                                  {createdTime}
+                                </span>
+
+                                {canCreateOrEditTasks && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConvertMessageToTask(msg)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#202026] hover:bg-white hover:text-black text-[11px] font-medium text-[#E4E4E7] border border-[#32323A] transition-colors"
+                                    title="Создать поручение на основе этого сообщения"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    <span>В задачу</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-[11px] font-mono text-[#71717A]">
-                                {createdTime}
-                              </span>
-                              {msg.sender_id && msg.sender_id !== currentProfile?.id && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCommScope('direct');
-                                    setCommRecipientId(msg.sender_id!);
-                                  }}
-                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                                >
-                                  <Reply className="w-3 h-3" />
-                                  <span>{t('comm.replyQuick')}</span>
-                                </button>
-                              )}
+                            {/* Текст сообщения */}
+                            <div className="text-sm text-zinc-100 leading-relaxed whitespace-pre-wrap break-words">
+                              {messageBody}
                             </div>
                           </div>
-
-                          <p className="text-xs text-[#E4E4E7] whitespace-pre-wrap leading-relaxed">
-                            {msg.text}
-                          </p>
                         </div>
                       );
-                    })}
+                    })
+                  )}
+                </div>
+
+                {/* Нижняя панель ввода (Composer) */}
+                <form
+                  onSubmit={handleSendCorporateMessage}
+                  className="p-4 border-t border-[#1F1F1F] bg-[#0E0E11] space-y-3"
+                >
+                  <div>
+                    <textarea
+                      rows={2}
+                      value={commText}
+                      onChange={(e) => setCommText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void submitCurrentCommMessage();
+                        }
+                      }}
+                      placeholder={
+                        activeCommThread.type === 'direct'
+                          ? `Написать личное сообщение для ${activeCommThread.label}... (Enter — отправить, Shift+Enter — новая строка)`
+                          : activeCommThread.type === 'department'
+                          ? `Сообщение в отдел #${activeCommThread.label}... (Enter — отправить, Shift+Enter — новая строка)`
+                          : 'Опубликовать циркуляр по компании... (Enter — отправить, Shift+Enter — новая строка)'
+                      }
+                      className="w-full rounded-lg border border-[#262626] bg-[#16161A] px-3.5 py-2.5 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none leading-relaxed resize-none"
+                    />
                   </div>
-                )}
-              </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs text-[#D4D4D8] cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={commUrgent}
+                        onChange={(e) => setCommUrgent(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F]"
+                      />
+                      <span>Срочный Push в Telegram</span>
+                    </label>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <button
+                        type="submit"
+                        disabled={isSendingComm || !commText.trim()}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
+                      >
+                        {isSendingComm ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
+                        <span>{isSendingComm ? t('comm.sendingBtn') : 'Отправить'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </section>
             </div>
           )}
 
@@ -2634,9 +2858,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
         nodes={safeNodes}
         departments={companyDepartments}
         botUsername={botUsername}
+        initialTaskDraft={initialTaskDraft}
         onAddCompanyDepartment={handleAddDepartment}
-        onClose={() => setModalType(null)}
+        onClose={() => {
+          setModalType(null);
+          setInitialTaskDraft(null);
+        }}
         onSuccess={async (pushSent) => {
+          setInitialTaskDraft(null);
           await onRefresh();
           if (pushSent) {
             showToast(t('toast.pushSent'));

@@ -96,10 +96,12 @@ function AppContent() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadWorkspaceData = useCallback(async (isInitial = false) => {
+  const loadWorkspaceData = useCallback(async (isInitial = false, silent = false) => {
     if (isInitial) setIsLoading(true);
-    setIsSyncing(true);
-    setErrorMessage(null);
+    if (!silent) {
+      setIsSyncing(true);
+      setErrorMessage(null);
+    }
 
     try {
       const params = new URLSearchParams(window.location.search);
@@ -154,17 +156,27 @@ function AppContent() {
         setCurrentProfile(null);
       }
     } catch (err: any) {
-      console.error('[App] Failed to fetch workspace data from /api/db:', err);
-      setErrorMessage(err?.message || 'Не удалось загрузить данные из /api/db');
+      if (!silent) {
+        console.error('[App] Failed to fetch workspace data from /api/db:', err);
+        setErrorMessage(err?.message || 'Не удалось загрузить данные из /api/db');
+      }
     } finally {
-      setIsLoading(false);
-      setIsSyncing(false);
+      if (isInitial) setIsLoading(false);
+      if (!silent) setIsSyncing(false);
     }
   }, []);
 
   useEffect(() => {
     loadWorkspaceData(true);
   }, [loadWorkspaceData]);
+
+  useEffect(() => {
+    if (!currentProfile) return;
+    const interval = setInterval(() => {
+      void loadWorkspaceData(false, true);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [currentProfile, loadWorkspaceData]);
 
   const handleAuthenticated = useCallback(
     async (profile: OrganizationNode, authCompany: Company | null) => {

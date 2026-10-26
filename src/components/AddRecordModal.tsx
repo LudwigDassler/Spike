@@ -30,6 +30,14 @@ import { useLocale } from '../i18n/LocaleContext';
 
 export type ModalRecordType = 'tasks' | 'organization_nodes' | 'crm_leads' | null;
 
+export interface InitialTaskDraft {
+  title?: string;
+  description?: string;
+  assigned_to?: string | null;
+  department?: string | null;
+  priority?: TaskPriority;
+}
+
 interface AddRecordModalProps {
   type: ModalRecordType;
   companyId: string;
@@ -38,6 +46,7 @@ interface AddRecordModalProps {
   nodes: OrganizationNode[];
   departments?: string[];
   botUsername?: string;
+  initialTaskDraft?: InitialTaskDraft | null;
   onAddCompanyDepartment?: (deptName: string) => Promise<void> | void;
   onClose: () => void;
   onSuccess: (pushSent?: boolean) => Promise<void> | void;
@@ -51,6 +60,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   nodes,
   departments = [],
   botUsername = 'TedCloudEnterpriseBot',
+  initialTaskDraft,
   onAddCompanyDepartment,
   onClose,
   onSuccess,
@@ -76,10 +86,27 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const [isTaskCustomDept, setIsTaskCustomDept] = useState<boolean>(false);
 
   useEffect(() => {
+    if (type === 'tasks' && initialTaskDraft) {
+      setTaskTitle(initialTaskDraft.title || '');
+      setTaskDescription(initialTaskDraft.description || '');
+      if (initialTaskDraft.priority) {
+        setTaskPriority(initialTaskDraft.priority);
+      }
+      if (initialTaskDraft.assigned_to !== undefined) {
+        setTaskAssignedTo(initialTaskDraft.assigned_to || '');
+      } else if (currentProfileId) {
+        setTaskAssignedTo(currentProfileId);
+      }
+      if (initialTaskDraft.department !== undefined) {
+        setTaskDepartment(initialTaskDraft.department || '');
+      }
+      return;
+    }
+
     if (currentProfileId) {
       setTaskAssignedTo(currentProfileId);
     }
-  }, [currentProfileId, type]);
+  }, [currentProfileId, type, initialTaskDraft]);
 
   // Employee fields
   const [empName, setEmpName] = useState('');

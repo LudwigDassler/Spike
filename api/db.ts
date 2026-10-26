@@ -58,17 +58,14 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'sender_id',
     'sender_name',
     'sender_role',
-    'recipient_id',
-    'target_department',
-    'scope_type',
-    'task_id',
-    'lead_id',
-    'entity_id',
-    'entity_title',
+    'target_type',
+    'target_id',
+    'target_label',
+    'message_text',
     'text',
-    'message',
-    'content',
     'is_urgent',
+    'is_read',
+    'created_at',
   ],
 };
 
@@ -590,7 +587,7 @@ async function sendTelegramWorkspaceMessagePush(params: {
 
   const allNodes = await fetchAllCompanyNodes(supabase);
   const senderNode = messageRecord.sender_id
-    ? allNodes.find((n) => n.id === messageRecord.sender_id)
+    ? allNodes.find((n) => String(n.id) === String(messageRecord.sender_id))
     : null;
 
   const senderName = escapeHtml(
@@ -600,41 +597,71 @@ async function sendTelegramWorkspaceMessagePush(params: {
     senderNode?.role_type || messageRecord.sender_role || 'Специалист'
   );
 
+  const rawTargetType = String(
+    messageRecord.target_type || messageRecord.scope_type || ''
+  )
+    .trim()
+    .toLowerCase();
+  const targetId = String(
+    messageRecord.target_id || messageRecord.recipient_id || ''
+  ).trim();
+  const targetLabel = String(
+    messageRecord.target_label ||
+      messageRecord.target_department ||
+      messageRecord.entity_title ||
+      ''
+  ).trim();
+
   let targetNodes: any[] = [];
   let contourLabel = 'Общее оповещение по компании';
 
-  if (messageRecord.scope_type === 'task' || messageRecord.task_id) {
-    contourLabel = messageRecord.entity_title
-      ? `Задача: ${escapeHtml(messageRecord.entity_title)}`
-      : 'Задача';
-  } else if (messageRecord.scope_type === 'deal' || messageRecord.lead_id) {
-    contourLabel = messageRecord.entity_title
-      ? `Сделка: ${escapeHtml(messageRecord.entity_title)}`
-      : 'Сделка CRM';
-  } else if (messageRecord.scope_type === 'department' || messageRecord.target_department) {
-    contourLabel = `Отдел: ${escapeHtml(messageRecord.target_department || '')}`;
-  } else if (messageRecord.scope_type === 'direct' || messageRecord.recipient_id) {
+  if (rawTargetType === 'task' || messageRecord.task_id) {
+    contourLabel = targetLabel ? `Задача: ${escapeHtml(targetLabel)}` : 'Задача';
+  } else if (rawTargetType === 'deal' || rawTargetType === 'lead' || messageRecord.lead_id) {
+    contourLabel = targetLabel ? `Сделка: ${escapeHtml(targetLabel)}` : 'Сделка CRM';
+  } else if (rawTargetType === 'department' || messageRecord.target_department) {
+    const deptName = targetLabel || targetId || messageRecord.target_department || '';
+    contourLabel = `Отдел: ${escapeHtml(deptName)}`;
+  } else if (rawTargetType === 'direct' || messageRecord.recipient_id) {
     contourLabel = 'Личное сообщение';
   }
 
-  if (messageRecord.recipient_id) {
-    const rec = allNodes.find((n) => n.id === messageRecord.recipient_id);
+  if (rawTargetType === 'direct' || messageRecord.recipient_id) {
+    const rec = allNodes.find(
+      (n) =>
+        (targetId && String(n.id) === targetId) ||
+        (targetLabel &&
+          String(n.name || '')
+            .trim()
+            .toLowerCase() === targetLabel.toLowerCase())
+    );
     if (rec && rec.telegram_chat_id) {
       targetNodes = [rec];
     }
-  } else if (messageRecord.target_department) {
-    const deptLower = String(messageRecord.target_department).trim().toLowerCase();
+  } else if (rawTargetType === 'department' || messageRecord.target_department) {
+    const deptLower = String(targetId || targetLabel || messageRecord.target_department || '')
+      .trim()
+      .toLowerCase();
     targetNodes = allNodes.filter(
       (n) =>
         n.telegram_chat_id &&
-        n.id !== messageRecord.sender_id &&
+        String(n.id) !== String(messageRecord.sender_id || '') &&
         String(n.department || '')
           .trim()
           .toLowerCase() === deptLower
     );
+  } else if (
+    (rawTargetType === 'task' || rawTargetType === 'deal') &&
+    messageRecord.recipient_id
+  ) {
+    const rec = allNodes.find((n) => String(n.id) === String(messageRecord.recipient_id));
+    if (rec && rec.telegram_chat_id) {
+      targetNodes = [rec];
+    }
   } else {
     targetNodes = allNodes.filter(
-      (n) => n.telegram_chat_id && n.id !== messageRecord.sender_id
+      (n) =>
+        n.telegram_chat_id && String(n.id) !== String(messageRecord.sender_id || '')
     );
   }
 
@@ -648,12 +675,20 @@ async function sendTelegramWorkspaceMessagePush(params: {
     'https://tedcloud.vercel.app'
   ).replace(/\/$/, '');
 
+  const msgBody = String(
+    messageRecord.message_text ||
+      messageRecord.text ||
+      messageRecord.content ||
+      messageRecord.message ||
+      ''
+  ).trim();
+
   const htmlText = [
     '<b>ВХОДЯЩЕЕ СООБЩЕНИЕ TEDCLOUD</b>',
     `От: ${senderName} (${senderRole})`,
     `Контур: ${contourLabel}`,
     '',
-    escapeHtml(messageRecord.text || ''),
+    escapeHtml(msgBody),
   ].join('\n');
 
   let pushedCount = 0;
@@ -804,24 +839,138 @@ function normalizeLeadRow(row: any) {
 }
 
 function normalizeMessageRow(row: any) {
-  const textVal = row.text || row.message || row.content || '';
+  const extras = row.id ? recordExtrasOverlay.get(`workspace_messages:${row.id}`) : undefined;
+  const merged = { ...(extras || {}), ...row };
+
+  const msgBody = String(
+    row.message_text ||
+      row.text ||
+      row.content ||
+      row.message ||
+      extras?.message_text ||
+      extras?.text ||
+      extras?.content ||
+      ''
+  ).trim();
+
+  const rowType = String(row.target_type || row.scope_type || '').trim().toLowerCase();
+  const extraType = String(extras?.target_type || extras?.scope_type || '').trim().toLowerCase();
+  const rawType =
+    rowType && rowType !== 'general'
+      ? rowType
+      : extraType && extraType !== 'general'
+      ? extraType
+      : rowType || extraType;
+
+  const targetType =
+    rawType === 'direct'
+      ? 'direct'
+      : rawType === 'department'
+      ? 'department'
+      : rawType === 'task' || merged.task_id
+      ? 'task'
+      : rawType === 'deal' || rawType === 'lead' || merged.lead_id
+      ? 'deal'
+      : merged.recipient_id || extras?.recipient_id
+      ? 'direct'
+      : merged.target_department || extras?.target_department
+      ? 'department'
+      : rawType === 'general'
+      ? 'general'
+      : 'broadcast';
+
+  const rawTargetId = row.target_id ?? extras?.target_id;
+  const targetId =
+    rawTargetId !== undefined && rawTargetId !== null && String(rawTargetId) !== ''
+      ? String(rawTargetId)
+      : targetType === 'direct' && (merged.recipient_id || extras?.recipient_id)
+      ? String(merged.recipient_id || extras?.recipient_id)
+      : targetType === 'department' && (merged.target_department || extras?.target_department)
+      ? String(merged.target_department || extras?.target_department)
+      : targetType === 'task' && (merged.task_id || extras?.task_id)
+      ? String(merged.task_id || extras?.task_id)
+      : targetType === 'deal' && (merged.lead_id || extras?.lead_id)
+      ? String(merged.lead_id || extras?.lead_id)
+      : null;
+
+  const targetLabel =
+    row.target_label ||
+    extras?.target_label ||
+    (targetType === 'department'
+      ? merged.target_department || extras?.target_department || targetId
+      : targetType === 'task' || targetType === 'deal'
+      ? merged.entity_title || extras?.entity_title || null
+      : targetType === 'broadcast' || targetType === 'general'
+      ? 'Всем сотрудникам'
+      : null);
+
   return {
-    ...row,
-    text: textVal,
-    scope_type:
-      row.scope_type ||
-      (row.task_id
-        ? 'task'
-        : row.lead_id
-        ? 'deal'
-        : row.target_department
-        ? 'department'
-        : row.recipient_id
-        ? 'direct'
-        : 'broadcast'),
-    is_urgent: Boolean(row.is_urgent),
-    created_at: row.created_at || new Date().toISOString(),
+    ...merged,
+    message_text: msgBody,
+    text: msgBody,
+    content: msgBody,
+    target_type: targetType,
+    target_id: targetId,
+    target_label: targetLabel,
+    scope_type: targetType === 'general' ? 'broadcast' : targetType,
+    recipient_id: targetType === 'direct' ? targetId : merged.recipient_id || null,
+    target_department:
+      targetType === 'department' ? targetLabel || targetId : merged.target_department || null,
+    task_id: targetType === 'task' ? targetId : merged.task_id || null,
+    lead_id: targetType === 'deal' ? targetId : merged.lead_id || null,
+    entity_id:
+      targetType === 'task' || targetType === 'deal' ? targetId : merged.entity_id || null,
+    entity_title:
+      targetType === 'task' || targetType === 'deal' ? targetLabel : merged.entity_title || null,
+    is_urgent: Boolean(merged.is_urgent),
+    is_read: Boolean(merged.is_read),
+    created_at: merged.created_at || new Date().toISOString(),
   };
+}
+
+/**
+ * Серверная фильтрация приватности сообщений workspace_messages для текущего пользователя
+ */
+function canServerUserSeeMessage(msg: any, currentUser: any | null): boolean {
+  if (!msg) return false;
+  if (!currentUser || !currentUser.id) return true;
+
+  const userId = String(currentUser.id).trim();
+  const userName = String(currentUser.name || '').trim().toLowerCase();
+  const userDept = String(currentUser.department || '').trim().toLowerCase();
+  const userAccess = normalizeAccessLevel(currentUser.access_level, currentUser.role_type);
+
+  const tType = String(msg.target_type || msg.scope_type || 'broadcast')
+    .trim()
+    .toLowerCase();
+  const senderId = msg.sender_id ? String(msg.sender_id).trim() : '';
+  const targetId = msg.target_id
+    ? String(msg.target_id).trim()
+    : msg.recipient_id
+    ? String(msg.recipient_id).trim()
+    : '';
+  const targetLabelLower = String(msg.target_label || msg.target_department || '')
+    .trim()
+    .toLowerCase();
+
+  // Если msg.target_type === 'direct': видят ТОЛЬКО отправитель и получатель!
+  if (tType === 'direct') {
+    if (senderId && senderId === userId) return true;
+    if (targetId && targetId === userId) return true;
+    if (userName && targetLabelLower && targetLabelLower === userName) return true;
+    return false;
+  }
+
+  // Если msg.target_type === 'department': видят сотрудники этого отдела и администраторы (root)
+  if (tType === 'department') {
+    if (userAccess === 'root') return true;
+    if (senderId && senderId === userId) return true;
+    if (!userDept) return false;
+    return userDept === targetId.toLowerCase() || userDept === targetLabelLower;
+  }
+
+  // general, broadcast, task, deal — видят сотрудники компании
+  return true;
 }
 
 function findMatchingNodeByInput(nodes: any[], rawInput: string): any | null {
@@ -857,6 +1006,11 @@ export default async function handler(req: any, res: any) {
           currentProfile = findMatchingNodeByInput(nodes, chatId);
         }
 
+        const allNormalizedMessages = localStore.workspace_messages.map(normalizeMessageRow);
+        const privateMessages = currentProfile
+          ? allNormalizedMessages.filter((m) => canServerUserSeeMessage(m, currentProfile))
+          : allNormalizedMessages;
+
         return res.status(200).json({
           ok: true,
           mode: 'local_empty',
@@ -865,7 +1019,7 @@ export default async function handler(req: any, res: any) {
           nodes,
           tasks: localStore.tasks.map(normalizeTaskRow),
           leads: localStore.crm_leads.map(normalizeLeadRow),
-          messages: localStore.workspace_messages.map(normalizeMessageRow),
+          messages: privateMessages,
         });
       }
 
@@ -874,7 +1028,7 @@ export default async function handler(req: any, res: any) {
         safeSelectTable(supabase, 'organization_nodes', true),
         safeSelectTable(supabase, 'tasks', false),
         safeSelectTable(supabase, 'crm_leads', false),
-        safeSelectTable(supabase, 'workspace_messages', false, 100),
+        safeSelectTable(supabase, 'workspace_messages', false, 200),
       ]);
 
       if (nodesRes.error) {
@@ -885,6 +1039,13 @@ export default async function handler(req: any, res: any) {
       const rawTasks = (tasksRes.data || []).map(normalizeTaskRow);
       const rawLeads = (leadsRes.data || []).map(normalizeLeadRow);
 
+      let currentProfile = null;
+      if (profileId) {
+        currentProfile = rawNodes.find((n: any) => n.id === profileId) || null;
+      } else if (chatId) {
+        currentProfile = findMatchingNodeByInput(rawNodes, chatId);
+      }
+
       // Merge remote workspace_messages with any in-memory fallback messages
       const remoteMessages = Array.isArray(messagesRes.data) ? messagesRes.data : [];
       const seenMsgIds = new Set<string>();
@@ -892,15 +1053,11 @@ export default async function handler(req: any, res: any) {
       for (const m of [...remoteMessages, ...localStore.workspace_messages]) {
         if (m && m.id && !seenMsgIds.has(m.id)) {
           seenMsgIds.add(m.id);
-          mergedMessages.push(normalizeMessageRow(m));
+          const norm = normalizeMessageRow(m);
+          if (!currentProfile || canServerUserSeeMessage(norm, currentProfile)) {
+            mergedMessages.push(norm);
+          }
         }
-      }
-
-      let currentProfile = null;
-      if (profileId) {
-        currentProfile = rawNodes.find((n: any) => n.id === profileId) || null;
-      } else if (chatId) {
-        currentProfile = findMatchingNodeByInput(rawNodes, chatId);
       }
 
       return res.status(200).json({
@@ -1347,9 +1504,67 @@ export default async function handler(req: any, res: any) {
 
       // БЛОК 4: Единое инфополе и мгновенная связь между сотрудниками (workspace_messages)
       if (table === 'workspace_messages') {
-        const textVal = String(payload.text || payload.message || payload.content || '').trim();
-        if (!textVal) {
+        const msgBody = String(
+          payload.message_text || payload.text || payload.content || payload.message || ''
+        ).trim();
+        if (!msgBody) {
           return res.status(400).json({ error: 'Текст сообщения не может быть пустым.' });
+        }
+
+        const allNodes = await fetchAllCompanyNodes(supabase);
+        const rawTargetType = String(
+          payload.target_type || payload.scope_type || payload.scope || ''
+        )
+          .trim()
+          .toLowerCase();
+
+        let resolvedTargetType: string = 'broadcast';
+        let resolvedTargetId: string | null = null;
+        let resolvedTargetLabel: string = 'Всем сотрудникам';
+
+        if (rawTargetType === 'task' || payload.task_id) {
+          resolvedTargetType = 'task';
+          resolvedTargetId = String(
+            payload.task_id || payload.target_id || payload.entity_id || ''
+          ).trim() || null;
+          resolvedTargetLabel = String(
+            payload.target_label || payload.entity_title || 'Задача'
+          ).trim();
+        } else if (rawTargetType === 'deal' || rawTargetType === 'lead' || payload.lead_id) {
+          resolvedTargetType = 'deal';
+          resolvedTargetId = String(
+            payload.lead_id || payload.target_id || payload.entity_id || ''
+          ).trim() || null;
+          resolvedTargetLabel = String(
+            payload.target_label || payload.entity_title || 'Сделка CRM'
+          ).trim();
+        } else if (
+          rawTargetType === 'direct' ||
+          payload.recipient_id ||
+          (payload.target_id &&
+            rawTargetType !== 'department' &&
+            rawTargetType !== 'broadcast' &&
+            rawTargetType !== 'general')
+        ) {
+          resolvedTargetType = 'direct';
+          resolvedTargetId = String(payload.target_id || payload.recipient_id || '').trim() || null;
+          const recipientNode = resolvedTargetId
+            ? allNodes.find((n) => String(n.id) === resolvedTargetId)
+            : null;
+          resolvedTargetLabel = String(
+            payload.target_label || recipientNode?.name || 'Сотрудник'
+          ).trim();
+        } else if (rawTargetType === 'department' || payload.target_department) {
+          resolvedTargetType = 'department';
+          const deptVal = String(
+            payload.target_id || payload.target_department || payload.target_label || ''
+          ).trim();
+          resolvedTargetId = deptVal || null;
+          resolvedTargetLabel = String(payload.target_label || deptVal || 'Отдел').trim();
+        } else {
+          resolvedTargetType = rawTargetType === 'general' ? 'general' : 'broadcast';
+          resolvedTargetId = null;
+          resolvedTargetLabel = String(payload.target_label || 'Всем сотрудникам').trim();
         }
 
         const rawMsgPayload: Record<string, any> = {
@@ -1357,32 +1572,44 @@ export default async function handler(req: any, res: any) {
           sender_id: payload.sender_id || null,
           sender_name: payload.sender_name || 'Сотрудник TedCloud',
           sender_role: payload.sender_role || '',
-          recipient_id: payload.recipient_id || null,
-          target_department: payload.target_department || null,
-          scope_type:
-            payload.scope_type ||
-            (payload.task_id
-              ? 'task'
-              : payload.lead_id
-              ? 'deal'
-              : payload.target_department
-              ? 'department'
-              : payload.recipient_id
-              ? 'direct'
-              : 'broadcast'),
-          task_id: payload.task_id || null,
-          lead_id: payload.lead_id || null,
-          entity_id: payload.entity_id || payload.task_id || payload.lead_id || null,
-          entity_title: payload.entity_title || null,
-          text: textVal,
-          message: textVal,
-          content: textVal,
+          target_type: resolvedTargetType,
+          target_id: resolvedTargetId,
+          target_label: resolvedTargetLabel,
+          message_text: msgBody,
+          text: msgBody,
           is_urgent: Boolean(payload.is_urgent),
+          is_read: Boolean(payload.is_read ?? false),
+        };
+
+        const fullRecordExtras: Record<string, any> = {
+          ...rawMsgPayload,
+          content: msgBody,
+          scope_type: resolvedTargetType === 'general' ? 'broadcast' : resolvedTargetType,
+          recipient_id:
+            resolvedTargetType === 'direct'
+              ? resolvedTargetId
+              : payload.recipient_id || null,
+          target_department:
+            resolvedTargetType === 'department'
+              ? resolvedTargetLabel
+              : payload.target_department || null,
+          task_id:
+            resolvedTargetType === 'task' ? resolvedTargetId : payload.task_id || null,
+          lead_id:
+            resolvedTargetType === 'deal' ? resolvedTargetId : payload.lead_id || null,
+          entity_id:
+            resolvedTargetType === 'task' || resolvedTargetType === 'deal'
+              ? resolvedTargetId
+              : payload.entity_id || null,
+          entity_title:
+            resolvedTargetType === 'task' || resolvedTargetType === 'deal'
+              ? resolvedTargetLabel
+              : payload.entity_title || null,
         };
 
         let savedMsg: any = {
           id: crypto.randomUUID(),
-          ...rawMsgPayload,
+          ...fullRecordExtras,
           created_at: new Date().toISOString(),
         };
 
@@ -1393,8 +1620,30 @@ export default async function handler(req: any, res: any) {
             rawMsgPayload
           );
           if (!error && data) {
-            savedMsg = { ...savedMsg, ...data, text: textVal };
+            savedMsg = {
+              ...fullRecordExtras,
+              ...data,
+              target_type: data.target_type && data.target_type !== 'general'
+                ? data.target_type
+                : resolvedTargetType,
+              target_id: data.target_id ?? resolvedTargetId,
+              target_label: data.target_label ?? resolvedTargetLabel,
+              message_text: msgBody,
+              text: msgBody,
+              content: msgBody,
+            };
           }
+        }
+
+        if (savedMsg?.id) {
+          recordExtrasOverlay.set(`workspace_messages:${savedMsg.id}`, {
+            ...fullRecordExtras,
+            message_text: msgBody,
+            text: msgBody,
+            target_type: resolvedTargetType,
+            target_id: resolvedTargetId,
+            target_label: resolvedTargetLabel,
+          });
         }
 
         localStore.workspace_messages.unshift(savedMsg);

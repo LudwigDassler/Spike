@@ -114,7 +114,14 @@ export interface CrmLeadRecord {
   created_at?: string;
 }
 
-export type MessageScopeType = 'direct' | 'department' | 'broadcast' | 'task' | 'lead';
+export type MessageScopeType =
+  | 'direct'
+  | 'department'
+  | 'broadcast'
+  | 'general'
+  | 'task'
+  | 'deal'
+  | 'lead';
 
 export interface WorkspaceMessageRecord {
   id: string;
@@ -122,17 +129,24 @@ export interface WorkspaceMessageRecord {
   sender_id: string;
   sender_name?: string | null;
   sender_role?: string | null;
+  target_type?: MessageScopeType | string | null;
+  target_id?: string | null;
+  target_label?: string | null;
+  message_text?: string | null;
+  text?: string | null;
+  content?: string | null;
   recipient_id?: string | null;
   target_department?: string | null;
   department?: string | null;
   scope?: MessageScopeType;
+  scope_type?: MessageScopeType | string | null;
   task_id?: string | null;
   lead_id?: string | null;
   entity_type?: 'task' | 'lead' | 'direct' | 'department' | 'broadcast' | null;
   entity_id?: string | null;
-  content: string;
-  text?: string;
+  entity_title?: string | null;
   is_urgent?: boolean;
+  is_read?: boolean;
   created_at?: string;
 }
 

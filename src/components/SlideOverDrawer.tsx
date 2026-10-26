@@ -110,9 +110,17 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   const entityComments = safeMessages.filter((m) => {
     if (!m) return false;
     if (isTask) {
-      return m.task_id === record.id || m.entity_id === record.id;
+      return (
+        m.task_id === record.id ||
+        m.entity_id === record.id ||
+        (m.target_type === 'task' && m.target_id === record.id)
+      );
     }
-    return m.lead_id === record.id || m.entity_id === record.id;
+    return (
+      m.lead_id === record.id ||
+      m.entity_id === record.id ||
+      ((m.target_type === 'deal' || m.target_type === 'lead') && m.target_id === record.id)
+    );
   });
 
   const createdAtFormatted = record.created_at
@@ -169,21 +177,27 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
     setIsSendingComment(true);
     try {
       const recipientId = currentAssigneeId || authorNode?.id || null;
+      const entityTitle = isTask
+        ? (record as TaskRecord).title
+        : (record as CrmLeadRecord).client_name || (record as CrmLeadRecord).title || 'Сделка CRM';
+      const cleanComment = commentText.trim();
       await onSendMessage({
         company_id: record.company_id,
         sender_id: currentProfile?.id || null,
         sender_name: currentProfile?.name || 'TedCloud',
         sender_role: currentProfile?.role_type || '',
+        target_type: isTask ? 'task' : 'deal',
+        target_id: record.id,
+        target_label: entityTitle,
         recipient_id: recipientId,
         target_department: record.department || null,
         scope_type: isTask ? 'task' : 'deal',
         task_id: isTask ? record.id : null,
         lead_id: !isTask ? record.id : null,
         entity_id: record.id,
-        entity_title: isTask
-          ? (record as TaskRecord).title
-          : (record as CrmLeadRecord).client_name || (record as CrmLeadRecord).title,
-        text: commentText.trim(),
+        entity_title: entityTitle,
+        message_text: cleanComment,
+        text: cleanComment,
         is_urgent: commentUrgent,
       });
       setCommentText('');
@@ -562,8 +576,8 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                             {timeStr}
                           </span>
                         </div>
-                        <p className="text-[#E4E4E7] whitespace-pre-wrap leading-relaxed">
-                          {msg.text}
+                        <p className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
+                          {msg.message_text || msg.text || msg.content}
                         </p>
                       </div>
                     );

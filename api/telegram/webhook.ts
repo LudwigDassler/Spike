@@ -45,17 +45,14 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'sender_id',
     'sender_name',
     'sender_role',
-    'recipient_id',
-    'target_department',
-    'scope_type',
-    'task_id',
-    'lead_id',
-    'entity_id',
-    'entity_title',
+    'target_type',
+    'target_id',
+    'target_label',
+    'message_text',
     'text',
-    'message',
-    'content',
     'is_urgent',
+    'is_read',
+    'created_at',
   ],
 };
 
@@ -1045,45 +1042,63 @@ export default async function handler(req: any, res: any) {
         const { data: allNodes } = await supabase.from('organization_nodes').select('*');
         const nodesList = allNodes || [];
 
+        const msgBody = String(rawText || '').trim();
         let targetNodes: any[] = [];
         let contourLabel = 'Общее оповещение по компании';
         let recipientLabel = 'Вся компания';
 
+        let resolvedTargetType: 'direct' | 'department' | 'broadcast' = 'broadcast';
+        let resolvedTargetId: string | null = null;
+        let resolvedTargetLabel = 'Всем сотрудникам';
+
         if (activeCommState.mode === 'direct' && activeCommState.targetNodeId) {
-          const found = nodesList.find((n: any) => n.id === activeCommState.targetNodeId);
-          if (found) {
-            targetNodes = [found];
-            recipientLabel = `${found.name} (${found.role_type || 'Специалист'})`;
+          const recipientNode = nodesList.find(
+            (n: any) => String(n.id) === String(activeCommState.targetNodeId)
+          );
+          resolvedTargetType = 'direct';
+          resolvedTargetId = String(recipientNode?.id || activeCommState.targetNodeId);
+          resolvedTargetLabel = recipientNode?.name || 'Сотрудник';
+
+          if (recipientNode) {
+            targetNodes = [recipientNode];
+            recipientLabel = `${recipientNode.name} (${recipientNode.role_type || 'Специалист'})`;
           }
           contourLabel = 'Личное сообщение';
         } else if (activeCommState.mode === 'department' && activeCommState.targetDepartment) {
-          const deptClean = activeCommState.targetDepartment.trim().toLowerCase();
+          const deptClean = activeCommState.targetDepartment.trim();
+          resolvedTargetType = 'department';
+          resolvedTargetId = deptClean;
+          resolvedTargetLabel = deptClean;
+
           targetNodes = nodesList.filter(
             (n: any) =>
-              n.id !== user.id &&
+              String(n.id) !== String(user.id) &&
               String(n.department || '')
                 .trim()
-                .toLowerCase() === deptClean
+                .toLowerCase() === deptClean.toLowerCase()
           );
-          contourLabel = `Отдел: ${activeCommState.targetDepartment}`;
-          recipientLabel = `Подразделение «${activeCommState.targetDepartment}»`;
+          contourLabel = `Отдел: ${deptClean}`;
+          recipientLabel = `Подразделение «${deptClean}»`;
         } else {
-          targetNodes = nodesList.filter((n: any) => n.id !== user.id);
+          resolvedTargetType = 'broadcast';
+          resolvedTargetId = null;
+          resolvedTargetLabel = 'Всем сотрудникам';
+          targetNodes = nodesList.filter((n: any) => String(n.id) !== String(user.id));
         }
 
-        // Сохраняем сообщение в таблицу workspace_messages
+        // Железобетонное сохранение текста и адресата в таблицу workspace_messages
         await safeWebhookInsert(supabase, 'workspace_messages', {
           company_id: companyId,
           sender_id: user.id,
           sender_name: user.name,
           sender_role: user.role_type || 'Специалист',
-          recipient_id: activeCommState.targetNodeId || null,
-          target_department: activeCommState.targetDepartment || null,
-          scope_type: activeCommState.mode,
-          text: rawText,
-          message: rawText,
-          content: rawText,
+          target_type: resolvedTargetType,
+          target_id: resolvedTargetId,
+          target_label: resolvedTargetLabel,
+          message_text: msgBody,
+          text: msgBody,
           is_urgent: true,
+          is_read: false,
         });
 
         const incomingHtml = [
@@ -1091,7 +1106,7 @@ export default async function handler(req: any, res: any) {
           `От: ${escapeHtml(user.name)} (${escapeHtml(user.role_type || 'Специалист')})`,
           `Контур: ${escapeHtml(contourLabel)}`,
           '',
-          escapeHtml(rawText),
+          escapeHtml(msgBody),
         ].join('\n');
 
         let deliveredCount = 0;
