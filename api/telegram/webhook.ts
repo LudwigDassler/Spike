@@ -2,8 +2,16 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-// Серверная память ожидающих делегирования чатов + дублирование в permissions.pending_delegate_to для Serverless
+// Серверная память ожидающих делегирования чатов и отправки корпоративных сообщений
 const pendingDelegateMap = new Map<string, string>();
+
+interface PendingCommState {
+  mode: 'direct' | 'department' | 'broadcast';
+  targetNodeId?: string;
+  targetDepartment?: string;
+}
+
+const pendingCommMap = new Map<string, PendingCommState>();
 
 const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
   tasks: [
@@ -13,6 +21,7 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'type',
     'priority',
     'status',
+    'department',
     'assigned_to',
     'owner_node_id',
     'company_id',
@@ -30,6 +39,23 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'company_id',
     'user_id',
     'tree_path',
+  ],
+  workspace_messages: [
+    'company_id',
+    'sender_id',
+    'sender_name',
+    'sender_role',
+    'recipient_id',
+    'target_department',
+    'scope_type',
+    'task_id',
+    'lead_id',
+    'entity_id',
+    'entity_title',
+    'text',
+    'message',
+    'content',
+    'is_urgent',
   ],
 };
 
@@ -61,7 +87,7 @@ async function safeWebhookInsert(
 ): Promise<{ data: any; error: any }> {
   const payload = sanitizeByWhitelist(table, rawPayload);
 
-  for (let attempt = 0; attempt < 16; attempt++) {
+  for (let attempt = 0; attempt < 20; attempt++) {
     const { data, error } = await supabase.from(table).insert([payload]).select().single();
     if (!error) return { data, error: null };
 
@@ -100,7 +126,7 @@ async function safeWebhookUpdate(
 ): Promise<{ data: any; error: any }> {
   const payload = sanitizeByWhitelist(table, rawUpdates);
 
-  for (let attempt = 0; attempt < 16; attempt++) {
+  for (let attempt = 0; attempt < 20; attempt++) {
     if (Object.keys(payload).length === 0) {
       return { data: { id, ...rawUpdates }, error: null };
     }
@@ -183,12 +209,12 @@ function resolveUserPermissions(user: any): {
 
   const accessLabel =
     accessLevel === 'root'
-      ? 'Суперадминистратор'
+      ? 'Полный доступ'
       : accessLevel === 'manager'
-      ? 'Руководитель подразделения'
+      ? 'Руководитель'
       : accessLevel === 'observer'
-      ? 'Наблюдатель / Аудитор'
-      : 'Штатный специалист';
+      ? 'Аудитор (Чтение)'
+      : 'Базовый доступ';
 
   return {
     accessLevel,
@@ -199,10 +225,12 @@ function resolveUserPermissions(user: any): {
   };
 }
 
+// БЛОК 5: Главное меню командного центра с кнопкой «Связь с коллегами / Отделом» (ZERO EMOJI)
 function buildRoleCommandCenterKeyboard(siteUrl: string, chatId: string, user: any) {
   const { canAssignTasks, canViewCrm } = resolveUserPermissions(user);
   const rows: any[][] = [
     [{ text: 'Мои активные задачи', callback_data: 'menu_my_tasks' }],
+    [{ text: 'Связь с коллегами / Отделом', callback_data: 'menu_comm' }],
   ];
 
   if (canAssignTasks) {
@@ -412,6 +440,29 @@ export default async function handler(req: any, res: any) {
       return { ...rawNewNode, ...(insertedNode || {}) };
     };
 
+    const setPendingCommForUser = async (
+      targetChatId: string,
+      user: any,
+      state: PendingCommState | null
+    ) => {
+      if (state) {
+        pendingCommMap.set(targetChatId, state);
+      } else {
+        pendingCommMap.delete(targetChatId);
+      }
+
+      const { rawPerms } = resolveUserPermissions(user);
+      const updatedPerms = { ...rawPerms };
+      if (state) {
+        updatedPerms.pending_comm = state;
+      } else {
+        delete updatedPerms.pending_comm;
+      }
+      await safeWebhookUpdate(supabase, 'organization_nodes', user.id, {
+        permissions: updatedPerms,
+      });
+    };
+
     const sendCommandCenterCard = async (targetChatId: string, user: any) => {
       const { accessLabel } = resolveUserPermissions(user);
       const userName = escapeHtml(user?.name || 'Сотрудник');
@@ -448,7 +499,12 @@ export default async function handler(req: any, res: any) {
       const activeTasks = (allTasks || []).filter(
         (t: any) =>
           t.status !== 'Done' &&
-          (t.assigned_to === user.id || t.owner_node_id === user.id || t.created_by === user.id)
+          (t.assigned_to === user.id ||
+            t.owner_node_id === user.id ||
+            t.created_by === user.id ||
+            (user.department &&
+              t.department &&
+              String(t.department).toLowerCase() === String(user.department).toLowerCase()))
       );
 
       if (activeTasks.length === 0) {
@@ -470,7 +526,8 @@ export default async function handler(req: any, res: any) {
         const prio =
           t.priority === 'High' ? 'Высокий' : t.priority === 'Low' ? 'Низкий' : 'Средний';
         const st = t.status === 'In Progress' ? 'В работе' : 'К выполнению';
-        return `${index + 1}. [${prio} | ${st}] ${escapeHtml(t.title)}`;
+        const deptTag = t.department ? ` | ${escapeHtml(t.department)}` : '';
+        return `${index + 1}. [${prio} | ${st}${deptTag}] ${escapeHtml(t.title)}`;
       });
 
       const firstTask = activeTasks[0];
@@ -598,6 +655,7 @@ export default async function handler(req: any, res: any) {
 
       // 2. Главное меню
       if (cbData === 'menu_home') {
+        await setPendingCommForUser(cbChatId, user, null);
         if (cbId) await answerCallbackQuery(cbId, 'Командный центр');
         await sendCommandCenterCard(cbChatId, user);
         return res.status(200).send('OK');
@@ -617,7 +675,196 @@ export default async function handler(req: any, res: any) {
         return res.status(200).send('OK');
       }
 
-      // 5. Меню делегирования задачи коллеге
+      // 5. БЛОК 5: Меню «Связь с коллегами / Отделом»
+      if (cbData === 'menu_comm') {
+        if (cbId) await answerCallbackQuery(cbId, 'Выберите контур связи');
+        await sendTelegramMessage(
+          cbChatId,
+          [
+            '<b>ЕДИНОЕ ИНФОПОЛЕ И СВЯЗЬ TEDCLOUD</b>',
+            'Выберите получателя корпоративного сообщения:',
+          ].join('\n'),
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Написать сотруднику', callback_data: 'comm_mode_direct' }],
+                [{ text: 'Оповестить отдел', callback_data: 'comm_mode_dept' }],
+                [{ text: 'Общее сообщение компании', callback_data: 'comm_mode_broadcast' }],
+                [{ text: 'Отмена', callback_data: 'menu_home' }],
+              ],
+            },
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      if (cbData === 'comm_mode_direct') {
+        const { data: nodes } = await supabase.from('organization_nodes').select('*');
+        const employees = (nodes || []).filter((emp: any) => emp.id !== user.id);
+        const listToRender = employees.length > 0 ? employees : nodes || [];
+
+        const buttons = listToRender.slice(0, 12).map((emp: any) => [
+          {
+            text: `${emp.name} (${emp.role_type || 'Специалист'})`,
+            callback_data: `comm_to_node:${emp.id}`,
+          },
+        ]);
+        buttons.push([{ text: 'Отмена', callback_data: 'menu_home' }]);
+
+        if (cbId) await answerCallbackQuery(cbId, 'Выберите сотрудника');
+        await sendTelegramMessage(
+          cbChatId,
+          [
+            '<b>ОТПРАВКА ЛИЧНОГО СООБЩЕНИЯ</b>',
+            'Выберите сотрудника из списка организации:',
+          ].join('\n'),
+          {
+            reply_markup: { inline_keyboard: buttons },
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      if (cbData === 'comm_mode_dept') {
+        const [{ data: nodes }, { data: compRows }] = await Promise.all([
+          supabase.from('organization_nodes').select('department'),
+          supabase.from('companies').select('departments').limit(1),
+        ]);
+
+        const deptSet = new Set<string>();
+        const compDepts = compRows?.[0]?.departments;
+        if (Array.isArray(compDepts)) {
+          compDepts.forEach((d: any) => {
+            if (typeof d === 'string' && d.trim()) deptSet.add(d.trim());
+          });
+        }
+        (nodes || []).forEach((n: any) => {
+          if (n?.department && String(n.department).trim()) {
+            deptSet.add(String(n.department).trim());
+          }
+        });
+
+        const departments = Array.from(deptSet);
+        if (departments.length === 0) {
+          departments.push('Дирекция', 'Отдел продаж');
+        }
+
+        const deptButtons = departments.slice(0, 10).map((deptName) => [
+          {
+            text: deptName,
+            callback_data: `comm_to_dept:${deptName.slice(0, 36)}`,
+          },
+        ]);
+        deptButtons.push([{ text: 'Отмена', callback_data: 'menu_home' }]);
+
+        if (cbId) await answerCallbackQuery(cbId, 'Выберите подразделение');
+        await sendTelegramMessage(
+          cbChatId,
+          [
+            '<b>ОПОВЕЩЕНИЕ ПОДРАЗДЕЛЕНИЯ (ОТДЕЛА)</b>',
+            'Выберите целевой отдел для отправки сообщения всем его сотрудникам:',
+          ].join('\n'),
+          {
+            reply_markup: { inline_keyboard: deptButtons },
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      if (cbData === 'comm_mode_broadcast') {
+        await setPendingCommForUser(cbChatId, user, { mode: 'broadcast' });
+        if (cbId) await answerCallbackQuery(cbId, 'Общее оповещение');
+        await sendTelegramMessage(
+          cbChatId,
+          [
+            '<b>ОБЩЕЕ ОПОВЕЩЕНИЕ ПО КОМПАНИИ</b>',
+            'Отправьте текст сообщения следующим ответом в чат.',
+            'Сообщение будет доставлено всем сотрудникам в Telegram и сохранено в едином инфополе TedCloud.',
+          ].join('\n'),
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_comm' }]],
+            },
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      // Обработка выбора сотрудника или кнопки «Ответить через бота» (reply_msg_<UUID>)
+      if (cbData.startsWith('comm_to_node:') || cbData.startsWith('reply_msg_')) {
+        const targetNodeId = cbData.startsWith('comm_to_node:')
+          ? cbData.slice('comm_to_node:'.length)
+          : cbData.slice('reply_msg_'.length);
+
+        if (!targetNodeId) {
+          return res.status(200).send('OK');
+        }
+
+        const { data: targetNode } = await supabase
+          .from('organization_nodes')
+          .select('*')
+          .eq('id', targetNodeId)
+          .maybeSingle();
+
+        const targetName = targetNode?.name || 'Сотрудник';
+        const targetRole = targetNode?.role_type || 'Специалист';
+
+        await setPendingCommForUser(cbChatId, user, {
+          mode: 'direct',
+          targetNodeId,
+        });
+
+        if (cbId) await answerCallbackQuery(cbId, `Получатель: ${targetName}`);
+        await sendTelegramMessage(
+          cbChatId,
+          [
+            '<b>ОТПРАВКА СООБЩЕНИЯ КОЛЛЕГЕ</b>',
+            `Получатель: <b>${escapeHtml(targetName)} (${escapeHtml(targetRole)})</b>`,
+            '',
+            'Введите текст ответа следующим сообщением в этот чат.',
+          ].join('\n'),
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_comm' }]],
+            },
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      if (cbData.startsWith('comm_to_dept:')) {
+        const targetDept = cbData.slice('comm_to_dept:'.length).trim();
+        await setPendingCommForUser(cbChatId, user, {
+          mode: 'department',
+          targetDepartment: targetDept,
+        });
+
+        if (cbId) await answerCallbackQuery(cbId, `Отдел: ${targetDept}`);
+        await sendTelegramMessage(
+          cbChatId,
+          [
+            '<b>ОТПРАВКА СООБЩЕНИЯ В ОТДЕЛ</b>',
+            `Подразделение: <b>${escapeHtml(targetDept)}</b>`,
+            '',
+            'Введите текст сообщения следующим ответом в чат.',
+          ].join('\n'),
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_comm' }]],
+            },
+          }
+        );
+        return res.status(200).send('OK');
+      }
+
+      if (cbData === 'cancel_comm') {
+        await setPendingCommForUser(cbChatId, user, null);
+        if (cbId) await answerCallbackQuery(cbId, 'Отправка отменена');
+        await sendCommandCenterCard(cbChatId, user);
+        return res.status(200).send('OK');
+      }
+
+      // 6. Меню делегирования задачи коллеге
       if (cbData === 'menu_delegate') {
         const { canAssignTasks } = resolveUserPermissions(user);
         if (!canAssignTasks) {
@@ -657,7 +904,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).send('OK');
       }
 
-      // 6. Выбор конкретного коллеги для поручения
+      // 7. Выбор конкретного коллеги для поручения
       if (cbData.startsWith('delegate_to:')) {
         const targetNodeId = cbData.split(':')[1];
         if (!targetNodeId) {
@@ -748,6 +995,7 @@ export default async function handler(req: any, res: any) {
         rawText.startsWith('/start') && parts.length > 1 ? parts[1].trim() : '';
 
       const user = await findOrCreateUserByChatId(chatId, firstName, startParam);
+      await setPendingCommForUser(chatId, user, null);
       await sendCommandCenterCard(chatId, user);
       return res.status(200).send('OK');
     }
@@ -766,7 +1014,7 @@ export default async function handler(req: any, res: any) {
       return res.status(200).send('OK');
     }
 
-    // 4. КОМАНДА /new ИЛИ ЛЮБОЙ ТЕКСТ ЧАТА — Создание или делегирование задачи
+    // 4. КОМАНДА /new — Создание задачи
     if (rawText === '/new' || rawText.startsWith('/new@')) {
       const user = await findOrCreateUserByChatId(chatId, firstName);
       await sendTelegramMessage(
@@ -782,6 +1030,111 @@ export default async function handler(req: any, res: any) {
     if (rawText.length > 0) {
       const user = await findOrCreateUserByChatId(chatId, firstName);
       const companyId = user.company_id || (await resolveCompanyId());
+      const { rawPerms, canAssignTasks } = resolveUserPermissions(user);
+
+      // БЛОК 5: Проверяем, находится ли пользователь в режиме отправки сообщения коллеге / отделу / компании
+      const activeCommState: PendingCommState | null =
+        pendingCommMap.get(chatId) ||
+        (rawPerms.pending_comm && typeof rawPerms.pending_comm === 'object'
+          ? (rawPerms.pending_comm as PendingCommState)
+          : null);
+
+      if (activeCommState && !rawText.startsWith('/')) {
+        await setPendingCommForUser(chatId, user, null);
+
+        const { data: allNodes } = await supabase.from('organization_nodes').select('*');
+        const nodesList = allNodes || [];
+
+        let targetNodes: any[] = [];
+        let contourLabel = 'Общее оповещение по компании';
+        let recipientLabel = 'Вся компания';
+
+        if (activeCommState.mode === 'direct' && activeCommState.targetNodeId) {
+          const found = nodesList.find((n: any) => n.id === activeCommState.targetNodeId);
+          if (found) {
+            targetNodes = [found];
+            recipientLabel = `${found.name} (${found.role_type || 'Специалист'})`;
+          }
+          contourLabel = 'Личное сообщение';
+        } else if (activeCommState.mode === 'department' && activeCommState.targetDepartment) {
+          const deptClean = activeCommState.targetDepartment.trim().toLowerCase();
+          targetNodes = nodesList.filter(
+            (n: any) =>
+              n.id !== user.id &&
+              String(n.department || '')
+                .trim()
+                .toLowerCase() === deptClean
+          );
+          contourLabel = `Отдел: ${activeCommState.targetDepartment}`;
+          recipientLabel = `Подразделение «${activeCommState.targetDepartment}»`;
+        } else {
+          targetNodes = nodesList.filter((n: any) => n.id !== user.id);
+        }
+
+        // Сохраняем сообщение в таблицу workspace_messages
+        await safeWebhookInsert(supabase, 'workspace_messages', {
+          company_id: companyId,
+          sender_id: user.id,
+          sender_name: user.name,
+          sender_role: user.role_type || 'Специалист',
+          recipient_id: activeCommState.targetNodeId || null,
+          target_department: activeCommState.targetDepartment || null,
+          scope_type: activeCommState.mode,
+          text: rawText,
+          message: rawText,
+          content: rawText,
+          is_urgent: true,
+        });
+
+        const incomingHtml = [
+          '<b>ВХОДЯЩЕЕ СООБЩЕНИЕ TEDCLOUD</b>',
+          `От: ${escapeHtml(user.name)} (${escapeHtml(user.role_type || 'Специалист')})`,
+          `Контур: ${escapeHtml(contourLabel)}`,
+          '',
+          escapeHtml(rawText),
+        ].join('\n');
+
+        let deliveredCount = 0;
+        for (const recipient of targetNodes) {
+          const recChatId = String(recipient?.telegram_chat_id || '').trim();
+          if (!recChatId || recChatId === chatId) continue;
+
+          await sendTelegramMessage(recChatId, incomingHtml, {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: 'Ответить через бота',
+                    callback_data: `reply_msg_${user.id}`,
+                  },
+                ],
+                [
+                  {
+                    text: 'Открыть панель TedCloud',
+                    url: `${siteUrl}/?chatId=${recChatId}`,
+                  },
+                ],
+              ],
+            },
+          });
+          deliveredCount++;
+        }
+
+        await sendTelegramMessage(
+          chatId,
+          [
+            '<b>СООБЩЕНИЕ ОТПРАВЛЕНО</b>',
+            `Адресат: ${escapeHtml(recipientLabel)}`,
+            `Доставлено в Telegram: ${deliveredCount} сотр.`,
+            'Запись синхронизирована с вкладкой «Инфополе и Связь» в TedCloud.',
+          ].join('\n'),
+          {
+            reply_markup: buildRoleCommandCenterKeyboard(siteUrl, chatId, user),
+          }
+        );
+
+        return res.status(200).send('OK');
+      }
 
       const strippedCommandText = rawText.startsWith('/new ')
         ? rawText.slice(5).trim()
@@ -804,7 +1157,6 @@ export default async function handler(req: any, res: any) {
       }
 
       // Проверяем, было ли активировано делегирование задачи коллеге
-      const { rawPerms, canAssignTasks } = resolveUserPermissions(user);
       const delegatedTargetId =
         pendingDelegateMap.get(chatId) ||
         (typeof rawPerms.pending_delegate_to === 'string' ? rawPerms.pending_delegate_to : null);
@@ -841,6 +1193,7 @@ export default async function handler(req: any, res: any) {
           type: 'Task',
           priority: taskPriority,
           status: 'Todo',
+          department: targetAssigneeNode.department || null,
           owner_node_id: targetAssigneeNode.id,
           assigned_to: targetAssigneeNode.id,
           created_by: user.id,
@@ -848,7 +1201,7 @@ export default async function handler(req: any, res: any) {
       );
 
       if (taskInsertError) {
-        throw new Error(`Ошибка записи задачи в БД: ${taskInsertError.message}`);
+        throw new Error(`Ошибка записи задачи: ${taskInsertError.message}`);
       }
 
       const extraRows: any[][] = [];
@@ -859,7 +1212,6 @@ export default async function handler(req: any, res: any) {
         ]);
       }
 
-      // Если задача поручена другому сотруднику, отправляем ему мгновенное Push-уведомление в Telegram
       if (
         isDelegated &&
         targetAssigneeNode.telegram_chat_id &&

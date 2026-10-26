@@ -19,6 +19,7 @@ const ru: Dictionary = {
   'nav.overview': 'Дашборд',
   'nav.tasks': 'Задачи',
   'nav.crm': 'Сделки',
+  'nav.communications': 'Инфополе и Связь',
   'nav.team': 'Штат и Доступы',
   'nav.profile': 'Личный кабинет',
   'nav.workspace': 'Организация и Биллинг',
@@ -59,15 +60,17 @@ const ru: Dictionary = {
   'header.overviewTitle': 'Дашборд организации',
   'header.overviewSubtitle': 'Ключевые показатели эффективности и сводка активных поручений',
   'header.tasksTitle': 'Реестр задач и поручений',
-  'header.tasksSubtitle': 'Управление поручениями с учетом уровня доступа и уведомлением в Telegram',
+  'header.tasksSubtitle': 'Управление поручениями с назначением на сотрудников или подразделения и уведомлением в Telegram',
   'header.crmTitle': 'Воронка корпоративных сделок',
-  'header.crmSubtitle': 'Управление контрактами, стадиями переговоров и финансовым объемом',
+  'header.crmSubtitle': 'Управление контрактами, юридическими реквизитами, стадиями переговоров и выручкой',
+  'header.communicationsTitle': 'Единое инфополе и Связь',
+  'header.communicationsSubtitle': 'Мгновенный обмен сообщениями между сотрудниками, подразделениями и Telegram-ботом',
   'header.teamTitle': 'Штат сотрудников и Матрица доступов',
-  'header.teamSubtitle': 'Свободные должности, подразделения, гранулярная матрица разрешений и коды привязки',
+  'header.teamSubtitle': 'Конструктор подразделений, свободные должности, матрица разрешений и коды привязки',
   'header.profileTitle': 'Личный кабинет сотрудника',
   'header.profileSubtitle': 'Персональные данные, активные системные полномочия и параметры локализации',
   'header.workspaceTitle': 'Организация и Биллинг',
-  'header.workspaceSubtitle': 'Профиль компании, тарифный план, платежные реквизиты и выгрузка реестров в CSV',
+  'header.workspaceSubtitle': 'Профиль компании, структура подразделений, тарифный план, биллинг и выгрузка реестров в CSV',
 
   // Contextual Single Primary Actions (БЛОК 2)
   'actions.searchPlaceholder': 'Поиск по задачам, сделкам, сотрудникам...',
@@ -96,6 +99,7 @@ const ru: Dictionary = {
   'tasks.emptyTitle': 'Активные задачи отсутствуют',
   'tasks.empty': 'Создайте задачу в веб-интерфейсе или отправьте сообщение корпоративному Telegram-боту.',
   'tasks.assignee': 'Исполнитель',
+  'tasks.department': 'Отдел',
   'tasks.unassigned': 'Не назначен',
   'tasks.selfAssignedNote': 'Назначается автоматически на ваш профиль (нет права делегирования)',
 
@@ -111,18 +115,18 @@ const ru: Dictionary = {
   'type.Epic': 'Проект',
 
   // Access Levels
-  'access.root': 'Суперадмин / Владелец (root)',
-  'access.manager': 'Руководитель направления (manager)',
-  'access.member': 'Штатный сотрудник (member)',
-  'access.observer': 'Аудитор / Наблюдатель (observer)',
-  'access.viewer': 'Аудитор / Наблюдатель (observer)',
+  'access.root': 'Суперадмин / Владелец',
+  'access.manager': 'Руководитель направления',
+  'access.member': 'Штатный сотрудник',
+  'access.observer': 'Аудитор / Наблюдатель',
+  'access.viewer': 'Аудитор / Наблюдатель',
   'accessShort.root': 'Полный доступ',
   'accessShort.manager': 'Руководитель',
   'accessShort.member': 'Базовый доступ',
   'accessShort.observer': 'Аудитор (Чтение)',
   'accessShort.viewer': 'Аудитор (Чтение)',
 
-  // 7 Granular Permissions (БЛОК 1)
+  // 7 Granular Permissions & Clean Business Descriptions (БЛОК 1 — без ключей БД)
   'perm.title': 'Матрица индивидуальных разрешений (7 контуров)',
   'perm.tasks_view_all': 'Видеть все задачи компании (иначе — только свои)',
   'perm.tasks_assign': 'Назначать и делегировать задачи другим сотрудникам',
@@ -131,16 +135,40 @@ const ru: Dictionary = {
   'perm.team_manage': 'Управлять разделом «Штат и Доступы» (добавление/удаление)',
   'perm.data_export': 'Выгружать корпоративные отчеты и реестры в CSV',
   'perm.billing_admin': 'Управлять разделом «Организация и Биллинг» и тарифами',
+  'permDesc.tasks_view_all': 'Доступ к полному реестру поручений всех подразделений организации',
+  'permDesc.tasks_assign': 'Право поручать задачи коллегам и целым отделам с уведомлением в Telegram',
+  'permDesc.crm_view': 'Просмотр коммерческой воронки, сумм контрактов и аналитики конверсии',
+  'permDesc.crm_edit': 'Регистрация новых сделок, ведение реквизитов и перевод этапов воронки',
+  'permDesc.team_manage': 'Приглашение сотрудников, настройка подразделений и распределение прав',
+  'permDesc.data_export': 'Формирование и скачивание табличных выгрузок CSV для отчетности',
+  'permDesc.billing_admin': 'Конфигурация реквизитов организации, тарифного плана и платежных шлюзов',
   'perm.statusGranted': 'Разрешено',
   'perm.statusRestricted': 'Ограничено',
 
-  // Permissions Matrix Modal
+  // Permissions Matrix Modal (БЛОК 1 — без слова БД)
   'permModal.btnLabel': 'Права доступа',
   'permModal.title': 'Матрица прав сотрудника',
   'permModal.subtitle': 'Выберите базовый пресет уровня доступа или настройте индивидуальные разрешения для должности сотрудника.',
   'permModal.presetLabel': 'Базовый контур доступа (пресет)',
-  'permModal.rootNotice': 'Для уровня Суперадмин (root) все 7 системных разрешений включены принудительно.',
-  'permModal.saveBtn': 'Сохранить права в БД',
+  'permModal.rootNotice': 'Для уровня Полный доступ (Суперадмин) все 7 системных разрешений включены принудительно.',
+  'permModal.saveBtn': 'Сохранить изменения',
+
+  // Department Constructor (БЛОК 2)
+  'dept.sectionTitle': 'Структура подразделений (Отделы)',
+  'dept.cardTitle': 'Структура подразделений (Отделы)',
+  'dept.subtitle': 'Сформируйте собственную структуру отделов компании для привязки сотрудников, задач, сделок и групповых оповещений в Telegram.',
+  'dept.cardSubtitle': 'Сформируйте собственную структуру отделов компании для привязки сотрудников, задач, сделок и групповых оповещений в Telegram.',
+  'dept.placeholder': 'Название нового отдела (например: Финансовый отдел, ПТО, Логистика)...',
+  'dept.inputPlaceholder': 'Название нового отдела (например: Финансовый отдел, ПТО, Логистика)...',
+  'dept.addBtn': 'Добавить отдел',
+  'dept.empty': 'Подразделения еще не созданы. Добавьте первый отдел компании выше.',
+  'dept.customOption': '+ Вписать новый отдел вручную...',
+  'dept.customInputPlaceholder': 'Введите название нового подразделения...',
+  'dept.selectNone': 'Без привязки к отделу',
+  'dept.noneOption': 'Без привязки к отделу',
+  'dept.allDeptNotifyHint': 'При выборе отдела без конкретного исполнителя уведомление в Telegram получат все сотрудники этого подразделения.',
+  'dept.addedToast': 'Новое подразделение добавлено в структуру компании.',
+  'dept.removedToast': 'Подразделение удалено из списка компании.',
 
   // Team Section
   'team.sectionTitle': 'Штатное расписание и матрица доступов',
@@ -160,12 +188,15 @@ const ru: Dictionary = {
   'team.noDepartment': 'Отдел не указан',
   'team.activePermsCount': 'активных прав из 7',
 
-  // CRM Section
+  // CRM Section (БЛОК 3)
   'crm.sectionTitle': 'Реестр коммерческих сделок',
   'crm.addBtn': '+ Новая сделка',
   'crm.emptyTitle': 'Воронка сделок пуста',
   'crm.empty': 'Зарегистрируйте первую коммерческую сделку для отслеживания стадий переговоров и выручки.',
-  'crm.colClient': 'Клиент и Предмет договора',
+  'crm.colClient': 'Клиент и Договор',
+  'crm.colRequisites': 'Реквизиты (ИНН / VAT)',
+  'crm.colResponsible': 'Ответственный / Отдел',
+  'crm.colAssigneeDept': 'Ответственный / Отдел',
   'crm.colContact': 'Контактные данные',
   'crm.colStage': 'Этап воронки',
   'crm.colAmount': 'Сумма контракта',
@@ -175,6 +206,44 @@ const ru: Dictionary = {
   'stage.Negotiation': 'Переговоры',
   'stage.Won': 'Выиграна',
   'stage.Lost': 'Закрыта',
+
+  // Communications Section (БЛОК 4 — Единое инфополе и Связь)
+  'comm.sectionTitle': 'Корпоративный поток сообщений',
+  'comm.feedTitle': 'Корпоративный поток сообщений',
+  'comm.composeTitle': 'Новое сообщение / Оповещение',
+  'comm.composeSubtitle': 'Отправка мгновенных сообщений коллегам, отделам или всей компании с доставкой в Telegram',
+  'comm.scopeLabel': 'Контур получателей',
+  'comm.scopeDirect': 'Лично сотруднику',
+  'comm.scopeDepartment': 'В подразделение (Отдел)',
+  'comm.scopeBroadcast': 'Общее оповещение по компании',
+  'comm.selectColleague': 'Выберите получателя',
+  'comm.selectEmployee': 'Выберите сотрудника',
+  'comm.selectDepartment': 'Выберите подразделение',
+  'comm.messageLabel': 'Текст сообщения',
+  'comm.messagePlaceholder': 'Введите текст рабочего сообщения, поручения или циркуляра...',
+  'comm.urgentLabel': 'Высокая важность (Срочное уведомление в Telegram)',
+  'comm.sendBtn': 'Отправить сообщение',
+  'comm.sendingBtn': 'Отправка...',
+  'comm.sentToast': 'Сообщение опубликовано и отправлено получателям в Telegram.',
+  'comm.emptyTitle': 'Информационный поток пуст',
+  'comm.emptyDesc': 'В информационном потоке пока нет сообщений. Отправьте первое сообщение коллеге или подразделению.',
+  'comm.emptyFeed': 'В информационный потоке пока нет сообщений. Отправьте первое сообщение коллеге или подразделению.',
+  'comm.filterAll': 'Все',
+  'comm.filterDirect': 'Личные',
+  'comm.filterDept': 'Отделы',
+  'comm.filterEntities': 'Задачи и Сделки',
+  'comm.badgeDirect': 'Личное сообщение',
+  'comm.badgeDepartment': 'Отдел',
+  'comm.badgeDept': 'Отдел',
+  'comm.badgeBroadcast': 'Циркуляр по компании',
+  'comm.badgeTask': 'Задача',
+  'comm.badgeLead': 'Сделка CRM',
+  'comm.badgeDeal': 'Сделка CRM',
+  'comm.urgentTag': 'СРОЧНО',
+  'comm.toRecipient': 'Кому:',
+  'comm.allEmployees': 'Все сотрудники компании',
+  'comm.replyAction': 'Ответить',
+  'comm.replyQuick': 'Ответить сотруднику',
 
   // Profile Tab (Личный кабинет)
   'profile.cardTitle': 'Персональная карточка сотрудника',
@@ -203,25 +272,35 @@ const ru: Dictionary = {
   'profile.displayCurrency': 'Валюта расчетов и аналитики',
   'profile.signOutBtn': 'Выйти',
 
-  // Slide-over Detail Drawer (БЛОК 2)
+  // Slide-over Detail Drawer (БЛОК 2, 3, 4)
   'drawer.taskHeader': 'Карточка задачи',
   'drawer.dealHeader': 'Карточка коммерческой сделки',
   'drawer.openDetails': 'Комментарий',
   'drawer.createdAt': 'Дата создания',
   'drawer.author': 'Постановщик / Автор',
   'drawer.assignee': 'Ответственный исполнитель',
+  'drawer.department': 'Профильное подразделение',
   'drawer.status': 'Текущий статус',
   'drawer.priority': 'Приоритет',
   'drawer.dealAmount': 'Сумма контракта',
   'drawer.dealContact': 'Контакт контрагента',
-  'drawer.notesLabel': 'Рабочий комментарий / Заметки по исполнению',
+  'drawer.requisitesTitle': 'Юридические и договорные реквизиты',
+  'drawer.dealRequisites': 'Юридические и договорные реквизиты',
+  'drawer.jurisdiction': 'Юрисдикция',
+  'drawer.contractNumber': 'Номер договора / Счета (PO #)',
+  'drawer.saveRequisitesBtn': 'Сохранить реквизиты',
+  'drawer.notesLabel': 'Рабочая заметка / Резюме',
   'drawer.notesPlaceholder': 'Добавьте резюме переговоров, технические требования или статус согласования...',
-  'drawer.saveNotesBtn': 'Сохранить комментарий',
-  'drawer.notesSavedToast': 'Рабочий комментарий сохранен в базе данных.',
-  'drawer.savedToast': 'Рабочий комментарий сохранен в базе данных.',
+  'drawer.saveNotesBtn': 'Сохранить заметку',
+  'drawer.notesSavedToast': 'Изменения сохранены в системе.',
+  'drawer.savedToast': 'Изменения сохранены в системе.',
+  'drawer.threadTitle': 'Живая лента комментариев и связь с Telegram',
+  'drawer.threadEmpty': 'Комментариев по данной записи пока нет. Напишите сообщение — ответственный получит уведомление в Telegram.',
+  'drawer.threadPlaceholder': 'Написать рабочий комментарий по записи...',
+  'drawer.threadSendBtn': 'Отправить',
   'drawer.historyTitle': 'Журнал состояния записи',
   'drawer.historyCreated': 'Запись зарегистрирована в реестре компании',
-  'drawer.historyCurrent': 'Актуальный статус в базе данных:',
+  'drawer.historyCurrent': 'Актуальный статус в системе:',
   'drawer.close': 'Закрыть панель',
 
   // Workspace & Billing Tab
@@ -241,38 +320,58 @@ const ru: Dictionary = {
   'workspace.botConfigTitle': 'Имя корпоративного Telegram-бота',
   'workspace.botConfigDesc': 'Укажите имя бота (без символа @) для формирования ссылок привязки сотрудников.',
   'workspace.exportSection': 'Экспорт корпоративных реестров (CSV)',
-  'workspace.exportDesc': 'Выгрузка актуальных таблиц базы данных в кодировке UTF-8 для внешней отчетности.',
+  'workspace.exportDesc': 'Выгрузка актуальных таблиц системы в кодировке UTF-8 для внешней отчетности.',
   'workspace.exportDealsCsv': 'Выгрузить сделки (CSV)',
   'workspace.exportTasksCsv': 'Выгрузить задачи (CSV)',
   'workspace.exportTeamCsv': 'Выгрузить штат (CSV)',
 
-  // Modals (AddRecordModal)
+  // Modals (AddRecordModal — БЛОК 2 и БЛОК 3)
   'modal.newTaskTitle': 'Новая корпоративная задача',
   'modal.newEmployeeTitle': 'Добавление сотрудника в штат',
   'modal.newDealTitle': 'Новая коммерческая сделка',
   'modal.taskTitleLabel': 'Формулировка задачи',
   'modal.taskTitlePlaceholder': 'Например: Согласовать смету и график поставок',
   'modal.taskDescLabel': 'Описание / Рабочая заметка',
-  'modal.taskDescPlaceholder': 'Дополнительные вводные для исполнителя...',
+  'modal.taskDescPlaceholder': 'Дополнительные вводные для исполнителя или отдела...',
   'modal.taskTypeLabel': 'Тип записи',
   'modal.taskPriorityLabel': 'Приоритет',
   'modal.taskStatusLabel': 'Статус',
-  'modal.taskAssigneeLabel': 'Ответственный исполнитель',
+  'modal.taskAssigneeLabel': 'Ответственный сотрудник',
+  'modal.taskDepartmentLabel': 'Подразделение (Отдел)',
+  'modal.unassignedDeptBroadcast': 'Не назначен (оповестить выбранный отдел)',
+  'modal.taskDepartmentHint': 'Если конкретный сотрудник не выбран, уведомление в Telegram получат все сотрудники указанного отдела.',
   'modal.empNameLabel': 'ФИО сотрудника',
   'modal.empNamePlaceholder': 'Например: Волков Дмитрий Сергеевич',
   'modal.empRoleLabel': 'Должность / Роль в компании (свободный ввод)',
   'modal.empRolePlaceholder': 'Например: Главный инженер, Экономист, Юрист',
-  'modal.empDeptLabel': 'Подразделение / Отдел (свободный ввод)',
+  'modal.empDeptLabel': 'Подразделение / Отдел',
   'modal.empDeptPlaceholder': 'Например: Финансовый отдел, ПТО, Коммерческий блок',
   'modal.empAccessLabel': 'Базовый уровень системного допуска',
   'modal.empEmailLabel': 'Корпоративный Email',
   'modal.empTgLabel': 'Telegram ID (необязательно при входе по коду)',
-  'modal.dealClientLabel': 'Компания / Заказчик',
+  'modal.dealClientLabel': 'Компания / Контрагент',
   'modal.dealClientPlaceholder': 'Например: АО СтройИнвест Холдинг',
   'modal.dealTitleLabel': 'Предмет договора / проект',
   'modal.dealTitlePlaceholder': 'Например: Поставка лицензий и внедрение контура',
-  'modal.dealAmountLabel': 'Сумма контракта (в базовой валюте RUB)',
+  'modal.dealAmountLabel': 'Сумма контракта',
   'modal.dealStageLabel': 'Стадия воронки',
+  'modal.dealJurisdictionLabel': 'Юрисдикция контрагента',
+  'modal.jurisdictionLabel': 'Юрисдикция контрагента',
+  'modal.jurisdictionRu': 'РФ и СНГ (ИНН / КПП)',
+  'modal.jurisdictionRU': 'РФ и СНГ (ИНН / КПП)',
+  'modal.jurisdictionGlobal': 'International (VAT / EIN / Reg. No.)',
+  'modal.taxIdRu': 'ИНН контрагента',
+  'modal.taxIdRuPlaceholder': '7701234567',
+  'modal.regNumRu': 'КПП / ОГРН',
+  'modal.regNumRuPlaceholder': '770101001 / 1027700123456',
+  'modal.taxIdGlobal': 'Tax ID / VAT / EIN',
+  'modal.taxIdGlobalPlaceholder': 'DE123456789 / 12-3456789',
+  'modal.regNumGlobal': 'Registration No. (CRN)',
+  'modal.regNumGlobalPlaceholder': 'HRB 123456 / 09876543',
+  'modal.contractNumberLabel': 'Номер договора / Счета (PO #)',
+  'modal.contractNumberPlaceholder': 'Например: ДГ-2026/104 или PO-8841',
+  'modal.dealAssigneeLabel': 'Ответственный менеджер',
+  'modal.dealDepartmentLabel': 'Профильный отдел',
   'modal.dealContactLabel': 'Контактное лицо (Телефон / Email / Telegram)',
   'modal.dealContactPlaceholder': '+7 (495) 000-00-00 / contact@company.ru',
   'modal.dealNotesLabel': 'Комментарий по сделке',
@@ -293,13 +392,14 @@ const ru: Dictionary = {
   'invite.step2': '2. При нажатии кнопки запуска в боте профиль автоматически синхронизируется с Telegram ID.',
   'invite.step3': '3. В сообщении бота сотруднику будут доступны команды согласно его матрице прав.',
   'invite.close': 'Закрыть окно',
+  'invite.doneBtn': 'Готово',
 
   // ConfirmDialog
   'confirm.cancel': 'Отмена',
   'confirm.confirm': 'Подтвердить',
   'confirm.processing': 'Выполнение...',
   'confirm.deleteTaskTitle': 'Подтверждение удаления задачи',
-  'confirm.deleteTaskDesc': 'Выбранная задача будет безвозвратно удалена из базы данных организации. Подтвердите действие.',
+  'confirm.deleteTaskDesc': 'Выбранная задача будет безвозвратно удалена из реестра организации. Подтвердите действие.',
   'confirm.deleteEmployeeTitle': 'Удаление профиля сотрудника',
   'confirm.deleteEmployeeDesc': 'Профиль сотрудника, его права доступа и привязка Telegram будут удалены из системы.',
   'confirm.deleteDealTitle': 'Удаление карточки сделки',
@@ -310,7 +410,9 @@ const ru: Dictionary = {
   'confirm.signOutDesc': 'Вы действительно хотите выйти из учетной записи сотрудника?',
 
   // Notifications
-  'toast.pushSent': 'Уведомление о задаче отправлено исполнителю в Telegram.',
+  'toast.pushSent': 'Уведомление отправлено в Telegram.',
+  'toast.messageSent': 'Сообщение доставлено в инфополе и отправлено в Telegram.',
+  'toast.deptUpdated': 'Структура подразделений организации обновлена.',
   'toast.planUpdated': 'Тарифный план организации обновлен.',
   'toast.gatewayUpdated': 'Платежный контур биллинга сохранен.',
   'toast.csvExported': 'Файл CSV сформирован и загружен.',
@@ -318,6 +420,7 @@ const ru: Dictionary = {
   'system.loading': 'Загрузка корпоративного пространства TedCloud...',
   'system.connectionError': 'Ошибка обмена данными с сервером',
   'system.retry': 'Повторить попытку',
+  'system.resetCacheBtn': 'Сбросить кэш сессии и перезагрузить',
 };
 
 const en: Dictionary = {
@@ -326,6 +429,7 @@ const en: Dictionary = {
   'nav.overview': 'Overview',
   'nav.tasks': 'Tasks',
   'nav.crm': 'CRM Deals',
+  'nav.communications': 'Communications',
   'nav.team': 'Team & Access',
   'nav.profile': 'My Profile',
   'nav.workspace': 'Workspace & Billing',
@@ -366,15 +470,17 @@ const en: Dictionary = {
   'header.overviewTitle': 'Executive Overview',
   'header.overviewSubtitle': 'Key performance metrics and active task summary',
   'header.tasksTitle': 'Corporate Task Registry',
-  'header.tasksSubtitle': 'Manage tasks with role-based permissions and instant Telegram notifications',
+  'header.tasksSubtitle': 'Assign tasks to specific employees or entire departments with instant Telegram notifications',
   'header.crmTitle': 'Commercial Deal Pipeline',
-  'header.crmSubtitle': 'Manage B2B contracts, negotiation stages, and financial pipeline volume',
+  'header.crmSubtitle': 'Manage B2B contracts, legal tax requisites, negotiation stages, and pipeline value',
+  'header.communicationsTitle': 'Workspace Feed & Communications',
+  'header.communicationsSubtitle': 'Real-time messaging across employees, departments, and the corporate Telegram bot',
   'header.teamTitle': 'Team Directory & Access Matrix',
-  'header.teamSubtitle': 'Custom job titles, departments, granular 7-flag permission matrix, and invite codes',
+  'header.teamSubtitle': 'Custom department constructor, job titles, granular 7-flag permission matrix, and invite codes',
   'header.profileTitle': 'My Employee Profile',
   'header.profileSubtitle': 'Personal details, active system permissions, and localization preferences',
   'header.workspaceTitle': 'Workspace & Billing',
-  'header.workspaceSubtitle': 'Company profile, subscription tier, payment gateway contour, and CSV data export',
+  'header.workspaceSubtitle': 'Company profile, department structure, subscription tier, payment contour, and CSV export',
 
   // Contextual Single Primary Actions
   'actions.searchPlaceholder': 'Search tasks, deals, employees...',
@@ -403,6 +509,7 @@ const en: Dictionary = {
   'tasks.emptyTitle': 'No tasks registered',
   'tasks.empty': 'Create a task in the web console or send a message to the corporate Telegram bot.',
   'tasks.assignee': 'Assignee',
+  'tasks.department': 'Department',
   'tasks.unassigned': 'Unassigned',
   'tasks.selfAssignedNote': 'Automatically assigned to you (delegation permission required)',
 
@@ -418,18 +525,18 @@ const en: Dictionary = {
   'type.Epic': 'Initiative',
 
   // Access Levels
-  'access.root': 'Superadmin / Owner (root)',
-  'access.manager': 'Department Lead (manager)',
-  'access.member': 'Staff Member (member)',
-  'access.observer': 'Auditor / Read-Only (observer)',
-  'access.viewer': 'Auditor / Read-Only (observer)',
+  'access.root': 'Superadmin / Owner',
+  'access.manager': 'Department Lead',
+  'access.member': 'Staff Member',
+  'access.observer': 'Auditor / Read-Only',
+  'access.viewer': 'Auditor / Read-Only',
   'accessShort.root': 'Full Access',
   'accessShort.manager': 'Manager',
   'accessShort.member': 'Basic Access',
   'accessShort.observer': 'Auditor (Read-Only)',
   'accessShort.viewer': 'Auditor (Read-Only)',
 
-  // 7 Granular Permissions
+  // 7 Granular Permissions & Clean Business Descriptions
   'perm.title': 'Granular Permission Matrix (7 Contours)',
   'perm.tasks_view_all': 'View all company tasks (otherwise only own tasks)',
   'perm.tasks_assign': 'Assign and delegate tasks to other employees',
@@ -438,6 +545,13 @@ const en: Dictionary = {
   'perm.team_manage': 'Access Team & Access tab (add/remove members)',
   'perm.data_export': 'Export corporate registries to CSV',
   'perm.billing_admin': 'Access Workspace & Billing and modify company settings',
+  'permDesc.tasks_view_all': 'Full visibility into tasks across all organizational departments',
+  'permDesc.tasks_assign': 'Delegate tasks to colleagues or entire departments with Telegram Push',
+  'permDesc.crm_view': 'Inspect the B2B commercial pipeline, contract values, and conversion KPIs',
+  'permDesc.crm_edit': 'Register new contracts, edit legal requisites, and update pipeline stages',
+  'permDesc.team_manage': 'Invite staff members, configure departments, and manage role permissions',
+  'permDesc.data_export': 'Generate and download UTF-8 CSV reports for external analytics',
+  'permDesc.billing_admin': 'Manage organization profile, subscription tier, and payment gateways',
   'perm.statusGranted': 'Granted',
   'perm.statusRestricted': 'Restricted',
 
@@ -446,8 +560,25 @@ const en: Dictionary = {
   'permModal.title': 'Employee Permission Matrix',
   'permModal.subtitle': 'Select a base access contour preset or customize individual permissions for this employee.',
   'permModal.presetLabel': 'Base Access Level (Preset)',
-  'permModal.rootNotice': 'For Superadmin (root), all 7 system permissions are permanently enabled.',
+  'permModal.rootNotice': 'For Full Access (Superadmin), all 7 system permissions are permanently enabled.',
   'permModal.saveBtn': 'Save Permissions',
+
+  // Department Constructor
+  'dept.sectionTitle': 'Organizational Structure (Departments)',
+  'dept.cardTitle': 'Organizational Structure (Departments)',
+  'dept.subtitle': 'Define custom company departments to assign staff, tasks, CRM deals, and broadcast Telegram alerts.',
+  'dept.cardSubtitle': 'Define custom company departments to assign staff, tasks, CRM deals, and broadcast Telegram alerts.',
+  'dept.placeholder': 'New department name (e.g. Finance, Engineering, Legal)...',
+  'dept.inputPlaceholder': 'New department name (e.g. Finance, Engineering, Legal)...',
+  'dept.addBtn': 'Add Department',
+  'dept.empty': 'No custom departments defined yet. Add your first company department above.',
+  'dept.customOption': '+ Enter new department manually...',
+  'dept.customInputPlaceholder': 'Enter new department name...',
+  'dept.selectNone': 'No specific department',
+  'dept.noneOption': 'No specific department',
+  'dept.allDeptNotifyHint': 'When a department is selected without a specific assignee, all Telegram-linked members of that department will be notified.',
+  'dept.addedToast': 'New department added to organization structure.',
+  'dept.removedToast': 'Department removed from organization list.',
 
   // Team Section
   'team.sectionTitle': 'Organization Directory & Permissions',
@@ -472,16 +603,57 @@ const en: Dictionary = {
   'crm.addBtn': '+ New Deal',
   'crm.emptyTitle': 'No deals in pipeline',
   'crm.empty': 'Register your first commercial deal to track negotiation stages and revenue.',
-  'crm.colClient': 'Client & Contract Subject',
+  'crm.colClient': 'Client & Contract',
+  'crm.colRequisites': 'Tax ID / Requisites',
+  'crm.colResponsible': 'Manager / Dept',
+  'crm.colAssigneeDept': 'Manager / Dept',
   'crm.colContact': 'Contact Details',
   'crm.colStage': 'Stage',
-  'crm.colAmount': 'Contract Value',
+  'crm.colAmount': 'Contract Amount',
   'crm.colControl': 'Control',
   'crm.readOnlyBadge': 'Read-Only Mode (Auditor)',
   'stage.New': 'New',
   'stage.Negotiation': 'Negotiation',
   'stage.Won': 'Won',
   'stage.Lost': 'Lost',
+
+  // Communications Section
+  'comm.sectionTitle': 'Corporate Communications Feed',
+  'comm.feedTitle': 'Corporate Communications Feed',
+  'comm.composeTitle': 'Send Message / Broadcast',
+  'comm.composeSubtitle': 'Send instant messages to colleagues, departments, or the entire company with Telegram delivery',
+  'comm.scopeLabel': 'Recipient Scope',
+  'comm.scopeDirect': 'Direct to Employee',
+  'comm.scopeDepartment': 'To Department',
+  'comm.scopeBroadcast': 'Company-Wide Broadcast',
+  'comm.selectColleague': 'Select Recipient',
+  'comm.selectEmployee': 'Select Employee',
+  'comm.selectDepartment': 'Select Department',
+  'comm.messageLabel': 'Message Content',
+  'comm.messagePlaceholder': 'Write a message, operational update, or company announcement...',
+  'comm.urgentLabel': 'High Importance (Urgent Telegram Notification)',
+  'comm.sendBtn': 'Send Message',
+  'comm.sendingBtn': 'Sending...',
+  'comm.sentToast': 'Message published and sent to recipients via Telegram.',
+  'comm.emptyTitle': 'No messages yet',
+  'comm.emptyDesc': 'No messages in the workspace stream yet. Send the first message to a colleague or department.',
+  'comm.emptyFeed': 'No messages in the workspace stream yet. Send the first message to a colleague or department.',
+  'comm.filterAll': 'All',
+  'comm.filterDirect': 'Direct',
+  'comm.filterDept': 'Departments',
+  'comm.filterEntities': 'Tasks & Deals',
+  'comm.badgeDirect': 'Direct',
+  'comm.badgeDepartment': 'Department',
+  'comm.badgeDept': 'Department',
+  'comm.badgeBroadcast': 'Broadcast',
+  'comm.badgeTask': 'Task',
+  'comm.badgeLead': 'CRM Deal',
+  'comm.badgeDeal': 'CRM Deal',
+  'comm.urgentTag': 'URGENT',
+  'comm.toRecipient': 'To:',
+  'comm.allEmployees': 'All Company Members',
+  'comm.replyAction': 'Reply',
+  'comm.replyQuick': 'Reply to member',
 
   // Profile Tab
   'profile.cardTitle': 'Employee Profile Card',
@@ -517,18 +689,28 @@ const en: Dictionary = {
   'drawer.createdAt': 'Created Date',
   'drawer.author': 'Created By / Author',
   'drawer.assignee': 'Assigned To',
+  'drawer.department': 'Assigned Department',
   'drawer.status': 'Current Status',
   'drawer.priority': 'Priority',
-  'drawer.dealAmount': 'Contract Value',
+  'drawer.dealAmount': 'Contract Amount',
   'drawer.dealContact': 'Client Contact',
-  'drawer.notesLabel': 'Working Comment / Execution Notes',
+  'drawer.requisitesTitle': 'Legal & Contract Requisites',
+  'drawer.dealRequisites': 'Legal & Contract Requisites',
+  'drawer.jurisdiction': 'Jurisdiction',
+  'drawer.contractNumber': 'Contract / Invoice No. (PO #)',
+  'drawer.saveRequisitesBtn': 'Save Requisites',
+  'drawer.notesLabel': 'Executive Summary / Working Note',
   'drawer.notesPlaceholder': 'Add negotiation notes, technical requirements, or approval status...',
-  'drawer.saveNotesBtn': 'Save Comment',
-  'drawer.notesSavedToast': 'Working comment saved to database.',
-  'drawer.savedToast': 'Working comment saved to database.',
+  'drawer.saveNotesBtn': 'Save Note',
+  'drawer.notesSavedToast': 'Changes saved to workspace.',
+  'drawer.savedToast': 'Changes saved to workspace.',
+  'drawer.threadTitle': 'Live Comment Stream & Telegram Sync',
+  'drawer.threadEmpty': 'No comments on this record yet. Post a comment to notify the assignee on Telegram.',
+  'drawer.threadPlaceholder': 'Write a comment on this record...',
+  'drawer.threadSendBtn': 'Send',
   'drawer.historyTitle': 'Record Status Log',
-  'drawer.historyCreated': 'Record registered in corporate database',
-  'drawer.historyCurrent': 'Active database state:',
+  'drawer.historyCreated': 'Record registered in corporate registry',
+  'drawer.historyCurrent': 'Active system state:',
   'drawer.close': 'Close Drawer',
 
   // Workspace & Billing Tab
@@ -548,7 +730,7 @@ const en: Dictionary = {
   'workspace.botConfigTitle': 'Corporate Telegram Bot Username',
   'workspace.botConfigDesc': 'Specify your bot username (without @) to generate employee deep-link invitations.',
   'workspace.exportSection': 'Corporate Registry Export (CSV)',
-  'workspace.exportDesc': 'Download database registries in UTF-8 CSV format for financial reporting and BI.',
+  'workspace.exportDesc': 'Download workspace registries in UTF-8 CSV format for financial reporting and BI.',
   'workspace.exportDealsCsv': 'Export Deals (CSV)',
   'workspace.exportTasksCsv': 'Export Tasks (CSV)',
   'workspace.exportTeamCsv': 'Export Team (CSV)',
@@ -560,16 +742,19 @@ const en: Dictionary = {
   'modal.taskTitleLabel': 'Task Objective',
   'modal.taskTitlePlaceholder': 'e.g. Approve engineering specification and delivery schedule',
   'modal.taskDescLabel': 'Description / Working Note',
-  'modal.taskDescPlaceholder': 'Additional context for the assignee...',
+  'modal.taskDescPlaceholder': 'Additional context for the assignee or department...',
   'modal.taskTypeLabel': 'Record Type',
   'modal.taskPriorityLabel': 'Priority',
   'modal.taskStatusLabel': 'Status',
   'modal.taskAssigneeLabel': 'Assigned Member',
+  'modal.taskDepartmentLabel': 'Department / Division',
+  'modal.unassignedDeptBroadcast': 'Unassigned (notify selected department)',
+  'modal.taskDepartmentHint': 'If no individual assignee is chosen, all Telegram-linked members of the selected department will be notified.',
   'modal.empNameLabel': 'Full Name',
   'modal.empNamePlaceholder': 'e.g. Dmitry Volkov',
   'modal.empRoleLabel': 'Job Title / Position (free text input)',
   'modal.empRolePlaceholder': 'e.g. Chief Engineer, Economist, Legal Counsel',
-  'modal.empDeptLabel': 'Department / Division (free text input)',
+  'modal.empDeptLabel': 'Department / Division',
   'modal.empDeptPlaceholder': 'e.g. Finance Department, Engineering, Commercial Block',
   'modal.empAccessLabel': 'Base System Access Level',
   'modal.empEmailLabel': 'Corporate Email',
@@ -578,8 +763,25 @@ const en: Dictionary = {
   'modal.dealClientPlaceholder': 'e.g. StroyInvest Holding Corp',
   'modal.dealTitleLabel': 'Contract Subject / Project',
   'modal.dealTitlePlaceholder': 'e.g. Annual Enterprise Platform Deployment',
-  'modal.dealAmountLabel': 'Contract Value (base in RUB)',
+  'modal.dealAmountLabel': 'Contract Amount',
   'modal.dealStageLabel': 'Pipeline Stage',
+  'modal.dealJurisdictionLabel': 'Counterparty Jurisdiction',
+  'modal.jurisdictionLabel': 'Counterparty Jurisdiction',
+  'modal.jurisdictionRu': 'RU & CIS (INN / KPP)',
+  'modal.jurisdictionRU': 'RU & CIS (INN / KPP)',
+  'modal.jurisdictionGlobal': 'International (VAT / EIN / Reg. No.)',
+  'modal.taxIdRu': 'Counterparty INN (Tax ID)',
+  'modal.taxIdRuPlaceholder': '7701234567',
+  'modal.regNumRu': 'KPP / OGRN',
+  'modal.regNumRuPlaceholder': '770101001 / 1027700123456',
+  'modal.taxIdGlobal': 'Tax ID / VAT / EIN',
+  'modal.taxIdGlobalPlaceholder': 'DE123456789 / 12-3456789',
+  'modal.regNumGlobal': 'Registration No. (CRN)',
+  'modal.regNumGlobalPlaceholder': 'HRB 123456 / 09876543',
+  'modal.contractNumberLabel': 'Contract / Invoice No. (PO #)',
+  'modal.contractNumberPlaceholder': 'e.g. CN-2026/104 or PO-8841',
+  'modal.dealAssigneeLabel': 'Responsible Manager',
+  'modal.dealDepartmentLabel': 'Assigned Department',
   'modal.dealContactLabel': 'Primary Contact (Phone / Email / Telegram)',
   'modal.dealContactPlaceholder': '+1 (555) 000-0000 / contact@company.com',
   'modal.dealNotesLabel': 'Deal Notes',
@@ -600,13 +802,14 @@ const en: Dictionary = {
   'invite.step2': '2. Pressing Start in the Telegram bot automatically binds the employee Telegram ID.',
   'invite.step3': '3. The bot adapts its interactive menu to the employee permission matrix.',
   'invite.close': 'Close',
+  'invite.doneBtn': 'Done',
 
   // ConfirmDialog
   'confirm.cancel': 'Cancel',
   'confirm.confirm': 'Confirm',
   'confirm.processing': 'Processing...',
   'confirm.deleteTaskTitle': 'Confirm Task Deletion',
-  'confirm.deleteTaskDesc': 'This task will be permanently deleted from the organization database. Please confirm.',
+  'confirm.deleteTaskDesc': 'This task will be permanently deleted from the organization registry. Please confirm.',
   'confirm.deleteEmployeeTitle': 'Confirm Member Removal',
   'confirm.deleteEmployeeDesc': 'The employee profile, permissions, and Telegram link will be permanently removed.',
   'confirm.deleteDealTitle': 'Confirm Deal Deletion',
@@ -617,7 +820,9 @@ const en: Dictionary = {
   'confirm.signOutDesc': 'Are you sure you want to end your current employee session?',
 
   // Notifications
-  'toast.pushSent': 'Task notification delivered to the assignee via Telegram.',
+  'toast.pushSent': 'Notification delivered via Telegram.',
+  'toast.messageSent': 'Message posted to workspace stream and sent via Telegram.',
+  'toast.deptUpdated': 'Organization department structure updated.',
   'toast.planUpdated': 'Organization subscription plan updated.',
   'toast.gatewayUpdated': 'Billing payment gateway contour saved.',
   'toast.csvExported': 'CSV file generated and downloaded.',
@@ -625,6 +830,7 @@ const en: Dictionary = {
   'system.loading': 'Loading TedCloud Enterprise Workspace...',
   'system.connectionError': 'Server Communication Error',
   'system.retry': 'Retry Connection',
+  'system.resetCacheBtn': 'Reset Session Cache & Reload',
 };
 
 const dictionaries: Record<SupportedLocale, Dictionary> = { ru, en };
@@ -646,7 +852,9 @@ const LocaleContext = createContext<LocaleContextValue | null>(null);
 export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [locale, setLocaleState] = useState<SupportedLocale>(() => {
     try {
-      const saved = localStorage.getItem('tedcloud_locale') as SupportedLocale | null;
+      const saved = (localStorage.getItem('tedcloud_locale') || '')
+        .toLowerCase()
+        .trim() as SupportedLocale;
       return saved === 'en' || saved === 'ru' ? saved : 'ru';
     } catch {
       return 'ru';
@@ -655,30 +863,37 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [currency, setCurrencyState] = useState<SupportedCurrency>(() => {
     try {
-      const saved = localStorage.getItem('tedcloud_currency') as SupportedCurrency | null;
+      const saved = (localStorage.getItem('tedcloud_currency') || '')
+        .toUpperCase()
+        .trim() as SupportedCurrency;
       return saved === 'USD' || saved === 'EUR' || saved === 'RUB' ? saved : 'RUB';
     } catch {
       return 'RUB';
     }
   });
 
-  const setLocale = useCallback((next: SupportedLocale) => {
-    setLocaleState(next);
+  const setLocale = useCallback((next: SupportedLocale | string) => {
+    const normalized: SupportedLocale =
+      String(next || '').toLowerCase().trim() === 'en' ? 'en' : 'ru';
+    setLocaleState(normalized);
     try {
-      localStorage.setItem('tedcloud_locale', next);
+      localStorage.setItem('tedcloud_locale', normalized);
     } catch {}
   }, []);
 
-  const setCurrency = useCallback((next: SupportedCurrency) => {
-    setCurrencyState(next);
+  const setCurrency = useCallback((next: SupportedCurrency | string) => {
+    const upper = String(next || '').toUpperCase().trim();
+    const normalized: SupportedCurrency =
+      upper === 'USD' || upper === 'EUR' ? upper : 'RUB';
+    setCurrencyState(normalized);
     try {
-      localStorage.setItem('tedcloud_currency', next);
+      localStorage.setItem('tedcloud_currency', normalized);
     } catch {}
   }, []);
 
   const t = useCallback(
     (key: string): string => {
-      return dictionaries[locale][key] || dictionaries.ru[key] || key;
+      return dictionaries[locale]?.[key] || dictionaries.ru[key] || key;
     },
     [locale]
   );

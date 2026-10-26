@@ -3,7 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 
 const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
-  companies: ['name', 'plan', 'payment_region'],
+  companies: ['name', 'plan', 'payment_region', 'departments'],
   tasks: [
     'title',
     'description',
@@ -11,6 +11,7 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'type',
     'priority',
     'status',
+    'department',
     'assigned_to',
     'owner_node_id',
     'company_id',
@@ -38,18 +39,42 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'amount',
     'contact',
     'status',
+    'department',
+    'assigned_to',
     'owner_node_id',
     'company_id',
+    'jurisdiction',
+    'tax_id',
+    'reg_number',
+    'contract_number',
     'full_name',
     'deal_value',
     'phone',
     'stage',
     'source',
   ],
+  workspace_messages: [
+    'company_id',
+    'sender_id',
+    'sender_name',
+    'sender_role',
+    'recipient_id',
+    'target_department',
+    'scope_type',
+    'task_id',
+    'lead_id',
+    'entity_id',
+    'entity_title',
+    'text',
+    'message',
+    'content',
+    'is_urgent',
+  ],
 };
 
-// Оверлей для сохранения рабочих комментариев (notes/description), если в схеме удаленной БД еще не создана колонка
+// Оверлей для сохранения расширенных атрибутов и комментариев, если схема удаленной БД еще обновляется
 const recordNotesOverlay = new Map<string, { description?: string | null; notes?: string | null }>();
+const recordExtrasOverlay = new Map<string, Record<string, any>>();
 
 function sanitizeByWhitelist(table: string, rawPayload: Record<string, any>): Record<string, any> {
   const whitelist = ALLOWED_COLUMNS[table];
@@ -80,7 +105,7 @@ async function safeSupabaseInsert(
   const payload = sanitizeByWhitelist(table, rawPayload);
   const strippedColumns: string[] = [];
 
-  for (let attempt = 0; attempt < 16; attempt++) {
+  for (let attempt = 0; attempt < 20; attempt++) {
     const { data, error } = await supabase.from(table).insert([payload]).select().single();
     if (!error) {
       return { data, error: null, strippedColumns };
@@ -128,7 +153,7 @@ async function safeSupabaseUpdate(
   const payload = sanitizeByWhitelist(table, rawUpdates);
   const strippedColumns: string[] = [];
 
-  for (let attempt = 0; attempt < 16; attempt++) {
+  for (let attempt = 0; attempt < 20; attempt++) {
     if (Object.keys(payload).length === 0) {
       const { data: existing, error: fetchErr } = await supabase
         .from(table)
@@ -204,6 +229,13 @@ function generateInviteCode(): string {
   return `TC-${suffix}`;
 }
 
+function escapeHtml(text: string): string {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 export interface GranularPermissions {
   tasks_view_all: boolean;
   tasks_assign: boolean;
@@ -215,7 +247,10 @@ export interface GranularPermissions {
   [key: string]: any;
 }
 
-export function normalizeAccessLevel(rawLevel?: string | null, roleType?: string | null): 'root' | 'manager' | 'member' | 'observer' {
+export function normalizeAccessLevel(
+  rawLevel?: string | null,
+  roleType?: string | null
+): 'root' | 'manager' | 'member' | 'observer' {
   const roleUpper = String(roleType || '').trim().toUpperCase();
   if (roleUpper === 'SUPERADMIN' || roleUpper === 'ROOT') {
     return 'root';
@@ -280,8 +315,13 @@ function normalizePermissionsObject(
 ): GranularPermissions {
   if (accessLevel === 'root') {
     const baseRoot = getDefaultPermissions('root');
-    if (rawPermissions && typeof rawPermissions === 'object' && rawPermissions.pending_delegate_to) {
-      baseRoot.pending_delegate_to = rawPermissions.pending_delegate_to;
+    if (rawPermissions && typeof rawPermissions === 'object') {
+      if (rawPermissions.pending_delegate_to) {
+        baseRoot.pending_delegate_to = rawPermissions.pending_delegate_to;
+      }
+      if (rawPermissions.pending_comm) {
+        baseRoot.pending_comm = rawPermissions.pending_comm;
+      }
     }
     return baseRoot;
   }
@@ -318,6 +358,9 @@ function normalizePermissionsObject(
   if (parsed.pending_delegate_to) {
     result.pending_delegate_to = parsed.pending_delegate_to;
   }
+  if (parsed.pending_comm) {
+    result.pending_comm = parsed.pending_comm;
+  }
 
   return result;
 }
@@ -327,6 +370,7 @@ interface InMemoryStore {
   organization_nodes: Record<string, any>[];
   tasks: Record<string, any>[];
   crm_leads: Record<string, any>[];
+  workspace_messages: Record<string, any>[];
 }
 
 const localStore: InMemoryStore = {
@@ -334,6 +378,7 @@ const localStore: InMemoryStore = {
   organization_nodes: [],
   tasks: [],
   crm_leads: [],
+  workspace_messages: [],
 };
 
 function getAdminSupabaseOrNull(): SupabaseClient | null {
@@ -365,6 +410,7 @@ async function resolveDefaultCompanyId(
       name: preferredName,
       plan: 'Business',
       payment_region: 'RU',
+      departments: [],
       created_at: new Date().toISOString(),
     };
     localStore.companies.push(createdCompany);
@@ -422,51 +468,52 @@ async function resolveFallbackOwnerNodeId(
   return anyNode?.id || null;
 }
 
-async function sendTelegramTaskPush(params: {
+async function fetchAllCompanyNodes(supabase: SupabaseClient | null): Promise<any[]> {
+  if (!supabase) {
+    return localStore.organization_nodes;
+  }
+  const { data } = await supabase.from('organization_nodes').select('*');
+  return Array.isArray(data) ? data : [];
+}
+
+// БЛОК 2: Отправка Telegram-уведомления конкретному исполнителю ИЛИ всему подразделению (отделу)
+async function sendTelegramTaskOrDepartmentPush(params: {
   supabase: SupabaseClient | null;
-  assignedToId: string | null | undefined;
+  assignedToId?: string | null;
+  department?: string | null;
   taskId?: string;
   taskTitle: string;
   taskPriority: string;
   taskType?: string;
-}): Promise<{ pushed: boolean; reason?: string }> {
-  const { supabase, assignedToId, taskId, taskTitle, taskPriority, taskType } = params;
-  if (!assignedToId) {
-    return { pushed: false, reason: 'no_assignee' };
-  }
+}): Promise<{ pushed: boolean; count?: number; reason?: string }> {
+  const { supabase, assignedToId, department, taskId, taskTitle, taskPriority, taskType } = params;
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     return { pushed: false, reason: 'missing_bot_token' };
   }
 
-  let employeeName = 'Сотрудник';
-  let employeeRole = '';
-  let telegramChatId: string | null = null;
+  const allNodes = await fetchAllCompanyNodes(supabase);
+  let targetNodes: any[] = [];
 
-  if (supabase) {
-    const { data: node } = await supabase
-      .from('organization_nodes')
-      .select('id, name, role_type, telegram_chat_id')
-      .eq('id', assignedToId)
-      .maybeSingle();
-
-    if (node) {
-      employeeName = node.name || employeeName;
-      employeeRole = node.role_type || '';
-      telegramChatId = node.telegram_chat_id ? String(node.telegram_chat_id).trim() : null;
+  if (assignedToId) {
+    const match = allNodes.find((n) => n.id === assignedToId);
+    if (match && match.telegram_chat_id) {
+      targetNodes = [match];
     }
-  } else {
-    const node = localStore.organization_nodes.find((n) => n.id === assignedToId);
-    if (node) {
-      employeeName = node.name || employeeName;
-      employeeRole = node.role_type || '';
-      telegramChatId = node.telegram_chat_id ? String(node.telegram_chat_id).trim() : null;
-    }
+  } else if (department && department.trim()) {
+    const cleanDept = department.trim().toLowerCase();
+    targetNodes = allNodes.filter(
+      (n) =>
+        n.telegram_chat_id &&
+        String(n.department || '')
+          .trim()
+          .toLowerCase() === cleanDept
+    );
   }
 
-  if (!telegramChatId) {
-    return { pushed: false, reason: 'missing_telegram_chat_id' };
+  if (targetNodes.length === 0) {
+    return { pushed: false, reason: 'no_recipients_with_telegram' };
   }
 
   const siteUrl = (
@@ -475,65 +522,223 @@ async function sendTelegramTaskPush(params: {
     'https://tedcloud.vercel.app'
   ).replace(/\/$/, '');
 
-  const notificationHtml = [
-    '<b>УВЕДОМЛЕНИЕ TEDCLOUD</b>',
-    'Назначена новая корпоративная задача.',
+  let pushedCount = 0;
+
+  for (const node of targetNodes) {
+    const telegramChatId = String(node.telegram_chat_id || '').trim();
+    if (!telegramChatId) continue;
+
+    const employeeName = escapeHtml(node.name || 'Сотрудник');
+    const employeeRole = node.role_type ? ` (${escapeHtml(node.role_type)})` : '';
+    const deptLine = department ? `\n<b>Подразделение:</b> ${escapeHtml(department)}` : '';
+
+    const notificationHtml = [
+      '<b>УВЕДОМЛЕНИЕ TEDCLOUD</b>',
+      assignedToId
+        ? 'Назначена новая корпоративная задача.'
+        : `Новое поручение на подразделение «${escapeHtml(department || '')}».`,
+      '',
+      `<b>Получатель:</b> ${employeeName}${employeeRole}${deptLine}`,
+      `<b>Задача:</b> ${escapeHtml(taskTitle)}`,
+      `<b>Категория:</b> ${escapeHtml(taskType || 'Task')}`,
+      `<b>Приоритет:</b> ${escapeHtml(taskPriority || 'Medium')}`,
+    ].join('\n');
+
+    const inlineKeyboard: any[][] = [];
+    if (taskId) {
+      inlineKeyboard.push([
+        { text: 'Принять в работу', callback_data: `task_progress:${taskId}` },
+        { text: 'Завершить задачу', callback_data: `task_done:${taskId}` },
+      ]);
+    }
+    inlineKeyboard.push([
+      { text: 'Открыть панель TedCloud', url: `${siteUrl}/?chatId=${telegramChatId}` },
+    ]);
+
+    try {
+      const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: telegramChatId,
+          text: notificationHtml,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: inlineKeyboard },
+        }),
+      });
+      if (tgRes.ok) {
+        pushedCount++;
+      }
+    } catch (err) {
+      console.error('[API /api/db] Telegram Task Push network error:', err);
+    }
+  }
+
+  return { pushed: pushedCount > 0, count: pushedCount };
+}
+
+// БЛОК 4: Мгновенная доставка сообщения из единого инфополя (workspace_messages) в Telegram
+async function sendTelegramWorkspaceMessagePush(params: {
+  supabase: SupabaseClient | null;
+  messageRecord: Record<string, any>;
+}): Promise<{ pushed: boolean; count: number; reason?: string }> {
+  const { supabase, messageRecord } = params;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    return { pushed: false, count: 0, reason: 'missing_bot_token' };
+  }
+
+  const allNodes = await fetchAllCompanyNodes(supabase);
+  const senderNode = messageRecord.sender_id
+    ? allNodes.find((n) => n.id === messageRecord.sender_id)
+    : null;
+
+  const senderName = escapeHtml(
+    senderNode?.name || messageRecord.sender_name || 'Сотрудник TedCloud'
+  );
+  const senderRole = escapeHtml(
+    senderNode?.role_type || messageRecord.sender_role || 'Специалист'
+  );
+
+  let targetNodes: any[] = [];
+  let contourLabel = 'Общее оповещение по компании';
+
+  if (messageRecord.scope_type === 'task' || messageRecord.task_id) {
+    contourLabel = messageRecord.entity_title
+      ? `Задача: ${escapeHtml(messageRecord.entity_title)}`
+      : 'Задача';
+  } else if (messageRecord.scope_type === 'deal' || messageRecord.lead_id) {
+    contourLabel = messageRecord.entity_title
+      ? `Сделка: ${escapeHtml(messageRecord.entity_title)}`
+      : 'Сделка CRM';
+  } else if (messageRecord.scope_type === 'department' || messageRecord.target_department) {
+    contourLabel = `Отдел: ${escapeHtml(messageRecord.target_department || '')}`;
+  } else if (messageRecord.scope_type === 'direct' || messageRecord.recipient_id) {
+    contourLabel = 'Личное сообщение';
+  }
+
+  if (messageRecord.recipient_id) {
+    const rec = allNodes.find((n) => n.id === messageRecord.recipient_id);
+    if (rec && rec.telegram_chat_id) {
+      targetNodes = [rec];
+    }
+  } else if (messageRecord.target_department) {
+    const deptLower = String(messageRecord.target_department).trim().toLowerCase();
+    targetNodes = allNodes.filter(
+      (n) =>
+        n.telegram_chat_id &&
+        n.id !== messageRecord.sender_id &&
+        String(n.department || '')
+          .trim()
+          .toLowerCase() === deptLower
+    );
+  } else {
+    targetNodes = allNodes.filter(
+      (n) => n.telegram_chat_id && n.id !== messageRecord.sender_id
+    );
+  }
+
+  if (targetNodes.length === 0) {
+    return { pushed: false, count: 0, reason: 'no_recipients_with_telegram' };
+  }
+
+  const siteUrl = (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.APP_URL ||
+    'https://tedcloud.vercel.app'
+  ).replace(/\/$/, '');
+
+  const htmlText = [
+    '<b>ВХОДЯЩЕЕ СООБЩЕНИЕ TEDCLOUD</b>',
+    `От: ${senderName} (${senderRole})`,
+    `Контур: ${contourLabel}`,
     '',
-    `<b>Исполнитель:</b> ${employeeName}${employeeRole ? ` (${employeeRole})` : ''}`,
-    `<b>Задача:</b> ${taskTitle}`,
-    `<b>Категория:</b> ${taskType || 'Task'}`,
-    `<b>Приоритет:</b> ${taskPriority || 'Medium'}`,
+    escapeHtml(messageRecord.text || ''),
   ].join('\n');
 
-  const inlineKeyboard: any[][] = [];
-  if (taskId) {
-    inlineKeyboard.push([
-      { text: 'Принять в работу', callback_data: `task_progress:${taskId}` },
-      { text: 'Завершить задачу', callback_data: `task_done:${taskId}` },
-    ]);
-  }
-  inlineKeyboard.push([
-    { text: 'Открыть панель TedCloud', url: `${siteUrl}/?chatId=${telegramChatId}` },
-  ]);
+  let pushedCount = 0;
 
-  try {
-    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: telegramChatId,
-        text: notificationHtml,
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: inlineKeyboard },
-      }),
-    });
+  for (const recipient of targetNodes) {
+    const tgChatId = String(recipient.telegram_chat_id || '').trim();
+    if (!tgChatId) continue;
 
-    if (!tgRes.ok) {
-      const errBody = await tgRes.text();
-      console.error('[API /api/db] Telegram Push API non-200:', errBody);
-      return { pushed: false, reason: 'telegram_api_error' };
+    const inlineKeyboard: any[][] = [];
+    if (messageRecord.sender_id) {
+      inlineKeyboard.push([
+        {
+          text: 'Ответить через бота',
+          callback_data: `reply_msg_${messageRecord.sender_id}`,
+        },
+      ]);
     }
+    inlineKeyboard.push([
+      {
+        text: 'Открыть панель TedCloud',
+        url: `${siteUrl}/?chatId=${tgChatId}`,
+      },
+    ]);
 
-    return { pushed: true };
-  } catch (err: any) {
-    console.error('[API /api/db] Telegram Push network error:', err);
-    return { pushed: false, reason: err?.message || 'network_error' };
+    try {
+      const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: tgChatId,
+          text: htmlText,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: inlineKeyboard },
+        }),
+      });
+      if (tgRes.ok) {
+        pushedCount++;
+      }
+    } catch (err) {
+      console.error('[API /api/db] Telegram WorkspaceMessage push error:', err);
+    }
   }
+
+  return { pushed: pushedCount > 0, count: pushedCount };
+}
+
+function normalizeCompanyRow(row: any) {
+  if (!row) return null;
+  const extras = row.id ? recordExtrasOverlay.get(`companies:${row.id}`) : undefined;
+  let departments = row.departments ?? extras?.departments ?? [];
+  if (typeof departments === 'string') {
+    try {
+      departments = JSON.parse(departments);
+    } catch {
+      departments = [];
+    }
+  }
+  return {
+    ...row,
+    ...(extras || {}),
+    departments: Array.isArray(departments) ? departments : [],
+  };
 }
 
 function normalizeTaskRow(row: any) {
   const overlay = row.id ? recordNotesOverlay.get(`tasks:${row.id}`) : undefined;
+  const extras = row.id ? recordExtrasOverlay.get(`tasks:${row.id}`) : undefined;
   const noteText =
     row.description ?? row.notes ?? overlay?.description ?? overlay?.notes ?? null;
 
   return {
     ...row,
+    ...(extras || {}),
     description: noteText,
     notes: noteText,
     type: row.type || 'Task',
     priority: row.priority || 'Medium',
     status: row.status || 'Todo',
-    assigned_to: row.assigned_to ?? row.owner_node_id ?? null,
+    department: row.department ?? extras?.department ?? null,
+    assigned_to:
+      row.assigned_to !== undefined
+        ? row.assigned_to
+        : extras?.assigned_to !== undefined
+        ? extras.assigned_to
+        : row.owner_node_id ?? null,
     owner_node_id: row.owner_node_id ?? row.assigned_to ?? null,
     created_by: row.created_by ?? row.owner_node_id ?? null,
   };
@@ -561,6 +766,7 @@ function normalizeNodeRow(row: any) {
 
 function normalizeLeadRow(row: any) {
   const overlay = row.id ? recordNotesOverlay.get(`crm_leads:${row.id}`) : undefined;
+  const extras = row.id ? recordExtrasOverlay.get(`crm_leads:${row.id}`) : undefined;
   const noteText =
     row.description ?? row.notes ?? overlay?.description ?? overlay?.notes ?? null;
   const clientName = row.client_name || row.full_name || row.title || 'Контрагент';
@@ -571,6 +777,7 @@ function normalizeLeadRow(row: any) {
 
   return {
     ...row,
+    ...(extras || {}),
     title,
     description: noteText,
     notes: noteText,
@@ -582,6 +789,38 @@ function normalizeLeadRow(row: any) {
     phone: contact,
     status,
     stage: status,
+    department: row.department ?? extras?.department ?? null,
+    assigned_to:
+      row.assigned_to !== undefined
+        ? row.assigned_to
+        : extras?.assigned_to !== undefined
+        ? extras.assigned_to
+        : row.owner_node_id ?? null,
+    jurisdiction: row.jurisdiction ?? extras?.jurisdiction ?? 'RU',
+    tax_id: row.tax_id ?? extras?.tax_id ?? null,
+    reg_number: row.reg_number ?? extras?.reg_number ?? null,
+    contract_number: row.contract_number ?? extras?.contract_number ?? null,
+  };
+}
+
+function normalizeMessageRow(row: any) {
+  const textVal = row.text || row.message || row.content || '';
+  return {
+    ...row,
+    text: textVal,
+    scope_type:
+      row.scope_type ||
+      (row.task_id
+        ? 'task'
+        : row.lead_id
+        ? 'deal'
+        : row.target_department
+        ? 'department'
+        : row.recipient_id
+        ? 'direct'
+        : 'broadcast'),
+    is_urgent: Boolean(row.is_urgent),
+    created_at: row.created_at || new Date().toISOString(),
   };
 }
 
@@ -621,19 +860,21 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({
           ok: true,
           mode: 'local_empty',
-          company: localStore.companies[0] || null,
+          company: normalizeCompanyRow(localStore.companies[0] || null),
           currentProfile,
           nodes,
           tasks: localStore.tasks.map(normalizeTaskRow),
           leads: localStore.crm_leads.map(normalizeLeadRow),
+          messages: localStore.workspace_messages.map(normalizeMessageRow),
         });
       }
 
-      const [companiesRes, nodesRes, tasksRes, leadsRes] = await Promise.all([
+      const [companiesRes, nodesRes, tasksRes, leadsRes, messagesRes] = await Promise.all([
         safeSelectTable(supabase, 'companies', false, 1),
         safeSelectTable(supabase, 'organization_nodes', true),
         safeSelectTable(supabase, 'tasks', false),
         safeSelectTable(supabase, 'crm_leads', false),
+        safeSelectTable(supabase, 'workspace_messages', false, 100),
       ]);
 
       if (nodesRes.error) {
@@ -643,6 +884,17 @@ export default async function handler(req: any, res: any) {
       const rawNodes = (nodesRes.data || []).map(normalizeNodeRow);
       const rawTasks = (tasksRes.data || []).map(normalizeTaskRow);
       const rawLeads = (leadsRes.data || []).map(normalizeLeadRow);
+
+      // Merge remote workspace_messages with any in-memory fallback messages
+      const remoteMessages = Array.isArray(messagesRes.data) ? messagesRes.data : [];
+      const seenMsgIds = new Set<string>();
+      const mergedMessages: any[] = [];
+      for (const m of [...remoteMessages, ...localStore.workspace_messages]) {
+        if (m && m.id && !seenMsgIds.has(m.id)) {
+          seenMsgIds.add(m.id);
+          mergedMessages.push(normalizeMessageRow(m));
+        }
+      }
 
       let currentProfile = null;
       if (profileId) {
@@ -654,18 +906,19 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({
         ok: true,
         mode: 'supabase',
-        company: companiesRes.data?.[0] || null,
+        company: normalizeCompanyRow(companiesRes.data?.[0] || null),
         currentProfile,
         nodes: rawNodes,
         tasks: rawTasks,
         leads: rawLeads,
+        messages: mergedMessages,
       });
     }
 
     if (method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
 
-      // Вход сотрудника по любому из 4 полей (telegram_chat_id, invite_code, email, name)
+      // Вход сотрудника по любому из 4 полей
       if (body.action === 'login') {
         const q = String(body.input || body.identifier || '').trim().toLowerCase();
         if (!q) {
@@ -677,7 +930,7 @@ export default async function handler(req: any, res: any) {
 
         if (!supabase) {
           nodes = localStore.organization_nodes.map(normalizeNodeRow);
-          company = localStore.companies[0] || null;
+          company = normalizeCompanyRow(localStore.companies[0] || null);
         } else {
           const [nodesRes, companiesRes] = await Promise.all([
             safeSelectTable(supabase, 'organization_nodes', true),
@@ -687,7 +940,7 @@ export default async function handler(req: any, res: any) {
             return res.status(400).json({ error: nodesRes.error.message });
           }
           nodes = (nodesRes.data || []).map(normalizeNodeRow);
-          company = companiesRes.data?.[0] || null;
+          company = normalizeCompanyRow(companiesRes.data?.[0] || null);
         }
 
         const matched = nodes.find(
@@ -712,7 +965,7 @@ export default async function handler(req: any, res: any) {
             .eq('id', matched.company_id)
             .maybeSingle();
           if (matchedCompany) {
-            company = matchedCompany;
+            company = normalizeCompanyRow(matchedCompany);
           }
         }
 
@@ -744,6 +997,7 @@ export default async function handler(req: any, res: any) {
 
         const rootInviteCode = generateInviteCode();
         const rootPermissions = getDefaultPermissions('root');
+        const initialDepts = leaderDepartment ? [leaderDepartment] : [];
 
         if (!supabase) {
           const newCompany = {
@@ -751,6 +1005,7 @@ export default async function handler(req: any, res: any) {
             name: companyName,
             plan: 'Business',
             payment_region: 'RU',
+            departments: initialDepts,
             created_at: new Date().toISOString(),
           };
           localStore.companies.unshift(newCompany);
@@ -775,7 +1030,7 @@ export default async function handler(req: any, res: any) {
 
           return res.status(200).json({
             ok: true,
-            company: newCompany,
+            company: normalizeCompanyRow(newCompany),
             profile: normalizeNodeRow(rootNode),
           });
         }
@@ -787,14 +1042,19 @@ export default async function handler(req: any, res: any) {
             name: companyName,
             plan: 'Business',
             payment_region: 'RU',
+            departments: initialDepts,
           }
         );
 
         if (compErr || !createdCompany) {
           return res.status(400).json({
-            error: compErr?.message || 'Не удалось создать организацию в БД.',
+            error: compErr?.message || 'Не удалось создать организацию.',
           });
         }
+
+        recordExtrasOverlay.set(`companies:${createdCompany.id}`, {
+          departments: initialDepts,
+        });
 
         const rawRootNode = {
           company_id: createdCompany.id,
@@ -825,7 +1085,7 @@ export default async function handler(req: any, res: any) {
 
         return res.status(200).json({
           ok: true,
-          company: createdCompany,
+          company: normalizeCompanyRow({ ...createdCompany, departments: initialDepts }),
           profile: normalizeNodeRow({ ...rawRootNode, ...createdNode }),
         });
       }
@@ -847,9 +1107,13 @@ export default async function handler(req: any, res: any) {
         }
 
         const fallbackNodeId = await resolveFallbackOwnerNodeId(supabase, companyId);
+        const taskDept = payload.department ? String(payload.department).trim() : null;
+        const explicitAssignee =
+          payload.assigned_to !== undefined ? payload.assigned_to : fallbackNodeId;
+
         const resolvedOwnerNodeId =
           payload.owner_node_id ||
-          payload.assigned_to ||
+          explicitAssignee ||
           payload.created_by ||
           fallbackNodeId ||
           null;
@@ -862,7 +1126,8 @@ export default async function handler(req: any, res: any) {
           type: payload.type || 'Task',
           priority: payload.priority || 'Medium',
           status: payload.status || 'Todo',
-          assigned_to: payload.assigned_to || resolvedOwnerNodeId || null,
+          department: taskDept,
+          assigned_to: explicitAssignee || null,
           owner_node_id: resolvedOwnerNodeId,
           created_by: payload.created_by || resolvedOwnerNodeId || null,
         };
@@ -882,19 +1147,26 @@ export default async function handler(req: any, res: any) {
             console.error('[API /api/db] Supabase INSERT error in tasks:', error);
             return res.status(400).json({ error: error.message, details: error });
           }
-          savedTask = { ...rawInsertPayload, ...data };
+          savedTask = { ...rawInsertPayload, ...data, assigned_to: explicitAssignee || null };
         }
 
-        if (savedTask?.id && (rawInsertPayload.description || rawInsertPayload.notes)) {
-          recordNotesOverlay.set(`tasks:${savedTask.id}`, {
-            description: rawInsertPayload.description,
-            notes: rawInsertPayload.notes,
+        if (savedTask?.id) {
+          if (rawInsertPayload.description || rawInsertPayload.notes) {
+            recordNotesOverlay.set(`tasks:${savedTask.id}`, {
+              description: rawInsertPayload.description,
+              notes: rawInsertPayload.notes,
+            });
+          }
+          recordExtrasOverlay.set(`tasks:${savedTask.id}`, {
+            department: taskDept,
+            assigned_to: explicitAssignee || null,
           });
         }
 
-        const pushStatus = await sendTelegramTaskPush({
+        const pushStatus = await sendTelegramTaskOrDepartmentPush({
           supabase,
-          assignedToId: savedTask.assigned_to || rawInsertPayload.assigned_to,
+          assignedToId: explicitAssignee || null,
+          department: taskDept,
           taskId: savedTask.id,
           taskTitle: savedTask.title,
           taskPriority: savedTask.priority || rawInsertPayload.priority,
@@ -974,6 +1246,15 @@ export default async function handler(req: any, res: any) {
         const amount = Number(payload.amount ?? payload.deal_value ?? 0);
         const contact = payload.contact || payload.phone || null;
         const status = payload.status || payload.stage || 'New';
+        const leadDept = payload.department ? String(payload.department).trim() : null;
+        const leadAssignee =
+          payload.assigned_to !== undefined ? payload.assigned_to : payload.owner_node_id || null;
+        const jurisdiction = payload.jurisdiction === 'GLOBAL' ? 'GLOBAL' : 'RU';
+        const taxId = payload.tax_id ? String(payload.tax_id).trim() : null;
+        const regNumber = payload.reg_number ? String(payload.reg_number).trim() : null;
+        const contractNumber = payload.contract_number
+          ? String(payload.contract_number).trim()
+          : null;
 
         if (!clientName) {
           return res
@@ -985,7 +1266,9 @@ export default async function handler(req: any, res: any) {
 
         const rawInsertPayload: Record<string, any> = {
           company_id: companyId,
-          owner_node_id: payload.owner_node_id || fallbackNodeId || null,
+          owner_node_id: leadAssignee || payload.owner_node_id || fallbackNodeId || null,
+          assigned_to: leadAssignee || null,
+          department: leadDept,
           title,
           description: payload.description || payload.notes || null,
           notes: payload.notes || payload.description || null,
@@ -997,37 +1280,134 @@ export default async function handler(req: any, res: any) {
           phone: contact,
           status,
           stage: status,
+          jurisdiction,
+          tax_id: taxId,
+          reg_number: regNumber,
+          contract_number: contractNumber,
           source: payload.source || 'Direct B2B',
         };
 
+        let savedLead: any;
+
         if (!supabase) {
-          const newRecord = {
+          savedLead = {
             id: crypto.randomUUID(),
             ...rawInsertPayload,
             created_at: new Date().toISOString(),
           };
-          localStore.crm_leads.unshift(newRecord);
-          return res.status(200).json({ ok: true, data: normalizeLeadRow(newRecord) });
+          localStore.crm_leads.unshift(savedLead);
+        } else {
+          const { data, error } = await safeSupabaseInsert(supabase, 'crm_leads', rawInsertPayload);
+
+          if (error) {
+            console.error('[API /api/db] Supabase INSERT error in crm_leads:', error);
+            return res.status(400).json({ error: error.message, details: error });
+          }
+
+          savedLead = { ...rawInsertPayload, ...data };
         }
 
-        const { data, error } = await safeSupabaseInsert(supabase, 'crm_leads', rawInsertPayload);
-
-        if (error) {
-          console.error('[API /api/db] Supabase INSERT error in crm_leads:', error);
-          return res.status(400).json({ error: error.message, details: error });
+        if (savedLead?.id) {
+          if (rawInsertPayload.description || rawInsertPayload.notes) {
+            recordNotesOverlay.set(`crm_leads:${savedLead.id}`, {
+              description: rawInsertPayload.description,
+              notes: rawInsertPayload.notes,
+            });
+          }
+          recordExtrasOverlay.set(`crm_leads:${savedLead.id}`, {
+            department: leadDept,
+            assigned_to: leadAssignee || null,
+            jurisdiction,
+            tax_id: taxId,
+            reg_number: regNumber,
+            contract_number: contractNumber,
+          });
         }
 
-        const savedLead = { ...rawInsertPayload, ...data };
-        if (savedLead?.id && (rawInsertPayload.description || rawInsertPayload.notes)) {
-          recordNotesOverlay.set(`crm_leads:${savedLead.id}`, {
-            description: rawInsertPayload.description,
-            notes: rawInsertPayload.notes,
+        let telegramPush: { pushed: boolean; count?: number; reason?: string } = {
+          pushed: false,
+        };
+        if (leadAssignee || leadDept) {
+          telegramPush = await sendTelegramTaskOrDepartmentPush({
+            supabase,
+            assignedToId: leadAssignee || null,
+            department: leadDept,
+            taskTitle: `Сделка CRM: ${clientName} (${title})`,
+            taskPriority: 'High',
+            taskType: 'CRM Deal',
           });
         }
 
         return res.status(200).json({
           ok: true,
           data: normalizeLeadRow(savedLead),
+          telegramPush,
+        });
+      }
+
+      // БЛОК 4: Единое инфополе и мгновенная связь между сотрудниками (workspace_messages)
+      if (table === 'workspace_messages') {
+        const textVal = String(payload.text || payload.message || payload.content || '').trim();
+        if (!textVal) {
+          return res.status(400).json({ error: 'Текст сообщения не может быть пустым.' });
+        }
+
+        const rawMsgPayload: Record<string, any> = {
+          company_id: companyId,
+          sender_id: payload.sender_id || null,
+          sender_name: payload.sender_name || 'Сотрудник TedCloud',
+          sender_role: payload.sender_role || '',
+          recipient_id: payload.recipient_id || null,
+          target_department: payload.target_department || null,
+          scope_type:
+            payload.scope_type ||
+            (payload.task_id
+              ? 'task'
+              : payload.lead_id
+              ? 'deal'
+              : payload.target_department
+              ? 'department'
+              : payload.recipient_id
+              ? 'direct'
+              : 'broadcast'),
+          task_id: payload.task_id || null,
+          lead_id: payload.lead_id || null,
+          entity_id: payload.entity_id || payload.task_id || payload.lead_id || null,
+          entity_title: payload.entity_title || null,
+          text: textVal,
+          message: textVal,
+          content: textVal,
+          is_urgent: Boolean(payload.is_urgent),
+        };
+
+        let savedMsg: any = {
+          id: crypto.randomUUID(),
+          ...rawMsgPayload,
+          created_at: new Date().toISOString(),
+        };
+
+        if (supabase) {
+          const { data, error } = await safeSupabaseInsert(
+            supabase,
+            'workspace_messages',
+            rawMsgPayload
+          );
+          if (!error && data) {
+            savedMsg = { ...savedMsg, ...data, text: textVal };
+          }
+        }
+
+        localStore.workspace_messages.unshift(savedMsg);
+
+        const pushStatus = await sendTelegramWorkspaceMessagePush({
+          supabase,
+          messageRecord: savedMsg,
+        });
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeMessageRow(savedMsg),
+          telegramPush: pushStatus,
         });
       }
 
@@ -1048,28 +1428,44 @@ export default async function handler(req: any, res: any) {
         const rawUpdates: Record<string, any> = {};
         if (updates.name !== undefined) rawUpdates.name = String(updates.name).trim();
         if (updates.plan !== undefined) rawUpdates.plan = updates.plan;
-        if (updates.payment_region !== undefined) rawUpdates.payment_region = updates.payment_region;
+        if (updates.payment_region !== undefined)
+          rawUpdates.payment_region = updates.payment_region;
+        if (updates.departments !== undefined) {
+          rawUpdates.departments = Array.isArray(updates.departments) ? updates.departments : [];
+          const prevExtras = recordExtrasOverlay.get(`companies:${id}`) || {};
+          recordExtrasOverlay.set(`companies:${id}`, {
+            ...prevExtras,
+            departments: rawUpdates.departments,
+          });
+        }
 
         if (!supabase) {
           const idx = localStore.companies.findIndex((c) => c.id === id);
           if (idx !== -1) {
             localStore.companies[idx] = { ...localStore.companies[idx], ...rawUpdates };
-            return res.status(200).json({ ok: true, data: localStore.companies[idx] });
+            return res
+              .status(200)
+              .json({ ok: true, data: normalizeCompanyRow(localStore.companies[idx]) });
           }
-          return res.status(200).json({ ok: true, data: { id, ...rawUpdates } });
+          return res.status(200).json({ ok: true, data: normalizeCompanyRow({ id, ...rawUpdates }) });
         }
 
         const { data, error } = await safeSupabaseUpdate(supabase, 'companies', id, rawUpdates);
         if (error) {
           return res.status(400).json({ error: error.message });
         }
-        return res.status(200).json({ ok: true, data: { id, ...rawUpdates, ...data } });
+        return res
+          .status(200)
+          .json({ ok: true, data: normalizeCompanyRow({ id, ...rawUpdates, ...data }) });
       }
 
       if (table === 'tasks') {
         const rawUpdates: Record<string, any> = {};
         if (updates.status !== undefined) rawUpdates.status = updates.status;
         if (updates.priority !== undefined) rawUpdates.priority = updates.priority;
+        if (updates.department !== undefined) {
+          rawUpdates.department = updates.department ? String(updates.department).trim() : null;
+        }
         if (updates.assigned_to !== undefined) {
           rawUpdates.assigned_to = updates.assigned_to || null;
           if (updates.assigned_to) {
@@ -1089,8 +1485,16 @@ export default async function handler(req: any, res: any) {
           recordNotesOverlay.set(`tasks:${id}`, { description: noteVal, notes: noteVal });
         }
 
+        const prevExtras = recordExtrasOverlay.get(`tasks:${id}`) || {};
+        recordExtrasOverlay.set(`tasks:${id}`, {
+          ...prevExtras,
+          ...(rawUpdates.department !== undefined ? { department: rawUpdates.department } : {}),
+          ...(rawUpdates.assigned_to !== undefined ? { assigned_to: rawUpdates.assigned_to } : {}),
+        });
+
         let updatedTask: any = null;
         let previousAssignee: string | null = null;
+        let previousDept: string | null = null;
 
         if (!supabase) {
           const idx = localStore.tasks.findIndex((t) => t.id === id);
@@ -1098,6 +1502,7 @@ export default async function handler(req: any, res: any) {
             return res.status(404).json({ error: 'Задача не найдена.' });
           }
           previousAssignee = localStore.tasks[idx].assigned_to || null;
+          previousDept = localStore.tasks[idx].department || null;
           localStore.tasks[idx] = { ...localStore.tasks[idx], ...rawUpdates };
           updatedTask = localStore.tasks[idx];
         } else {
@@ -1107,6 +1512,7 @@ export default async function handler(req: any, res: any) {
             .eq('id', id)
             .maybeSingle();
           previousAssignee = existing?.assigned_to || null;
+          previousDept = existing?.department || null;
 
           const { data, error } = await safeSupabaseUpdate(supabase, 'tasks', id, rawUpdates);
           if (error) {
@@ -1116,11 +1522,27 @@ export default async function handler(req: any, res: any) {
           updatedTask = { ...existing, ...rawUpdates, ...data };
         }
 
-        let telegramPush = { pushed: false, reason: 'not_reassigned' };
+        let telegramPush: { pushed: boolean; count?: number; reason?: string } = {
+          pushed: false,
+          reason: 'not_reassigned',
+        };
         if (rawUpdates.assigned_to && rawUpdates.assigned_to !== previousAssignee) {
-          telegramPush = await sendTelegramTaskPush({
+          telegramPush = await sendTelegramTaskOrDepartmentPush({
             supabase,
             assignedToId: rawUpdates.assigned_to,
+            taskId: updatedTask.id,
+            taskTitle: updatedTask.title,
+            taskPriority: updatedTask.priority || 'Medium',
+            taskType: updatedTask.type || 'Task',
+          });
+        } else if (
+          rawUpdates.department &&
+          rawUpdates.department !== previousDept &&
+          !updatedTask.assigned_to
+        ) {
+          telegramPush = await sendTelegramTaskOrDepartmentPush({
+            supabase,
+            department: rawUpdates.department,
             taskId: updatedTask.id,
             taskTitle: updatedTask.title,
             taskPriority: updatedTask.priority || 'Medium',
@@ -1160,6 +1582,29 @@ export default async function handler(req: any, res: any) {
           rawUpdates.contact = nextContact;
           rawUpdates.phone = nextContact;
         }
+        if (updates.department !== undefined) {
+          rawUpdates.department = updates.department ? String(updates.department).trim() : null;
+        }
+        if (updates.assigned_to !== undefined) {
+          rawUpdates.assigned_to = updates.assigned_to || null;
+          if (updates.assigned_to) {
+            rawUpdates.owner_node_id = updates.assigned_to;
+          }
+        }
+        if (updates.jurisdiction !== undefined) {
+          rawUpdates.jurisdiction = updates.jurisdiction === 'GLOBAL' ? 'GLOBAL' : 'RU';
+        }
+        if (updates.tax_id !== undefined) {
+          rawUpdates.tax_id = updates.tax_id ? String(updates.tax_id).trim() : null;
+        }
+        if (updates.reg_number !== undefined) {
+          rawUpdates.reg_number = updates.reg_number ? String(updates.reg_number).trim() : null;
+        }
+        if (updates.contract_number !== undefined) {
+          rawUpdates.contract_number = updates.contract_number
+            ? String(updates.contract_number).trim()
+            : null;
+        }
         if (updates.description !== undefined || updates.notes !== undefined) {
           const noteVal =
             updates.description !== undefined ? updates.description : updates.notes;
@@ -1167,6 +1612,12 @@ export default async function handler(req: any, res: any) {
           rawUpdates.notes = noteVal;
           recordNotesOverlay.set(`crm_leads:${id}`, { description: noteVal, notes: noteVal });
         }
+
+        const prevLeadExtras = recordExtrasOverlay.get(`crm_leads:${id}`) || {};
+        recordExtrasOverlay.set(`crm_leads:${id}`, {
+          ...prevLeadExtras,
+          ...rawUpdates,
+        });
 
         if (!supabase) {
           const idx = localStore.crm_leads.findIndex((l) => l.id === id);
@@ -1202,7 +1653,8 @@ export default async function handler(req: any, res: any) {
       if (table === 'organization_nodes') {
         const rawUpdates: Record<string, any> = {};
         if (updates.name !== undefined) rawUpdates.name = String(updates.name).trim();
-        if (updates.role_type !== undefined) rawUpdates.role_type = String(updates.role_type).trim();
+        if (updates.role_type !== undefined)
+          rawUpdates.role_type = String(updates.role_type).trim();
         if (updates.department !== undefined) {
           rawUpdates.department = updates.department ? String(updates.department).trim() : null;
         }
@@ -1221,10 +1673,7 @@ export default async function handler(req: any, res: any) {
           rawUpdates.access_level = normalizeAccessLevel(updates.access_level, updates.role_type);
         }
         if (updates.permissions !== undefined) {
-          const level = normalizeAccessLevel(
-            updates.access_level,
-            updates.role_type
-          );
+          const level = normalizeAccessLevel(updates.access_level, updates.role_type);
           rawUpdates.permissions = normalizePermissionsObject(level, updates.permissions);
         }
         if (updates.tree_path !== undefined) {
@@ -1280,37 +1729,47 @@ export default async function handler(req: any, res: any) {
 
       if (!table || !id) {
         return res.status(400).json({
-          error: 'Для DELETE-запроса обязательны параметры "table" и "id".',
+          error: 'Для удаления записи необходимы параметры "table" и "id".',
         });
       }
 
       if (!['tasks', 'crm_leads', 'organization_nodes'].includes(table)) {
-        return res.status(400).json({ error: `Удаление из таблицы ${table} запрещено.` });
+        return res.status(400).json({
+          error: `Удаление из таблицы "${table}" запрещено политикой безопасности.`,
+        });
       }
 
       if (!supabase) {
-        const list = (localStore as any)[table] as Record<string, any>[];
-        const idx = list.findIndex((item) => item.id === id);
-        if (idx !== -1) {
-          list.splice(idx, 1);
+        if (table === 'tasks') {
+          localStore.tasks = localStore.tasks.filter((t) => t.id !== id);
+        } else if (table === 'crm_leads') {
+          localStore.crm_leads = localStore.crm_leads.filter((l) => l.id !== id);
+        } else if (table === 'organization_nodes') {
+          localStore.organization_nodes = localStore.organization_nodes.filter((n) => n.id !== id);
         }
-        return res.status(200).json({ ok: true, deletedId: id, table });
+        return res.status(200).json({ ok: true, id });
+      }
+
+      if (table === 'organization_nodes') {
+        await supabase.from('tasks').update({ assigned_to: null }).eq('assigned_to', id);
+        await supabase.from('tasks').update({ owner_node_id: null }).eq('owner_node_id', id);
       }
 
       const { error } = await supabase.from(table).delete().eq('id', id);
+
       if (error) {
         console.error(`[API /api/db] Supabase DELETE error in ${table}:`, error);
         return res.status(400).json({ error: error.message, details: error });
       }
 
-      return res.status(200).json({ ok: true, deletedId: id, table });
+      return res.status(200).json({ ok: true, id });
     }
 
     return res.status(405).json({ error: `Method ${method} Not Allowed` });
   } catch (err: any) {
     console.error('[API /api/db] Fatal Error:', err);
-    return res.status(400).json({
-      error: err?.message || 'Internal Server Error in /api/db',
+    return res.status(500).json({
+      error: err?.message || 'Внутренняя ошибка серверного шлюза /api/db',
     });
   }
 }

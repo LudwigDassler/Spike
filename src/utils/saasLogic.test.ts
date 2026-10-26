@@ -758,4 +758,20 @@ test('computeDashboardKpis, generateCorporateInviteCode, and 7-flag RBAC permiss
   assert.equal(serverMember.team_manage, false);
   assert.equal(serverMember.billing_admin, false);
   assert.equal(serverMember.crm_view, false);
+
+  // 7. extractCompanyDepartments merges company.departments, nodes, tasks, and leads without duplicates
+  const { extractCompanyDepartments } = await import('../types/database');
+  const mergedDepts = extractCompanyDepartments(
+    { id: 'c1', name: 'TedCloud', departments: ['Дирекция', 'Отдел продаж'] },
+    [{ id: 'n1', company_id: 'c1', name: 'Иван', role_type: 'Юрист', department: 'Юридический отдел' }],
+    [{ id: 't1', title: 'Задача', department: 'IT и Разработка' }],
+    [{ id: 'l1', title: 'Сделка', department: 'Отдел продаж' }]
+  );
+  assert.deepEqual(mergedDepts, [
+    'Дирекция',
+    'Отдел продаж',
+    'Юридический отдел',
+    'IT и Разработка',
+  ]);
 });
+

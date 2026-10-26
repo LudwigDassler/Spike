@@ -11,9 +11,12 @@ import {
   KeyRound,
   ExternalLink,
   Shield,
+  Building2,
+  Globe,
 } from 'lucide-react';
 import {
   AccessLevel,
+  CounterpartyJurisdiction,
   CrmLeadStatus,
   EmployeePermissions,
   OrganizationNode,
@@ -33,7 +36,9 @@ interface AddRecordModalProps {
   currentProfileId?: string | null;
   canAssignTasks?: boolean;
   nodes: OrganizationNode[];
+  departments?: string[];
   botUsername?: string;
+  onAddCompanyDepartment?: (deptName: string) => Promise<void> | void;
   onClose: () => void;
   onSuccess: (pushSent?: boolean) => Promise<void> | void;
 }
@@ -44,13 +49,18 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   currentProfileId,
   canAssignTasks = false,
   nodes,
+  departments = [],
   botUsername = 'TedCloudEnterpriseBot',
+  onAddCompanyDepartment,
   onClose,
   onSuccess,
 }) => {
   const { t, currency } = useLocale();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const safeNodes = Array.isArray(nodes) ? nodes : [];
+  const safeDepartments = Array.isArray(departments) ? departments : [];
 
   // Task fields
   const [taskTitle, setTaskTitle] = useState('');
@@ -59,8 +69,11 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('Medium');
   const [taskStatus, setTaskStatus] = useState<TaskStatus>('Todo');
   const [taskAssignedTo, setTaskAssignedTo] = useState<string>(
-    currentProfileId || nodes[0]?.id || ''
+    currentProfileId || safeNodes[0]?.id || ''
   );
+  const [taskDepartment, setTaskDepartment] = useState<string>('');
+  const [taskCustomDept, setTaskCustomDept] = useState<string>('');
+  const [isTaskCustomDept, setIsTaskCustomDept] = useState<boolean>(false);
 
   useEffect(() => {
     if (currentProfileId) {
@@ -72,6 +85,8 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const [empName, setEmpName] = useState('');
   const [empRoleTitle, setEmpRoleTitle] = useState('');
   const [empDepartment, setEmpDepartment] = useState('');
+  const [empCustomDept, setEmpCustomDept] = useState('');
+  const [isEmpCustomDept, setIsEmpCustomDept] = useState(false);
   const [empAccessLevel, setEmpAccessLevel] = useState<AccessLevel>('member');
   const [empPermissions, setEmpPermissions] = useState<EmployeePermissions>(() =>
     getDefaultPermissionsForAccessLevel('member')
@@ -88,13 +103,23 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   } | null>(null);
   const [copiedField, setCopiedField] = useState<'code' | 'link' | null>(null);
 
-  // CRM Lead fields
+  // CRM Lead fields (БЛОК 3: реквизиты РФ и Global + Ответственный + Отдел)
   const [leadTitle, setLeadTitle] = useState('');
   const [leadClientName, setLeadClientName] = useState('');
   const [leadAmount, setLeadAmount] = useState('');
   const [leadContact, setLeadContact] = useState('');
   const [leadNotes, setLeadNotes] = useState('');
   const [leadStatus, setLeadStatus] = useState<CrmLeadStatus>('New');
+  const [leadJurisdiction, setLeadJurisdiction] = useState<CounterpartyJurisdiction>('RU');
+  const [leadTaxId, setLeadTaxId] = useState('');
+  const [leadRegNumber, setLeadRegNumber] = useState('');
+  const [leadContractNumber, setLeadContractNumber] = useState('');
+  const [leadAssignedTo, setLeadAssignedTo] = useState<string>(
+    currentProfileId || safeNodes[0]?.id || ''
+  );
+  const [leadDepartment, setLeadDepartment] = useState<string>('');
+  const [leadCustomDept, setLeadCustomDept] = useState<string>('');
+  const [isLeadCustomDept, setIsLeadCustomDept] = useState<boolean>(false);
 
   if (!type) return null;
 
@@ -126,15 +151,32 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
     try {
       let payload: Record<string, any> = { company_id: companyId };
+      let newlyCreatedDept = '';
 
       if (type === 'tasks') {
         if (!taskTitle.trim()) {
           throw new Error(t('modal.taskTitleLabel'));
         }
-        // Если у сотрудника нет права tasks_assign — задача автоматически назначается на него самого
-        const enforcedAssignee = canAssignTasks
-          ? taskAssignedTo || currentProfileId || nodes[0]?.id || null
-          : currentProfileId || nodes[0]?.id || null;
+        const resolvedTaskDept = isTaskCustomDept
+          ? taskCustomDept.trim()
+          : taskDepartment.trim();
+
+        if (isTaskCustomDept && resolvedTaskDept) {
+          newlyCreatedDept = resolvedTaskDept;
+        }
+
+        // Если выбран отдел и исполнитель явно оставлен пустым ("Оповестить весь отдел"),
+        // передаем assigned_to = null, чтобы сервер /api/db разослал пуш всем сотрудникам отдела.
+        let enforcedAssignee: string | null = null;
+        if (!canAssignTasks) {
+          enforcedAssignee = currentProfileId || safeNodes[0]?.id || null;
+        } else if (taskAssignedTo) {
+          enforcedAssignee = taskAssignedTo;
+        } else if (resolvedTaskDept) {
+          enforcedAssignee = null;
+        } else {
+          enforcedAssignee = currentProfileId || safeNodes[0]?.id || null;
+        }
 
         payload = {
           company_id: companyId,
@@ -143,20 +185,29 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           type: taskType,
           priority: taskPriority,
           status: taskStatus,
+          department: resolvedTaskDept || null,
           assigned_to: enforcedAssignee,
-          owner_node_id: enforcedAssignee,
-          created_by: currentProfileId || enforcedAssignee,
+          owner_node_id: enforcedAssignee || currentProfileId || safeNodes[0]?.id || null,
+          created_by: currentProfileId || enforcedAssignee || null,
         };
       } else if (type === 'organization_nodes') {
         if (!empName.trim() || !empRoleTitle.trim()) {
           throw new Error(t('modal.empRoleLabel'));
         }
+        const resolvedEmpDept = isEmpCustomDept
+          ? empCustomDept.trim()
+          : empDepartment.trim();
+
+        if (isEmpCustomDept && resolvedEmpDept) {
+          newlyCreatedDept = resolvedEmpDept;
+        }
+
         const inviteCode = generateCorporateInviteCode();
         payload = {
           company_id: companyId,
           name: empName.trim(),
           role_type: empRoleTitle.trim(),
-          department: empDepartment.trim() || null,
+          department: resolvedEmpDept || null,
           access_level: empAccessLevel,
           permissions:
             empAccessLevel === 'root'
@@ -171,16 +222,40 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         if (!leadClientName.trim()) {
           throw new Error(t('modal.dealClientLabel'));
         }
+        const resolvedLeadDept = isLeadCustomDept
+          ? leadCustomDept.trim()
+          : leadDepartment.trim();
+
+        if (isLeadCustomDept && resolvedLeadDept) {
+          newlyCreatedDept = resolvedLeadDept;
+        }
+
+        const resolvedLeadAssignee = leadAssignedTo
+          ? leadAssignedTo
+          : resolvedLeadDept
+          ? null
+          : currentProfileId || safeNodes[0]?.id || null;
+
         payload = {
           company_id: companyId,
-          owner_node_id: currentProfileId || nodes[0]?.id || null,
+          owner_node_id: resolvedLeadAssignee || currentProfileId || safeNodes[0]?.id || null,
+          assigned_to: resolvedLeadAssignee,
+          department: resolvedLeadDept || null,
           title: leadTitle.trim() || leadClientName.trim(),
           client_name: leadClientName.trim(),
           amount: Number(leadAmount) || 0,
           contact: leadContact.trim() || null,
           description: leadNotes.trim() || null,
           status: leadStatus,
+          jurisdiction: leadJurisdiction,
+          tax_id: leadTaxId.trim() || null,
+          reg_number: leadRegNumber.trim() || null,
+          contract_number: leadContractNumber.trim() || null,
         };
+      }
+
+      if (newlyCreatedDept && onAddCompanyDepartment) {
+        await onAddCompanyDepartment(newlyCreatedDept);
       }
 
       const response = await fetch('/api/db', {
@@ -338,7 +413,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans overflow-y-auto">
-      <div className="w-full max-w-lg rounded-xl border border-[#262626] bg-[#121212] shadow-2xl overflow-hidden my-auto">
+      <div className="w-full max-w-xl rounded-xl border border-[#262626] bg-[#121212] shadow-2xl overflow-hidden my-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#262626]">
           <div className="flex items-center gap-2.5">
             {type === 'tasks' && <CheckSquare className="w-4 h-4 text-[#EDEDED]" />}
@@ -358,7 +433,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[82vh] overflow-y-auto">
           {errorMessage && (
             <div className="flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -395,7 +470,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
                     {t('modal.taskTypeLabel')}
@@ -403,7 +478,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   <select
                     value={taskType}
                     onChange={(e) => setTaskType(e.target.value)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
                   >
                     <option value="Task">{t('type.Task')}</option>
                     <option value="Bug">{t('type.Bug')}</option>
@@ -418,16 +493,14 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   <select
                     value={taskPriority}
                     onChange={(e) => setTaskPriority(e.target.value as TaskPriority)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
                   >
                     <option value="Low">{t('priority.Low')}</option>
                     <option value="Medium">{t('priority.Medium')}</option>
                     <option value="High">{t('priority.High')}</option>
                   </select>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
                     {t('modal.taskStatusLabel')}
@@ -435,12 +508,62 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   <select
                     value={taskStatus}
                     onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
                   >
                     <option value="Todo">{t('status.Todo')}</option>
                     <option value="In Progress">{t('status.In Progress')}</option>
                     <option value="Done">{t('status.Done')}</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.taskDepartmentLabel')}
+                  </label>
+                  {!isTaskCustomDept ? (
+                    <select
+                      value={taskDepartment}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setIsTaskCustomDept(true);
+                          setTaskDepartment('');
+                        } else {
+                          setTaskDepartment(e.target.value);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                    >
+                      <option value="">{t('dept.noneOption')}</option>
+                      {safeDepartments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                      <option value="__custom__">{t('dept.customOption')}</option>
+                    </select>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={taskCustomDept}
+                        onChange={(e) => setTaskCustomDept(e.target.value)}
+                        placeholder={t('dept.customInputPlaceholder')}
+                        className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTaskCustomDept(false);
+                          setTaskCustomDept('');
+                        }}
+                        className="px-2 py-2 text-xs text-[#8E8E93] hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -451,16 +574,24 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     disabled={!canAssignTasks}
                     value={canAssignTasks ? taskAssignedTo : currentProfileId || ''}
                     onChange={(e) => setTaskAssignedTo(e.target.value)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white disabled:opacity-60 disabled:cursor-not-allowed focus:border-[#52525B] focus:outline-none"
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white disabled:opacity-60 disabled:cursor-not-allowed focus:border-[#52525B] focus:outline-none"
                   >
-                    {nodes.map((node) => (
+                    {canAssignTasks && (
+                      <option value="">{t('modal.unassignedDeptBroadcast')}</option>
+                    )}
+                    {safeNodes.map((node) => (
                       <option key={node.id} value={node.id}>
                         {node.name} — {node.role_type}
+                        {node.department ? ` (${node.department})` : ''}
                       </option>
                     ))}
                   </select>
-                  {!canAssignTasks && (
+                  {!canAssignTasks ? (
                     <p className="text-[11px] text-[#71717A] mt-1">{t('tasks.selfAssignedNote')}</p>
+                  ) : (
+                    <p className="text-[11px] text-[#71717A] mt-1">
+                      {t('modal.taskDepartmentHint')}
+                    </p>
                   )}
                 </div>
               </div>
@@ -502,13 +633,54 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
                     {t('modal.empDeptLabel')}
                   </label>
-                  <input
-                    type="text"
-                    value={empDepartment}
-                    onChange={(e) => setEmpDepartment(e.target.value)}
-                    placeholder={t('modal.empDeptPlaceholder')}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
-                  />
+                  {!isEmpCustomDept && safeDepartments.length > 0 ? (
+                    <select
+                      value={empDepartment}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setIsEmpCustomDept(true);
+                          setEmpDepartment('');
+                        } else {
+                          setEmpDepartment(e.target.value);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                    >
+                      <option value="">{t('dept.noneOption')}</option>
+                      {safeDepartments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                      <option value="__custom__">{t('dept.customOption')}</option>
+                    </select>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={isEmpCustomDept ? empCustomDept : empDepartment}
+                        onChange={(e) =>
+                          isEmpCustomDept
+                            ? setEmpCustomDept(e.target.value)
+                            : setEmpDepartment(e.target.value)
+                        }
+                        placeholder={t('modal.empDeptPlaceholder')}
+                        className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                      />
+                      {isEmpCustomDept && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEmpCustomDept(false);
+                            setEmpCustomDept('');
+                          }}
+                          className="px-2 py-2 text-xs text-[#8E8E93] hover:text-white"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -534,20 +706,25 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   <span>{t('perm.title')}</span>
                 </div>
 
-                <div className="space-y-1.5 pt-1 max-h-44 overflow-y-auto">
+                <div className="space-y-2 pt-1 max-h-44 overflow-y-auto">
                   {PERMISSION_KEYS.map((permKey) => (
                     <label
                       key={permKey}
-                      className="flex items-center gap-2.5 text-xs text-[#D4D4D8] cursor-pointer select-none"
+                      className="flex items-start gap-2.5 text-xs text-[#D4D4D8] cursor-pointer select-none"
                     >
                       <input
                         type="checkbox"
                         disabled={empAccessLevel === 'root'}
                         checked={empAccessLevel === 'root' ? true : empPermissions[permKey]}
                         onChange={() => togglePermission(permKey)}
-                        className="w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F] text-white focus:ring-0"
+                        className="mt-0.5 w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F] text-white focus:ring-0"
                       />
-                      <span>{t(`perm.${permKey}`)}</span>
+                      <div className="min-w-0">
+                        <div className="font-medium text-white font-sans">{t(`perm.${permKey}`)}</div>
+                        <div className="text-[11px] text-[#8E8E93] font-sans leading-snug">
+                          {t(`permDesc.${permKey}`)}
+                        </div>
+                      </div>
                     </label>
                   ))}
                 </div>
@@ -585,31 +762,117 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
           {type === 'crm_leads' && (
             <>
-              <div>
-                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                  {t('modal.dealClientLabel')}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={leadClientName}
-                  onChange={(e) => setLeadClientName(e.target.value)}
-                  placeholder={t('modal.dealClientPlaceholder')}
-                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.dealClientLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={leadClientName}
+                    onChange={(e) => setLeadClientName(e.target.value)}
+                    placeholder={t('modal.dealClientPlaceholder')}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.dealTitleLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    value={leadTitle}
+                    onChange={(e) => setLeadTitle(e.target.value)}
+                    placeholder={t('modal.dealTitlePlaceholder')}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                  {t('modal.dealTitleLabel')}
-                </label>
-                <input
-                  type="text"
-                  value={leadTitle}
-                  onChange={(e) => setLeadTitle(e.target.value)}
-                  placeholder={t('modal.dealTitlePlaceholder')}
-                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
-                />
+              {/* БЛОК 3: Переключатель юрисдикции контрагента и профессиональные реквизиты */}
+              <div className="rounded-lg border border-[#262626] bg-[#151518] p-3.5 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-[#D4D4D8] flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                    <span>{t('modal.jurisdictionLabel')}</span>
+                  </span>
+                  <div className="inline-flex rounded-lg border border-[#262626] bg-[#0D0D0F] p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setLeadJurisdiction('RU')}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                        leadJurisdiction === 'RU'
+                          ? 'bg-white text-black font-semibold'
+                          : 'text-[#8E8E93] hover:text-white'
+                      }`}
+                    >
+                      {t('modal.jurisdictionRU')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeadJurisdiction('GLOBAL')}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors inline-flex items-center gap-1 ${
+                        leadJurisdiction === 'GLOBAL'
+                          ? 'bg-white text-black font-semibold'
+                          : 'text-[#8E8E93] hover:text-white'
+                      }`}
+                    >
+                      <Globe className="w-3 h-3" />
+                      <span>{t('modal.jurisdictionGlobal')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                      {leadJurisdiction === 'RU' ? t('modal.taxIdRu') : t('modal.taxIdGlobal')}
+                    </label>
+                    <input
+                      type="text"
+                      value={leadTaxId}
+                      onChange={(e) => setLeadTaxId(e.target.value)}
+                      placeholder={
+                        leadJurisdiction === 'RU'
+                          ? t('modal.taxIdRuPlaceholder')
+                          : t('modal.taxIdGlobalPlaceholder')
+                      }
+                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                      {leadJurisdiction === 'RU' ? t('modal.regNumRu') : t('modal.regNumGlobal')}
+                    </label>
+                    <input
+                      type="text"
+                      value={leadRegNumber}
+                      onChange={(e) => setLeadRegNumber(e.target.value)}
+                      placeholder={
+                        leadJurisdiction === 'RU'
+                          ? t('modal.regNumRuPlaceholder')
+                          : t('modal.regNumGlobalPlaceholder')
+                      }
+                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
+                      {t('modal.contractNumberLabel')}
+                    </label>
+                    <input
+                      type="text"
+                      value={leadContractNumber}
+                      onChange={(e) => setLeadContractNumber(e.target.value)}
+                      placeholder={t('modal.contractNumberPlaceholder')}
+                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -642,6 +905,75 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     <option value="Negotiation">{t('stage.Negotiation')}</option>
                     <option value="Won">{t('stage.Won')}</option>
                     <option value="Lost">{t('stage.Lost')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.dealDepartmentLabel')}
+                  </label>
+                  {!isLeadCustomDept ? (
+                    <select
+                      value={leadDepartment}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setIsLeadCustomDept(true);
+                          setLeadDepartment('');
+                        } else {
+                          setLeadDepartment(e.target.value);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                    >
+                      <option value="">{t('dept.noneOption')}</option>
+                      {safeDepartments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                      <option value="__custom__">{t('dept.customOption')}</option>
+                    </select>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={leadCustomDept}
+                        onChange={(e) => setLeadCustomDept(e.target.value)}
+                        placeholder={t('dept.customInputPlaceholder')}
+                        className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsLeadCustomDept(false);
+                          setLeadCustomDept('');
+                        }}
+                        className="px-2 py-2 text-xs text-[#8E8E93] hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    {t('modal.dealAssigneeLabel')}
+                  </label>
+                  <select
+                    value={leadAssignedTo}
+                    onChange={(e) => setLeadAssignedTo(e.target.value)}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                  >
+                    <option value="">{t('modal.unassignedDeptBroadcast')}</option>
+                    {safeNodes.map((node) => (
+                      <option key={node.id} value={node.id}>
+                        {node.name} — {node.role_type}
+                        {node.department ? ` (${node.department})` : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

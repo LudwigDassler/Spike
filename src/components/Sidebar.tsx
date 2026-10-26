@@ -7,6 +7,7 @@ import {
   Building2,
   UserCircle,
   LogOut,
+  MessageSquare,
 } from 'lucide-react';
 import {
   DashboardSection,
@@ -23,6 +24,7 @@ interface SidebarProps {
     tasks: number;
     nodes: number;
     leads: number;
+    messages?: number;
   };
   onRequestSignOut?: () => void;
 }
@@ -57,6 +59,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Briefcase,
       badge: counts.leads,
       visible: perms.crm_view,
+    },
+    {
+      id: 'communications',
+      label: t('nav.communications'),
+      icon: MessageSquare,
+      badge: counts.messages,
+      visible: true,
     },
     {
       id: 'team',

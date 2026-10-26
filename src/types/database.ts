@@ -26,14 +26,20 @@ export type TaskStatus = 'Todo' | 'In Progress' | 'Done';
 
 export type CrmLeadStatus = 'New' | 'Negotiation' | 'Won' | 'Lost';
 
+export type CounterpartyJurisdiction = 'RU' | 'GLOBAL';
+
 export type SubscriptionPlanTier = 'Trial' | 'Business' | 'Enterprise';
 
 export type PaymentGatewayRegion = 'RU' | 'GLOBAL';
+
+export type LanguageCode = 'ru' | 'en';
+export type CurrencyCode = 'RUB' | 'USD' | 'EUR';
 
 export type DashboardSection =
   | 'overview'
   | 'tasks'
   | 'crm'
+  | 'communications'
   | 'team'
   | 'profile'
   | 'workspace';
@@ -43,6 +49,7 @@ export interface Company {
   name: string;
   plan?: SubscriptionPlanTier;
   payment_region?: PaymentGatewayRegion;
+  departments?: string[] | null;
   created_at?: string;
 }
 
@@ -73,6 +80,7 @@ export interface TaskRecord {
   priority: TaskPriority;
   status: TaskStatus;
   assigned_to?: string | null;
+  department?: string | null;
   created_by?: string | null;
   description?: string | null;
   notes?: string | null;
@@ -84,6 +92,8 @@ export interface CrmLeadRecord {
   id: string;
   company_id: string;
   owner_node_id?: string | null;
+  assigned_to?: string | null;
+  department?: string | null;
   title?: string;
   client_name: string;
   full_name?: string;
@@ -95,8 +105,34 @@ export interface CrmLeadRecord {
   status: CrmLeadStatus;
   stage?: string;
   source?: string | null;
+  jurisdiction?: CounterpartyJurisdiction;
+  tax_id?: string | null;
+  reg_number?: string | null;
+  contract_number?: string | null;
   description?: string | null;
   notes?: string | null;
+  created_at?: string;
+}
+
+export type MessageScopeType = 'direct' | 'department' | 'broadcast' | 'task' | 'lead';
+
+export interface WorkspaceMessageRecord {
+  id: string;
+  company_id: string;
+  sender_id: string;
+  sender_name?: string | null;
+  sender_role?: string | null;
+  recipient_id?: string | null;
+  target_department?: string | null;
+  department?: string | null;
+  scope?: MessageScopeType;
+  task_id?: string | null;
+  lead_id?: string | null;
+  entity_type?: 'task' | 'lead' | 'direct' | 'department' | 'broadcast' | null;
+  entity_id?: string | null;
+  content: string;
+  text?: string;
+  is_urgent?: boolean;
   created_at?: string;
 }
 
@@ -175,7 +211,6 @@ export function normalizeEmployeePermissions(
 ): { access_level: AccessLevel; permissions: EmployeePermissions } {
   const normalizedLevel = normalizeAccessLevel(accessLevel, roleType);
 
-  // Для root / SUPERADMIN все 7 прав всегда true
   if (normalizedLevel === 'root') {
     return {
       access_level: 'root',
@@ -230,6 +265,56 @@ export function normalizeEmployeePermissions(
   };
 }
 
+export function extractCompanyDepartments(
+  company?: Company | null,
+  nodes?: OrganizationNode[] | null,
+  tasks?: TaskRecord[] | null,
+  leads?: CrmLeadRecord[] | null
+): string[] {
+  const set = new Set<string>();
+
+  const rawCompDepts = company?.departments;
+  if (Array.isArray(rawCompDepts)) {
+    rawCompDepts.forEach((d) => {
+      const clean = String(d || '').trim();
+      if (clean) set.add(clean);
+    });
+  } else if (typeof rawCompDepts === 'string') {
+    try {
+      const parsed = JSON.parse(rawCompDepts);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((d) => {
+          const clean = String(d || '').trim();
+          if (clean) set.add(clean);
+        });
+      }
+    } catch {}
+  }
+
+  if (Array.isArray(nodes)) {
+    nodes.forEach((n) => {
+      const clean = String(n?.department || '').trim();
+      if (clean) set.add(clean);
+    });
+  }
+
+  if (Array.isArray(tasks)) {
+    tasks.forEach((t) => {
+      const clean = String(t?.department || '').trim();
+      if (clean) set.add(clean);
+    });
+  }
+
+  if (Array.isArray(leads)) {
+    leads.forEach((l) => {
+      const clean = String(l?.department || '').trim();
+      if (clean) set.add(clean);
+    });
+  }
+
+  return Array.from(set);
+}
+
 export function generateCorporateInviteCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let suffix = '';
@@ -244,28 +329,32 @@ export function computeDashboardKpis(
   tasks: Array<Partial<TaskRecord>>,
   nodes: Array<Partial<OrganizationNode>>
 ): DashboardKpis {
-  const totalDealValue = leads.reduce((sum, l) => {
-    const val = Number(l.amount ?? l.deal_value ?? 0);
+  const safeLeads = Array.isArray(leads) ? leads : [];
+  const safeTasks = Array.isArray(tasks) ? tasks : [];
+  const safeNodes = Array.isArray(nodes) ? nodes : [];
+
+  const totalDealValue = safeLeads.reduce((sum, l) => {
+    const val = Number(l?.amount ?? l?.deal_value ?? 0);
     return sum + (Number.isFinite(val) ? val : 0);
   }, 0);
 
-  const activeTasksCount = tasks.filter((t) => {
-    const st = String(t.status || '').toLowerCase();
+  const activeTasksCount = safeTasks.filter((t) => {
+    const st = String(t?.status || '').toLowerCase();
     return st !== 'done';
   }).length;
 
-  const wonOrQualifiedCount = leads.filter((l) => {
-    const st = String(l.status || l.stage || '').toLowerCase();
+  const wonOrQualifiedCount = safeLeads.filter((l) => {
+    const st = String(l?.status || l?.stage || '').toLowerCase();
     return st === 'won' || st === 'qualified';
   }).length;
 
   const conversionRatePercent =
-    leads.length > 0 ? Math.round((wonOrQualifiedCount / leads.length) * 100) : 0;
+    safeLeads.length > 0 ? Math.round((wonOrQualifiedCount / safeLeads.length) * 100) : 0;
 
   return {
     totalDealValue,
     activeTasksCount,
     conversionRatePercent,
-    employeesCount: nodes.length,
+    employeesCount: safeNodes.length,
   };
 }

@@ -121,7 +121,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                     key={lvl}
                     type="button"
                     onClick={() => handlePresetChange(lvl)}
-                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap ${
+                    className={`text-xs font-medium px-3 py-2 text-center truncate rounded-lg border transition-colors ${
                       isSelected
                         ? 'border-white bg-white text-black font-semibold'
                         : 'border-[#262626] bg-[#17171A] text-[#A1A1AA] hover:text-white hover:border-[#3F3F46]'
@@ -151,9 +151,11 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                     isRootLocked ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer hover:bg-[#1C1C20]'
                   }`}
                 >
-                  <div className="min-w-0">
-                    <div className="font-medium text-white">{t(`perm.${permKey}`)}</div>
-                    <div className="text-[11px] text-[#71717A] font-mono">{permKey}</div>
+                  <div className="min-w-0 pr-2">
+                    <div className="font-medium text-white font-sans">{t(`perm.${permKey}`)}</div>
+                    <div className="text-[11px] text-[#8E8E93] font-sans leading-snug mt-0.5">
+                      {t(`permDesc.${permKey}`)}
+                    </div>
                   </div>
 
                   <button
