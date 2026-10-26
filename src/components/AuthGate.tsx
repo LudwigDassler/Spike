@@ -136,14 +136,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({
           </span>
         </div>
 
-        <div className="inline-flex items-center rounded-lg border border-[#262626] bg-[#141414] p-0.5">
-          <Globe className="w-3.5 h-3.5 text-[#71717A] ml-2 mr-1" />
+        <div className="inline-flex items-center rounded-md border border-[#262626] bg-[#141414] p-0.5">
           {locales.map((loc) => (
             <button
               key={loc}
               type="button"
               onClick={() => setLocale(loc)}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase transition-colors ${
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase transition-colors ${
                 locale === loc ? 'bg-white text-black' : 'text-[#8E8E93] hover:text-white'
               }`}
             >

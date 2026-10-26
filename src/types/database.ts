@@ -61,6 +61,7 @@ export interface OrganizationNode {
   role_type: string;
   department?: string | null;
   email?: string | null;
+  avatar_url?: string | null;
   telegram_chat_id?: string | null;
   invite_code?: string | null;
   access_level?: AccessLevel;

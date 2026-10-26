@@ -11,10 +11,12 @@ import {
 } from 'lucide-react';
 import {
   DashboardSection,
+  LanguageCode,
   OrganizationNode,
   normalizeEmployeePermissions,
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
+import { UserAvatar } from './UserAvatar';
 
 interface SidebarProps {
   activeSection: DashboardSection;
@@ -36,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   counts,
   onRequestSignOut,
 }) => {
-  const { t } = useLocale();
+  const { language, setLanguage, t } = useLocale();
 
   const { access_level, permissions: perms } = normalizeEmployeePermissions(
     currentProfile?.access_level,
@@ -136,36 +138,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {currentProfile && (
         <div className="p-3 border-t border-[#1F1F1F] space-y-2">
-          <div className="rounded-lg border border-[#1F1F1F] bg-[#121212] p-3 space-y-2">
+          <div className="rounded-lg border border-[#1F1F1F] bg-[#121212] p-3 space-y-2.5">
             <button
               type="button"
               onClick={() => onSelectSection('profile')}
-              className="w-full text-left space-y-1 group"
+              className="w-full text-left flex items-center gap-2.5 group"
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-white group-hover:underline truncate">
-                  {currentProfile.name}
-                </span>
-                <span className="text-[10px] font-medium text-[#A1A1AA] whitespace-nowrap">
-                  {t(`accessShort.${access_level}`)}
-                </span>
-              </div>
-              <div className="text-[11px] text-[#8E8E93] truncate">
-                {currentProfile.role_type}
-                {currentProfile.department ? ` · ${currentProfile.department}` : ''}
+              <UserAvatar
+                name={currentProfile.name}
+                avatarUrl={currentProfile.avatar_url}
+                size="md"
+              />
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="text-xs font-semibold text-white group-hover:underline truncate">
+                    {currentProfile.name}
+                  </span>
+                  <span className="text-[10px] font-medium text-[#A1A1AA] whitespace-nowrap shrink-0">
+                    {t(`accessShort.${access_level}`)}
+                  </span>
+                </div>
+                <div className="text-[11px] text-[#8E8E93] truncate">
+                  {currentProfile.role_type}
+                  {currentProfile.department ? ` · ${currentProfile.department}` : ''}
+                </div>
               </div>
             </button>
 
-            {onRequestSignOut && (
-              <button
-                type="button"
-                onClick={onRequestSignOut}
-                className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#262626] bg-[#17171A] hover:bg-[#222226] text-[11px] font-medium text-[#A1A1AA] hover:text-white transition-colors whitespace-nowrap"
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#1C1C1F]">
+              <div
+                className="inline-flex items-center rounded-md border border-[#262626] bg-[#161618] p-0.5 shrink-0"
+                aria-label="Language switcher"
               >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>{t('profile.signOutBtn')}</span>
-              </button>
-            )}
+                {(['RU', 'EN'] as LanguageCode[]).map((lang) => (
+                  <button
+                    key={lang}
+                    type="button"
+                    onClick={() => setLanguage(lang)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                      language === lang
+                        ? 'bg-white text-black'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    {lang}
+                  </button>
+                ))}
+              </div>
+
+              {onRequestSignOut && (
+                <button
+                  type="button"
+                  onClick={onRequestSignOut}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-md border border-[#262626] bg-[#17171A] hover:bg-[#222226] text-[11px] font-medium text-[#A1A1AA] hover:text-white transition-colors whitespace-nowrap"
+                >
+                  <LogOut className="w-3 h-3" />
+                  <span>{t('profile.signOutBtn')}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

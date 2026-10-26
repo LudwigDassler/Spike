@@ -33,6 +33,9 @@ import {
   Hash,
   Radio,
   AlertCircle,
+  Camera,
+  Zap,
+  Upload,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -61,6 +64,7 @@ import { AddRecordModal, InitialTaskDraft, ModalRecordType } from './AddRecordMo
 import { ConfirmDialog } from './ConfirmDialog';
 import { PermissionsMatrixModal } from './PermissionsMatrixModal';
 import { SlideOverDrawer, DrawerTarget } from './SlideOverDrawer';
+import { UserAvatar, cropAndCompressAvatarToDataUrl } from './UserAvatar';
 import { useLocale } from '../i18n/LocaleContext';
 import {
   ActiveMessengerThread,
@@ -157,9 +161,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     label: 'Общий поток (Циркуляры компании)',
   });
   const [commText, setCommText] = useState<string>('');
-  const [commUrgent, setCommUrgent] = useState<boolean>(true);
+  const [commUrgent, setCommUrgent] = useState<boolean>(false);
   const [isSendingComm, setIsSendingComm] = useState<boolean>(false);
   const [initialTaskDraft, setInitialTaskDraft] = useState<InitialTaskDraft | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
+  const avatarFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Confirm Dialog state
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmAction | null>(null);
@@ -564,6 +570,44 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) {
+      e.target.value = '';
+    }
+    if (!file || !currentProfile) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      const compressedDataUrl = await cropAndCompressAvatarToDataUrl(file);
+      const res = await onPatchRecord('organization_nodes', currentProfile.id, {
+        avatar_url: compressedDataUrl,
+      });
+      if (res.ok) {
+        showToast('Фотография профиля обновлена');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Ошибка при обработке фотографии');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!currentProfile || !currentProfile.avatar_url) return;
+    setIsUploadingAvatar(true);
+    try {
+      const res = await onPatchRecord('organization_nodes', currentProfile.id, {
+        avatar_url: null,
+      });
+      if (res.ok) {
+        showToast('Фотография профиля удалена');
+      }
+    } finally {
+      setIsUploadingAvatar(false);
     }
   };
 
@@ -1074,6 +1118,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           activeSection={activeSection}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          searchPlaceholder={
+            !perms.crm_view && !perms.team_manage
+              ? language === 'EN'
+                ? 'Search tasks and messages...'
+                : 'Поиск по задачам и сообщениям...'
+              : t('actions.searchPlaceholder')
+          }
           isSyncing={isSyncing}
           onRefresh={onRefresh}
         />
@@ -1112,7 +1163,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {activeSection === 'crm' && t('header.crmSubtitle')}
                 {activeSection === 'communications' && t('header.communicationsSubtitle')}
                 {activeSection === 'team' && t('header.teamSubtitle')}
-                {activeSection === 'profile' && t('header.profileSubtitle')}
+                {activeSection === 'profile' &&
+                  (language === 'EN'
+                    ? 'Personal details, profile photo, Telegram synchronization, and active workspace capabilities'
+                    : 'Персональные реквизиты, фотография профиля, синхронизация с Telegram и рабочий контур')}
                 {activeSection === 'workspace' && t('header.workspaceSubtitle')}
               </p>
             </div>
@@ -1125,7 +1179,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>{t('actions.newTask')}</span>
+                    <span>{t('actions.newTask').replace(/^\+\s*/, '')}</span>
                   </button>
                 )}
 
@@ -1135,7 +1189,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>{t('actions.newDeal')}</span>
+                  <span>{t('actions.newDeal').replace(/^\+\s*/, '')}</span>
                 </button>
               )}
 
@@ -1145,7 +1199,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>{t('actions.newEmployee')}</span>
+                  <span>{t('actions.newEmployee').replace(/^\+\s*/, '')}</span>
                 </button>
               )}
             </div>
@@ -1156,11 +1210,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ================================================================== */}
           {activeSection === 'overview' && (
             <div className="space-y-6">
-              <div
-                className={`grid grid-cols-1 sm:grid-cols-2 ${
-                  perms.crm_view ? 'lg:grid-cols-4' : 'lg:grid-cols-2'
-                } gap-4`}
-              >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
                   <div className="flex items-center justify-between text-[#8E8E93] mb-3">
                     <span className="text-xs font-medium">{t('kpi.totalTasks')}</span>
@@ -1195,7 +1245,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                {perms.crm_view && (
+                {perms.crm_view ? (
                   <>
                     <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
                       <div className="flex items-center justify-between text-[#8E8E93] mb-3">
@@ -1225,8 +1275,122 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     </div>
                   </>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                        <span className="text-xs font-medium">Срочные поручения</span>
+                        <AlertCircle className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div className="text-2xl font-semibold text-white tracking-tight">
+                        {highPriorityOpenCount}
+                      </div>
+                      <div className="text-[11px] text-[#71717A] mt-1">
+                        В работе сейчас:{' '}
+                        {visibleTasks.filter((tItem) => tItem.status === 'In Progress').length}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
+                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
+                        <span className="text-xs font-medium">Инфополе и сообщения</span>
+                        <MessageSquare className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="text-2xl font-semibold text-white tracking-tight">
+                        {visibleMessages.length}
+                      </div>
+                      <div className="text-[11px] text-emerald-400/90 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection('communications')}
+                          className="hover:underline"
+                        >
+                          Открыть корпоративный чат →
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
+
+              {/* Персональная сводка продуктивности для сотрудников без доступа к CRM (!perms.crm_view) */}
+              {!perms.crm_view && (
+                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F1F] pb-3.5">
+                    <div>
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
+                        Персональная сводка продуктивности
+                      </h2>
+                      <p className="text-[11px] text-[#8E8E93] mt-0.5">
+                        Ваши активные задачи, срочные поручения и последние сообщения из корпоративного инфополя
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection('tasks')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Перейти к задачам</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection('communications')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262626] bg-[#17171A] hover:bg-[#222226] text-xs font-medium text-white transition-colors"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Инфополе</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {visibleMessages.length === 0 ? (
+                    <div className="text-xs text-[#71717A] py-2">
+                      В вашем инфополе пока нет новых сообщений.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {visibleMessages.slice(0, 3).map((msg) => {
+                        const senderNode = msg.sender_id
+                          ? nodeMap.get(String(msg.sender_id))
+                          : null;
+                        const sName =
+                          senderNode?.name || msg.sender_name || 'Сотрудник TedCloud';
+                        const sBody = extractMessageText(msg);
+                        return (
+                          <div
+                            key={msg.id}
+                            onClick={() => setActiveSection('communications')}
+                            className="rounded-lg border border-[#222226] bg-[#151518] p-3 space-y-2 hover:border-[#3F3F46] transition-colors cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <UserAvatar
+                                  name={sName}
+                                  avatarUrl={senderNode?.avatar_url}
+                                  size="xs"
+                                />
+                                <span className="text-xs font-semibold text-white truncate">
+                                  {sName}
+                                </span>
+                              </div>
+                              {msg.is_urgent && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/30">
+                                  Срочно
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-[#D4D4D8] line-clamp-2 leading-relaxed">
+                              {sBody}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Сводка активных задач на Дашборде */}
               <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
@@ -1291,8 +1455,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 </span>
                               )}
                               {assignee ? (
-                                <span className="text-xs text-[#A1A1AA]">
-                                  {assignee.name} ({assignee.role_type})
+                                <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
+                                  <UserAvatar
+                                    name={assignee.name}
+                                    avatarUrl={assignee.avatar_url}
+                                    size="xs"
+                                  />
+                                  <span>
+                                    {assignee.name} ({assignee.role_type})
+                                  </span>
                                 </span>
                               ) : (
                                 <span className="text-xs text-[#71717A]">
@@ -1478,8 +1649,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 </span>
                               )}
                               {assignee && (
-                                <span className="text-xs text-[#8E8E93]">
-                                  {t('tasks.assignee')}:{' '}
+                                <span className="inline-flex items-center gap-1.5 text-xs text-[#8E8E93]">
+                                  <UserAvatar
+                                    name={assignee.name}
+                                    avatarUrl={assignee.avatar_url}
+                                    size="xs"
+                                  />
                                   <strong className="text-[#D4D4D8] font-medium">
                                     {assignee.name} ({assignee.role_type})
                                   </strong>
@@ -1624,11 +1799,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                 <div className="flex items-center justify-between gap-2">
                                   {renderPriorityBadge(task.priority)}
-                                  <span className="text-[11px] text-[#8E8E93] truncate">
-                                    {assignee
-                                      ? `${assignee.name} (${assignee.role_type})`
-                                      : task.department || t('tasks.unassigned')}
-                                  </span>
+                                  {assignee ? (
+                                    <span className="inline-flex items-center gap-1.5 text-[11px] text-[#8E8E93] truncate">
+                                      <UserAvatar
+                                        name={assignee.name}
+                                        avatarUrl={assignee.avatar_url}
+                                        size="xs"
+                                      />
+                                      <span className="truncate">{assignee.name}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] text-[#8E8E93] truncate">
+                                      {task.department || t('tasks.unassigned')}
+                                    </span>
+                                  )}
                                 </div>
 
                                 <div
@@ -1667,7 +1851,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ================================================================== */}
           {activeSection === 'crm' && perms.crm_view && (
             <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+              <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <Briefcase className="w-4 h-4 text-[#A1A1AA]" />
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
@@ -1677,8 +1861,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     {filteredLeads.length}
                   </span>
                 </div>
-                {perms.data_export && (
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3">
+                  {/* Компактный переключатель валюты расчетов для сотрудников с доступом crm_view */}
+                  <div
+                    className="inline-flex items-center rounded-md border border-[#262626] bg-[#161618] p-0.5"
+                    aria-label="Currency switcher"
+                  >
+                    {(['RUB', 'USD', 'EUR'] as CurrencyCode[]).map((curr) => (
+                      <button
+                        key={curr}
+                        type="button"
+                        onClick={() => setCurrency(curr)}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                          currency === curr
+                            ? 'bg-white text-black'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        {curr}
+                      </button>
+                    ))}
+                  </div>
+
+                  {perms.data_export && (
                     <button
                       onClick={handleExportDealsCsv}
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
@@ -1686,8 +1891,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <Download className="w-3.5 h-3.5" />
                       <span>CSV</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {filteredLeads.length === 0 ? (
@@ -1855,9 +2060,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       Каналы и Диалоги
                     </span>
                   </div>
-                  <span className="text-[10px] font-mono text-[#71717A] bg-[#17171A] border border-[#262626] px-1.5 py-0.5 rounded">
-                    Live · 5s
-                  </span>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-5">
@@ -1980,12 +2182,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 telegramConnected: hasTelegram,
                               })
                             }
-                            className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                            className={`w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
                               isSelected
                                 ? 'bg-[#1C1C21] text-white border border-[#2E2E36]'
                                 : 'text-[#A1A1AA] hover:bg-[#151518] hover:text-white border border-transparent'
                             }`}
                           >
+                            <UserAvatar
+                              name={colleague.name}
+                              avatarUrl={colleague.avatar_url}
+                              size="sm"
+                            />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-semibold text-white truncate">
@@ -2047,21 +2254,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   return (
                     <div className="px-5 py-3.5 border-b border-[#1F1F1F] bg-[#131316] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-sm font-semibold text-white truncate">
-                            {headerTitle}
-                          </h2>
-                          {activeCommThread.type === 'direct' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#1C1C22] text-[#A1A1AA] border border-[#2C2C35]">
-                              <Lock className="w-2.5 h-2.5 text-emerald-400" />
-                              <span>Приватный диалог</span>
-                            </span>
-                          )}
+                      <div className="flex items-center gap-3 min-w-0">
+                        {activeCommThread.type === 'direct' && (
+                          <UserAvatar
+                            name={headerTitle}
+                            avatarUrl={selectedColleague?.avatar_url}
+                            size="md"
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-sm font-semibold text-white truncate">
+                              {headerTitle}
+                            </h2>
+                            {activeCommThread.type === 'direct' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#1C1C22] text-[#A1A1AA] border border-[#2C2C35]">
+                                <Lock className="w-2.5 h-2.5 text-emerald-400" />
+                                <span>Приватный диалог</span>
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-[#8E8E93] truncate mt-0.5">
+                            {headerSubtitle}
+                          </p>
                         </div>
-                        <p className="text-[11px] text-[#8E8E93] truncate mt-0.5">
-                          {headerSubtitle}
-                        </p>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
@@ -2088,7 +2304,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                {/* Поток сообщений */}
+                {/* Поток сообщений (Компактные баблы по тексту w-fit max-w-[75%]) */}
                 <div className="flex-1 overflow-y-auto p-5 space-y-3 max-h-[520px]">
                   {activeThreadMessages.length === 0 ? (
                     <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-center p-6 space-y-2">
@@ -2121,22 +2337,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       const senderName =
                         senderNode?.name || msg.sender_name || 'Сотрудник TedCloud';
                       const senderRole = senderNode?.role_type || msg.sender_role || '';
+                      const senderAvatarUrl =
+                        senderNode?.avatar_url ||
+                        (isOutgoing ? currentProfile?.avatar_url : null);
+
+                      const isDirectMsg =
+                        activeCommThread.type === 'direct' ||
+                        msg.target_type === 'direct' ||
+                        msg.scope_type === 'direct';
 
                       const recipientLabel =
                         msg.target_label ||
                         recipientNode?.name ||
                         msg.target_department ||
-                        (msg.target_type === 'direct' || msg.scope_type === 'direct'
-                          ? 'Лично сотруднику'
-                          : 'Всем');
+                        'Всем';
 
                       const messageBody =
                         msg.message_text || msg.text || msg.content || '';
 
-                      const createdTime = msg.created_at
-                        ? new Date(msg.created_at).toLocaleString('ru-RU', {
-                            day: '2-digit',
-                            month: '2-digit',
+                      const shortTime = msg.created_at
+                        ? new Date(msg.created_at).toLocaleTimeString('ru-RU', {
                             hour: '2-digit',
                             minute: '2-digit',
                           })
@@ -2145,75 +2365,100 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       return (
                         <div
                           key={msg.id}
-                          className={`flex flex-col ${
-                            isOutgoing ? 'items-end' : 'items-start'
+                          className={`group flex items-end gap-2.5 ${
+                            isOutgoing ? 'justify-end' : 'justify-start'
                           }`}
                         >
+                          {!isOutgoing && (
+                            <UserAvatar
+                              name={senderName}
+                              avatarUrl={senderAvatarUrl}
+                              size="sm"
+                              className="mb-0.5"
+                            />
+                          )}
+
                           <div
-                            className={`w-full max-w-2xl rounded-xl border p-4 space-y-2.5 transition-colors ${
+                            className={`w-fit max-w-[75%] min-w-[180px] rounded-2xl border px-3.5 py-2.5 space-y-1 transition-colors ${
                               isOutgoing
-                                ? 'bg-emerald-950/25 border-emerald-500/30'
-                                : 'bg-[#16161A] border-[#26262C]'
+                                ? 'bg-emerald-950/30 border-emerald-500/30 rounded-br-sm'
+                                : 'bg-[#16161A] border-[#26262C] rounded-bl-sm'
                             }`}
                           >
-                            {/* Верхняя строка: Отправитель, должность, Кому, время и действия */}
-                            <div className="flex flex-wrap items-center justify-between gap-2">
+                            {/* Компактная шапка внутри бабла: Имя, роль, опциональная плашка Срочно и полупрозрачная кнопка + В задачу по ховеру */}
+                            <div className="flex items-center justify-between gap-3">
                               <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                                <span className="text-xs font-semibold text-white">
+                                <span className="text-xs font-semibold text-white truncate">
                                   {senderName}
                                 </span>
                                 {senderRole && (
-                                  <span className="text-[11px] text-[#8E8E93]">
+                                  <span className="text-[11px] text-[#8E8E93] truncate">
                                     · {senderRole}
                                   </span>
                                 )}
-                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#1F1F26] border border-[#2E2E38] text-[10px] font-medium text-[#D4D4D8]">
-                                  Кому: {recipientLabel}
-                                </span>
+                                {!isDirectMsg &&
+                                  activeCommThread.type === 'broadcast' &&
+                                  recipientLabel &&
+                                  recipientLabel !== 'Всем сотрудникам' &&
+                                  recipientLabel !== 'Циркуляр по компании' && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#1F1F26] border border-[#2E2E38] text-[10px] font-medium text-[#A1A1AA]">
+                                      {recipientLabel}
+                                    </span>
+                                  )}
                                 {msg.is_urgent && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/15 border border-red-500/30 text-[10px] font-semibold text-red-300">
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/15 border border-red-500/30 text-[10px] font-semibold text-red-300">
                                     <AlertCircle className="w-2.5 h-2.5" />
                                     <span>Срочно</span>
                                   </span>
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-2.5 shrink-0">
-                                <span className="text-[11px] font-mono text-[#71717A]">
-                                  {createdTime}
-                                </span>
-
-                                {canCreateOrEditTasks && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleConvertMessageToTask(msg)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#202026] hover:bg-white hover:text-black text-[11px] font-medium text-[#E4E4E7] border border-[#32323A] transition-colors"
-                                    title="Создать поручение на основе этого сообщения"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                    <span>В задачу</span>
-                                  </button>
-                                )}
-                              </div>
+                              {canCreateOrEditTasks && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConvertMessageToTask(msg)}
+                                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#202026]/90 hover:bg-white hover:text-black text-[10px] font-medium text-[#D4D4D8] border border-[#32323A] transition-all shrink-0"
+                                  title="Создать поручение на основе этого сообщения"
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                  <span>В задачу</span>
+                                </button>
+                              )}
                             </div>
 
-                            {/* Текст сообщения */}
-                            <div className="text-sm text-zinc-100 leading-relaxed whitespace-pre-wrap break-words">
-                              {messageBody}
+                            {/* Текст сообщения + аккуратное время в правом нижнем углу бабла */}
+                            <div className="flex items-end justify-between gap-3 pt-0.5">
+                              <div className="text-sm text-zinc-100 leading-relaxed whitespace-pre-wrap break-words">
+                                {messageBody}
+                              </div>
+                              {shortTime && (
+                                <span className="text-[10px] font-mono text-zinc-400/75 shrink-0 select-none leading-none pb-0.5">
+                                  {shortTime}
+                                </span>
+                              )}
                             </div>
                           </div>
+
+                          {isOutgoing && (
+                            <UserAvatar
+                              name={senderName}
+                              avatarUrl={senderAvatarUrl}
+                              size="sm"
+                              className="mb-0.5"
+                            />
+                          )}
                         </div>
                       );
                     })
                   )}
                 </div>
 
-                {/* Нижняя панель ввода (Composer) */}
+                {/* Нижняя панель ввода (Composer): по умолчанию не срочно, иконка молнии рядом с кнопкой отправки */}
                 <form
                   onSubmit={handleSendCorporateMessage}
-                  className="p-4 border-t border-[#1F1F1F] bg-[#0E0E11] space-y-3"
+                  className="p-3.5 border-t border-[#1F1F1F] bg-[#0E0E11] flex items-end gap-2.5"
                 >
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <textarea
                       rows={2}
                       value={commText}
@@ -2226,40 +2471,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       }}
                       placeholder={
                         activeCommThread.type === 'direct'
-                          ? `Написать личное сообщение для ${activeCommThread.label}... (Enter — отправить, Shift+Enter — новая строка)`
+                          ? `Написать личное сообщение для ${activeCommThread.label}... (Enter — отправить)`
                           : activeCommThread.type === 'department'
-                          ? `Сообщение в отдел #${activeCommThread.label}... (Enter — отправить, Shift+Enter — новая строка)`
-                          : 'Опубликовать циркуляр по компании... (Enter — отправить, Shift+Enter — новая строка)'
+                          ? `Сообщение в отдел #${activeCommThread.label}... (Enter — отправить)`
+                          : 'Опубликовать циркуляр по компании... (Enter — отправить)'
                       }
-                      className="w-full rounded-lg border border-[#262626] bg-[#16161A] px-3.5 py-2.5 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none leading-relaxed resize-none"
+                      className="w-full rounded-xl border border-[#262626] bg-[#16161A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none leading-relaxed resize-none"
                     />
                   </div>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <label className="inline-flex items-center gap-2 text-xs text-[#D4D4D8] cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={commUrgent}
-                        onChange={(e) => setCommUrgent(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F]"
-                      />
-                      <span>Срочный Push в Telegram</span>
-                    </label>
+                  <div className="flex items-center gap-2 shrink-0 pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCommUrgent((prev) => !prev)}
+                      aria-label="Срочный Push в Telegram"
+                      title={
+                        commUrgent
+                          ? 'Срочный Push-статус включен (отметить как обычное)'
+                          : 'Отметить сообщение как «Срочно»'
+                      }
+                      className={`inline-flex items-center justify-center w-9 h-9 rounded-xl border transition-colors ${
+                        commUrgent
+                          ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                          : 'bg-[#16161A] border-[#262626] text-[#71717A] hover:text-white hover:border-[#3F3F46]'
+                      }`}
+                    >
+                      <Zap className="w-4 h-4" />
+                    </button>
 
-                    <div className="flex items-center gap-2 self-end sm:self-auto">
-                      <button
-                        type="submit"
-                        disabled={isSendingComm || !commText.trim()}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
-                      >
-                        {isSendingComm ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Send className="w-3.5 h-3.5" />
-                        )}
-                        <span>{isSendingComm ? t('comm.sendingBtn') : 'Отправить'}</span>
-                      </button>
-                    </div>
+                    <button
+                      type="submit"
+                      disabled={isSendingComm || !commText.trim()}
+                      className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-xl bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
+                    >
+                      {isSendingComm ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isSendingComm ? t('comm.sendingBtn') : 'Отправить'}</span>
+                    </button>
                   </div>
                 </form>
               </section>
@@ -2334,12 +2585,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           return (
                             <tr key={node.id} className="hover:bg-[#161618] transition-colors">
                               <td className="py-4 px-5">
-                                <div className="font-semibold text-white">{node.name}</div>
-                                {node.email && (
-                                  <div className="text-[11px] text-[#71717A] mt-0.5">
-                                    {node.email}
+                                <div className="flex items-center gap-3">
+                                  <UserAvatar
+                                    name={node.name}
+                                    avatarUrl={node.avatar_url}
+                                    size="md"
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-white truncate">
+                                      {node.name}
+                                    </div>
+                                    {node.email && (
+                                      <div className="text-[11px] text-[#71717A] mt-0.5 truncate">
+                                        {node.email}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
+                                </div>
                               </td>
 
                               <td className="py-4 px-5">
@@ -2418,22 +2680,109 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 6: ЛИЧНЫЙ КАБИНЕТ / MY PROFILE
+              TAB 6: ЛИЧНЫЙ КАБИНЕТ / MY PROFILE (БЛОК 1, БЛОК 2, БЛОК 3)
           ================================================================== */}
           {activeSection === 'profile' && currentProfile && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-6">
+              {/* Верхняя карточка-баннер: Крупный аватар с загрузкой/удалением фото, ФИО, должность, подразделение и статус Telegram */}
+              <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="relative group shrink-0">
+                    <UserAvatar
+                      name={currentProfile.name}
+                      avatarUrl={currentProfile.avatar_url}
+                      size="xl"
+                    />
+                    <input
+                      ref={avatarFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarFileChange}
+                      className="hidden"
+                      aria-label="Выбрать файл фотографии профиля"
+                    />
+                  </div>
+
+                  <div className="space-y-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-semibold text-white tracking-tight truncate">
+                        {currentProfile.name}
+                      </h2>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#1C1C20] border border-[#2C2C32] text-xs font-medium text-white whitespace-nowrap">
+                        {currentProfile.role_type}
+                      </span>
+                      {currentProfile.department && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#16161A] border border-[#27272A] text-xs text-[#A1A1AA] whitespace-nowrap">
+                          {currentProfile.department}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[#D4D4D8] font-medium">
+                        <Shield className="w-3 h-3 text-emerald-400" />
+                        <span>{t(`access.${currentAccessLevel}`)}</span>
+                      </span>
+
+                      {currentProfile.telegram_chat_id ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium">
+                          <Send className="w-3 h-3" />
+                          <span>Telegram синхронизирован ({currentProfile.telegram_chat_id})</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[#8E8E93]">
+                          <span>Telegram не привязан</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Кнопки управления фотографией профиля (БЛОК 1) */}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isUploadingAvatar}
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
+                  >
+                    {isUploadingAvatar ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5" />
+                    )}
+                    <span>Загрузить фото</span>
+                  </button>
+
+                  {currentProfile.avatar_url && (
+                    <button
+                      type="button"
+                      disabled={isUploadingAvatar}
+                      onClick={() => void handleRemoveAvatar()}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#262626] bg-[#17171A] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Удалить фото</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Компактная сетка из 2 колонок (БЛОК 3) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                {/* Левая колонка: Личные реквизиты и контактные данные */}
                 <form
                   onSubmit={handleSaveMyProfile}
                   className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 space-y-5"
                 >
-                  <div className="flex items-center gap-3 border-b border-[#1F1F1F] pb-4">
-                    <div className="w-9 h-9 rounded-lg bg-[#1C1C1F] border border-[#2C2C30] flex items-center justify-center">
-                      <UserCircle className="w-5 h-5 text-white" />
-                    </div>
+                  <div className="flex items-center justify-between border-b border-[#1F1F1F] pb-4">
                     <div>
-                      <h2 className="text-sm font-semibold text-white">{t('profile.cardTitle')}</h2>
-                      <p className="text-xs text-[#8E8E93]">{t('profile.cardSubtitle')}</p>
+                      <h3 className="text-sm font-semibold text-white">
+                        Личные реквизиты и контакты
+                      </h3>
+                      <p className="text-xs text-[#8E8E93] mt-0.5">
+                        Учетная карточка сотрудника в корпоративном реестре {companyName}
+                      </p>
                     </div>
                   </div>
 
@@ -2452,14 +2801,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-medium text-[#A1A1AA]">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="block text-xs font-medium text-[#A1A1AA] truncate">
                           {t('profile.jobTitle')}
                         </label>
                         {!perms.team_manage && (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                          <span
+                            title={t('profile.lockedByAdmin')}
+                            className="inline-flex items-center gap-1 text-[10px] text-[#71717A] whitespace-nowrap shrink-0"
+                          >
                             <Lock className="w-3 h-3" />
-                            <span>{t('profile.lockedByAdmin')}</span>
+                            <span>Только админ</span>
                           </span>
                         )}
                       </div>
@@ -2474,14 +2826,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-medium text-[#A1A1AA]">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="block text-xs font-medium text-[#A1A1AA] truncate">
                           {t('profile.department')}
                         </label>
                         {!perms.team_manage && (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                          <span
+                            title={t('profile.lockedByAdmin')}
+                            className="inline-flex items-center gap-1 text-[10px] text-[#71717A] whitespace-nowrap shrink-0"
+                          >
                             <Lock className="w-3 h-3" />
-                            <span>{t('profile.lockedByAdmin')}</span>
+                            <span>Только админ</span>
                           </span>
                         )}
                       </div>
@@ -2502,7 +2857,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         type="email"
                         value={profileEmail}
                         onChange={(e) => setProfileEmail(e.target.value)}
-                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                        placeholder="name@company.com"
+                        className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                        Персональный код входа
+                      </label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={currentProfile.invite_code || 'TC-0000'}
+                        className="w-full rounded-lg border border-[#222226] bg-[#141417] px-3.5 py-2 text-sm font-mono font-semibold text-[#E4E4E7] focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                        Telegram ID
+                      </label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={currentProfile.telegram_chat_id || 'Не привязан'}
+                        className="w-full rounded-lg border border-[#222226] bg-[#141417] px-3.5 py-2 text-sm font-mono text-[#A1A1AA] focus:outline-none"
                       />
                     </div>
                   </div>
@@ -2525,113 +2905,105 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </form>
 
-                {renderLocalizationCard()}
-              </div>
+                {/* Правая колонка: Синхронизация с Telegram-ботом + Активный рабочий контур */}
+                <div className="space-y-6">
+                  {/* Карточка синхронизации с Telegram-ботом */}
+                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <Send className="w-4 h-4 text-emerald-400" />
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                          Синхронизация с Telegram-ботом
+                        </h3>
+                      </div>
+                      <span className="text-[11px] font-mono text-[#A1A1AA] bg-[#18181B] border border-[#27272A] px-2 py-0.5 rounded">
+                        /start {currentProfile.invite_code || 'TC-0000'}
+                      </span>
+                    </div>
 
-              <div className="space-y-6">
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
-                  <div className="flex items-center gap-2.5">
-                    <Shield className="w-4 h-4 text-emerald-400" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                      {t('profile.securityTitle')}
-                    </h3>
+                    <p className="text-xs text-[#8E8E93] leading-relaxed">
+                      Подключите личный аккаунт Telegram для мгновенного получения уведомлений о новых задачах и прямых сообщений от коллег.
+                    </p>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`https://t.me/${
+                          botUsername || 'TedCloudEnterpriseBot'
+                        }?start=${currentProfile.invite_code || 'TC-0000'}`}
+                        className="w-full rounded-lg border border-[#262626] bg-[#0D0D0F] px-3 py-2 text-xs text-[#D4D4D8] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(
+                            `https://t.me/${
+                              botUsername || 'TedCloudEnterpriseBot'
+                            }?start=${currentProfile.invite_code || 'TC-0000'}`,
+                            'profile-link'
+                          )
+                        }
+                        className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                      >
+                        {copiedToken === 'profile-link' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{t('invite.copied')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>{t('invite.copyLink')}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <div className="text-[#71717A] mb-1">{t('profile.accessLevelLabel')}</div>
-                      <span className="inline-flex items-center px-2.5 py-1 rounded bg-[#1C1C1F] border border-[#2C2C30] text-white font-medium whitespace-nowrap">
+                  {/* Компактная карточка «Активный рабочий контур» (БЛОК 2: без серых OFF) */}
+                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <Shield className="w-4 h-4 text-emerald-400" />
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                          Активный рабочий контур
+                        </h3>
+                      </div>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-medium text-emerald-300 whitespace-nowrap">
                         {t(`access.${currentAccessLevel}`)}
                       </span>
                     </div>
 
-                    <div>
-                      <div className="text-[#71717A] mb-1">{t('profile.telegramStatusLabel')}</div>
-                      {currentProfile.telegram_chat_id ? (
-                        <div className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
-                          <Send className="w-3.5 h-3.5" />
-                          <span>
-                            {t('profile.telegramConnectedId')} {currentProfile.telegram_chat_id})
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="text-[#A1A1AA]">{t('profile.telegramNotConnected')}</div>
-                      )}
-                    </div>
-
-                    <div>
-                      <div className="text-[#71717A] mb-1.5">{t('profile.syncLinkLabel')}</div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={`https://t.me/${
-                            botUsername || 'TedCloudEnterpriseBot'
-                          }?start=${currentProfile.invite_code || 'TC-0000'}`}
-                          className="w-full rounded-lg border border-[#262626] bg-[#0D0D0F] px-3 py-2 text-xs text-[#D4D4D8] focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            copyToClipboard(
-                              `https://t.me/${
-                                botUsername || 'TedCloudEnterpriseBot'
-                              }?start=${currentProfile.invite_code || 'TC-0000'}`,
-                              'profile-link'
-                            )
-                          }
-                          className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
-                        >
-                          {copiedToken === 'profile-link' ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>{t('invite.copied')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>{t('invite.copyLink')}</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-3.5">
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                      {t('profile.activePermissionsTitle')}
-                    </h3>
-                    <p className="text-[11px] text-[#8E8E93] mt-1 leading-relaxed">
-                      {t('profile.activePermissionsDesc')}
+                    <p className="text-xs text-[#8E8E93] leading-relaxed">
+                      Доступные вам рабочие модули и полномочия в пространстве компании:
                     </p>
-                  </div>
 
-                  <div className="space-y-2 pt-1">
-                    {PERMISSION_KEYS.map((permKey) => {
-                      const enabled = perms[permKey];
-                      return (
+                    <div className="space-y-2">
+                      {[
+                        'Управление личными задачами',
+                        'Корпоративный мессенджер и каналы отделов',
+                        'Прямая синхронизация с Telegram-ботом',
+                        ...PERMISSION_KEYS.filter((k) => Boolean(perms[k])).map((k) =>
+                          t(`perm.${k}`)
+                        ),
+                      ].map((capabilityLabel) => (
                         <div
-                          key={permKey}
+                          key={capabilityLabel}
                           className="flex items-center justify-between gap-2 rounded-lg border border-[#1F1F23] bg-[#141417] px-3 py-2 text-xs"
                         >
-                          <span className={enabled ? 'text-white font-medium' : 'text-[#71717A]'}>
-                            {t(`perm.${permKey}`)}
-                          </span>
-                          <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded whitespace-nowrap ${
-                              enabled
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-[#1C1C20] text-[#71717A] border border-[#27272A]'
-                            }`}
-                          >
-                            {enabled ? 'ON' : 'OFF'}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                            <span className="text-white font-medium truncate">
+                              {capabilityLabel}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                            Активно
                           </span>
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

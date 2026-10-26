@@ -22,6 +22,7 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'role_type',
     'telegram_chat_id',
     'email',
+    'avatar_url',
     'department',
     'invite_code',
     'access_level',
@@ -780,14 +781,23 @@ function normalizeTaskRow(row: any) {
 }
 
 function normalizeNodeRow(row: any) {
+  const extras = row.id ? recordExtrasOverlay.get(`organization_nodes:${row.id}`) : undefined;
   const accessLevel = normalizeAccessLevel(row.access_level, row.role_type);
   const permissions = normalizePermissionsObject(accessLevel, row.permissions);
+  const resolvedAvatar =
+    row.avatar_url !== undefined
+      ? row.avatar_url
+      : extras?.avatar_url !== undefined
+      ? extras.avatar_url
+      : null;
 
   return {
     ...row,
+    ...(extras || {}),
     role_type: row.role_type || 'Специалист',
     department: row.department || null,
     email: row.email || null,
+    avatar_url: resolvedAvatar ? String(resolvedAvatar) : null,
     telegram_chat_id:
       row.telegram_chat_id !== undefined && row.telegram_chat_id !== null
         ? String(row.telegram_chat_id).trim()
@@ -1354,6 +1364,7 @@ export default async function handler(req: any, res: any) {
             ? String(payload.telegram_chat_id).trim()
             : null,
           email: payload.email ? String(payload.email).trim() : null,
+          avatar_url: payload.avatar_url ? String(payload.avatar_url).trim() : null,
           department: payload.department ? String(payload.department).trim() : null,
           invite_code: generatedInviteCode,
           access_level: accessLevel,
@@ -1387,6 +1398,12 @@ export default async function handler(req: any, res: any) {
         if (error) {
           console.error('[API /api/db] Supabase INSERT error in organization_nodes:', error);
           return res.status(400).json({ error: error.message, details: error });
+        }
+
+        if (data?.id && rawInsertPayload.avatar_url) {
+          recordExtrasOverlay.set(`organization_nodes:${data.id}`, {
+            avatar_url: rawInsertPayload.avatar_url,
+          });
         }
 
         return res.status(200).json({
@@ -1909,6 +1926,14 @@ export default async function handler(req: any, res: any) {
         }
         if (updates.email !== undefined) {
           rawUpdates.email = updates.email ? String(updates.email).trim() : null;
+        }
+        if (updates.avatar_url !== undefined) {
+          rawUpdates.avatar_url = updates.avatar_url ? String(updates.avatar_url).trim() : null;
+          const prevNodeExtras = recordExtrasOverlay.get(`organization_nodes:${id}`) || {};
+          recordExtrasOverlay.set(`organization_nodes:${id}`, {
+            ...prevNodeExtras,
+            avatar_url: rawUpdates.avatar_url,
+          });
         }
         if (updates.telegram_chat_id !== undefined) {
           rawUpdates.telegram_chat_id = updates.telegram_chat_id

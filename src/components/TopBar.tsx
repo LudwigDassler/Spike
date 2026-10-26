@@ -8,6 +8,7 @@ interface TopBarProps {
   activeSection: DashboardSection;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  searchPlaceholder?: string;
   isSyncing: boolean;
   onRefresh: () => void;
 }
@@ -17,12 +18,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   activeSection,
   searchQuery,
   onSearchChange,
+  searchPlaceholder,
   isSyncing,
   onRefresh,
 }) => {
   const { t } = useLocale();
 
   const sectionLabel = t(`nav.${activeSection}`);
+  const effectivePlaceholder = searchPlaceholder || t('actions.searchPlaceholder');
 
   return (
     <header className="h-14 border-b border-[#1F1F1F] bg-[#0D0D0D]/95 backdrop-blur-md px-6 flex items-center justify-between gap-6 sticky top-0 z-20 font-sans">
@@ -49,8 +52,8 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder={t('actions.searchPlaceholder')}
-            aria-label={t('actions.searchPlaceholder')}
+            placeholder={effectivePlaceholder}
+            aria-label={effectivePlaceholder}
             className="w-56 sm:w-72 rounded-lg border border-[#262626] bg-[#141416] pl-8 pr-7 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none transition-colors"
           />
           {searchQuery && (
