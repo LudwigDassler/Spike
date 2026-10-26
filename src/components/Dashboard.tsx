@@ -33,7 +33,8 @@ import {
   AlertCircle,
   Camera,
   Zap,
-  Sparkles,
+  Cpu,
+  Calendar,
   Network,
   ListChecks,
   Receipt,
@@ -218,8 +219,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  // Task Filters & View Mode
+  // Task & CRM View Modes
   const [taskViewMode, setTaskViewMode] = useState<'list' | 'board'>('list');
+  const [crmViewMode, setCrmViewMode] = useState<'board' | 'table'>('board');
   const [onlyMyTasks, setOnlyMyTasks] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'ALL'>('ALL');
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null);
@@ -553,30 +555,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
     billingCycle: BillingCycle;
     paymentMethod: BillingPaymentMethod;
     amount: number;
+    currency: CurrencyCode;
+    region: PaymentGatewayRegion;
+    payerDetails?: CompanyBillingDetails;
     invoiceNumber: string;
   }) => {
     if (!perms.billing_admin) return;
+    const effectiveRegion = params.region || paymentRegion;
     const currentDetails: CompanyBillingDetails = {
-      legal_name: payerLegalName.trim() || companyName,
-      tax_id: payerTaxId.trim() || (paymentRegion === 'RU' ? '7701234567' : 'EU-9920184'),
-      reg_number: payerRegNumber.trim() || (paymentRegion === 'RU' ? '770101001' : ''),
-      legal_address:
-        payerLegalAddress.trim() ||
-        (paymentRegion === 'RU'
-          ? 'РФ, г. Москва, Пресненская наб., д. 12'
-          : '100 Enterprise Way, Suite 400'),
-      billing_email: payerBillingEmail.trim() || currentProfile?.email || 'billing@company.org',
-      country: payerCountry.trim() || (paymentRegion === 'RU' ? 'Россия' : 'United States'),
-      region: paymentRegion,
+      ...(params.payerDetails || {}),
+      legal_name: params.payerDetails?.legal_name || payerLegalName.trim() || companyName,
+      region: effectiveRegion,
     };
 
-    const status = params.paymentMethod === 'card_sbp' ? 'Paid' : 'Pending';
+    const status =
+      params.paymentMethod === 'card_sbp' || params.paymentMethod === 'stripe_card'
+        ? 'Paid'
+        : 'Pending';
     setSelectedPlan(params.plan);
+    setPaymentRegion(effectiveRegion);
     localStorage.setItem('tedcloud_plan', params.plan);
+    localStorage.setItem('tedcloud_payment_region', effectiveRegion);
 
     if (company?.id) {
       await onPatchRecord('companies', company.id, {
         plan: params.plan,
+        payment_region: effectiveRegion,
         billing_cycle: params.billingCycle,
         billing_details: currentDetails,
       });
@@ -590,16 +594,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
         billing_cycle: params.billingCycle,
         payment_method: params.paymentMethod,
         amount: params.amount,
-        currency: paymentRegion === 'GLOBAL' && currency !== 'RUB' ? currency : 'RUB',
+        currency: params.currency,
         status,
         payer_details: currentDetails,
       });
 
       setCheckoutModalPlan(null);
       if (created.ok && created.invoice) {
-        if (params.paymentMethod === 'b2b_invoice') {
+        if (
+          params.paymentMethod === 'b2b_invoice' ||
+          params.paymentMethod === 'swift_wire' ||
+          params.paymentMethod === 'crypto_usdt'
+        ) {
           setPrintableInvoice(created.invoice);
-          showToast(`Счет ${params.invoiceNumber} сформирован и готов к печати`);
+          showToast(`Инвойс ${params.invoiceNumber} сформирован и готов к печати`);
         } else {
           showToast(`Тариф ${params.plan} успешно оплачен и активирован`);
         }
@@ -1253,12 +1261,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
+  const renderDueDateBadge = (dueDate?: string | null, status?: TaskStatus) => {
+    if (!dueDate) return null;
+    const raw = String(dueDate).slice(0, 10);
+    if (!raw) return null;
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const isOverdue = status !== 'Done' && raw < todayIso;
+    const isToday = status !== 'Done' && raw === todayIso;
+    let formatted = raw;
+    try {
+      const [y, m, d] = raw.split('-').map(Number);
+      if (y && m && d) {
+        formatted = new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
+          day: 'numeric',
+          month: 'short',
+        });
+      }
+    } catch {}
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium tabular-nums border whitespace-nowrap ${
+          isOverdue
+            ? 'bg-red-500/15 text-red-300 border-red-500/30'
+            : isToday
+            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+            : 'bg-zinc-900/90 text-zinc-400 border-white/[0.08]'
+        }`}
+      >
+        <Calendar className="w-3 h-3 shrink-0" />
+        <span>Срок: {formatted}</span>
+      </span>
+    );
+  };
+
   // БЛОК 2: Конструктор отделов компании («Структура подразделений (Отделы)»)
   const renderDepartmentConstructorCard = () => (
-    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+    <div className="rounded-xl border border-white/[0.07] bg-[#111114] p-5 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <Building2 className="w-4 h-4 text-indigo-400 shrink-0" />
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
               {t('dept.cardTitle')}
@@ -1306,7 +1348,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#262629] bg-[#16161A] text-xs text-white"
               >
                 <span className="font-medium">{dept}</span>
-                <span className="text-[10px] font-mono text-[#8E8E93] bg-[#222226] px-1.5 py-0.5 rounded">
+                <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#222226] px-1.5 py-0.5 rounded">
                   {deptMembersCount}
                 </span>
                 <button
@@ -1327,7 +1369,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Language & Currency Selector Card
   const renderLocalizationCard = () => (
-    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+    <div className="rounded-xl border border-white/[0.07] bg-[#111114] p-5 space-y-4">
       <div className="flex items-center gap-2.5">
         <Globe className="w-4 h-4 text-[#A1A1AA]" />
         <div>
@@ -1387,7 +1429,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#EDEDED] flex font-sans antialiased">
+    <div
+      className="min-h-screen bg-[#09090B] text-[#EDEDED] flex font-sans antialiased"
+      style={{
+        backgroundImage:
+          'radial-gradient(ellipse 80% 40% at 50% -15%, rgba(99,102,241,0.10), transparent)',
+      }}
+    >
       <Sidebar
         activeSection={activeSection}
         onSelectSection={setActiveSection}
@@ -1421,14 +1469,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
         />
 
         {toastBanner && (
-          <div className="mx-6 mt-4 flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">
+          <div className="mx-6 mt-4 flex items-center justify-between rounded-lg border border-white/15 bg-zinc-900/90 px-4 py-2.5 text-xs text-zinc-200 shadow-lg">
             <div className="flex items-center gap-2">
-              <BellRing className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <BellRing className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               <span>{toastBanner}</span>
             </div>
             <button
               onClick={() => setToastBanner(null)}
-              className="text-emerald-400 hover:text-white text-[11px] font-semibold"
+              className="text-zinc-400 hover:text-white text-[11px] font-semibold"
             >
               OK
             </button>
@@ -1465,13 +1513,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
               {/* Switcher: Стандартный вид / Карта связей (Teamwork Graph) on Overview */}
               {activeSection === 'overview' && (
-                <div className="inline-flex items-center rounded-lg border border-[#262626] bg-[#141417] p-0.5">
+                <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#141418] p-0.5">
                   <button
                     type="button"
                     onClick={() => setOverviewViewMode('standard')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       overviewViewMode === 'standard'
-                        ? 'bg-[#26262C] text-white'
+                        ? 'bg-zinc-800 text-white border border-white/10'
                         : 'text-[#8E8E93] hover:text-white'
                     }`}
                   >
@@ -1483,11 +1531,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     onClick={() => setOverviewViewMode('graph')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       overviewViewMode === 'graph'
-                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        ? 'bg-zinc-800 text-white border border-white/10'
                         : 'text-[#8E8E93] hover:text-white'
                     }`}
                   >
-                    <Network className="w-3.5 h-3.5 text-emerald-400" />
+                    <Network className="w-3.5 h-3.5 text-indigo-400" />
                     <span>Карта связей (Teamwork Graph)</span>
                   </button>
                 </div>
@@ -1495,13 +1543,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Switcher: Таблица штата / Карта связей (Teamwork Graph) on Team */}
               {activeSection === 'team' && perms.team_manage && (
-                <div className="inline-flex items-center rounded-lg border border-[#262626] bg-[#141417] p-0.5">
+                <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#141418] p-0.5">
                   <button
                     type="button"
                     onClick={() => setTeamViewMode('table')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       teamViewMode === 'table'
-                        ? 'bg-[#26262C] text-white'
+                        ? 'bg-zinc-800 text-white border border-white/10'
                         : 'text-[#8E8E93] hover:text-white'
                     }`}
                   >
@@ -1513,11 +1561,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     onClick={() => setTeamViewMode('graph')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       teamViewMode === 'graph'
-                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        ? 'bg-zinc-800 text-white border border-white/10'
                         : 'text-[#8E8E93] hover:text-white'
                     }`}
                   >
-                    <Network className="w-3.5 h-3.5 text-emerald-400" />
+                    <Network className="w-3.5 h-3.5 text-indigo-400" />
                     <span>Карта связей (Teamwork Graph)</span>
                   </button>
                 </div>
@@ -1814,480 +1862,563 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 >
                                   {task.title}
                                 </p>
-                                <div className="flex flex-wrap items-center gap-2 mt-1">
-                                  {renderPriorityBadge(task.priority)}
-                                  {renderTaskStatusBadge(task.status)}
-                                  {task.department && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8]">
-                                      {task.department}
-                                    </span>
-                                  )}
-                                  {checklist.length > 0 && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-300">
-                                      <ListChecks className="w-3 h-3" />
-                                      <span>
-                                        {doneSubtasks}/{checklist.length}
+                                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                                    {renderPriorityBadge(task.priority)}
+                                    {renderTaskStatusBadge(task.status)}
+                                    {renderDueDateBadge(task.due_date, task.status)}
+                                    {task.department && (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8]">
+                                        {task.department}
                                       </span>
-                                    </span>
-                                  )}
-                                  {assignee ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
-                                      <UserAvatar
-                                        name={assignee.name}
-                                        avatarUrl={assignee.avatar_url}
-                                        size="xs"
-                                      />
-                                      <span>
-                                        {assignee.name} ({assignee.role_type})
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-[#71717A]">
-                                      {t('tasks.unassigned')}
-                                    </span>
-                                  )}
-                                  {(task.description || task.notes) && (
-                                    <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
-                                      <FileText className="w-3 h-3" />
-                                      <span>{t('drawer.openDetails')}</span>
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div
-                                className="flex items-center gap-2 shrink-0"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {canCreateOrEditTasks && (
-                                  <button
-                                    type="button"
-                                    disabled={isDecomposing}
-                                    onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
-                                    title="ИИ-декомпозиция задачи на чек-лист подзадач"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-medium text-emerald-300 transition-colors whitespace-nowrap"
-                                  >
-                                    {isDecomposing ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <Sparkles className="w-3 h-3" />
                                     )}
-                                    <span>ИИ-декомпозиция</span>
-                                  </button>
-                                )}
-
-                                <select
-                                  disabled={!canCreateOrEditTasks}
-                                  value={task.status || 'Todo'}
-                                  onChange={(e) =>
-                                    handleTaskUpdate(task.id, {
-                                      status: e.target.value as TaskStatus,
-                                    })
-                                  }
-                                  className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
-                                >
-                                  <option value="Todo">{t('status.Todo')}</option>
-                                  <option value="In Progress">{t('status.In Progress')}</option>
-                                  <option value="Done">{t('status.Done')}</option>
-                                </select>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* =================================================================
-              TAB 2: ЗАДАЧИ / TASKS
-          ================================================================== */}
-          {activeSection === 'tasks' && (
-            <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <CheckCircle2 className="w-4 h-4 text-[#A1A1AA]" />
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
-                    {t('tasks.sectionTitle')}
-                  </h2>
-                  <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
-                    {filteredTasks.length}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {perms.tasks_view_all && (
-                    <button
-                      onClick={() => setOnlyMyTasks((prev) => !prev)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors whitespace-nowrap ${
-                        onlyMyTasks
-                          ? 'bg-white text-black border-white'
-                          : 'bg-[#161618] text-[#A1A1AA] border-[#262626] hover:text-white'
-                      }`}
-                    >
-                      {t('tasks.myTasks')}
-                    </button>
-                  )}
-
-                  <select
-                    value={priorityFilter}
-                    onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | 'ALL')}
-                    className="rounded-md border border-[#262626] bg-[#161618] px-2.5 py-1 text-xs text-[#D4D4D8] focus:outline-none"
-                  >
-                    <option value="ALL">{t('tasks.allPriorities')}</option>
-                    <option value="High">{t('priority.High')}</option>
-                    <option value="Medium">{t('priority.Medium')}</option>
-                    <option value="Low">{t('priority.Low')}</option>
-                  </select>
-
-                  {perms.data_export && (
-                    <button
-                      onClick={handleExportTasksCsv}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-[#262626] bg-[#161618] text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>CSV</span>
-                    </button>
-                  )}
-
-                  <div className="inline-flex rounded-md border border-[#262626] bg-[#161618] p-0.5">
-                    <button
-                      onClick={() => setTaskViewMode('list')}
-                      className={`p-1 rounded ${
-                        taskViewMode === 'list'
-                          ? 'bg-[#262629] text-white'
-                          : 'text-[#71717A] hover:text-white'
-                      }`}
-                    >
-                      <LayoutList className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setTaskViewMode('board')}
-                      className={`p-1 rounded ${
-                        taskViewMode === 'board'
-                          ? 'bg-[#262629] text-white'
-                          : 'text-[#71717A] hover:text-white'
-                      }`}
-                    >
-                      <Columns3 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {filteredTasks.length === 0 ? (
-                <div className="p-12 text-center space-y-3">
-                  <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
-                  <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
-                  {canCreateOrEditTasks && (
-                    <button
-                      onClick={() => setModalType('tasks')}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{t('tasks.addBtn')}</span>
-                    </button>
-                  )}
-                </div>
-              ) : taskViewMode === 'list' ? (
-                <div className="divide-y divide-[#1A1A1C]">
-                  {filteredTasks.map((task) => {
-                    const isBusy = busyRecordId === task.id;
-                    const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
-                    const checklist = Array.isArray(task.checklist) ? task.checklist : [];
-                    const doneSubtasks = checklist.filter((c) => c.done).length;
-                    const isDecomposing = decomposingTaskId === task.id;
-
-                    return (
-                      <div
-                        key={task.id}
-                        onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
-                        className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#161618] transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-start sm:items-center gap-3 min-w-0">
-                          <button
-                            type="button"
-                            disabled={isBusy || !canCreateOrEditTasks}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleTaskUpdate(task.id, {
-                                status: task.status === 'Done' ? 'Todo' : 'Done',
-                              });
-                            }}
-                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                              task.status === 'Done'
-                                ? 'bg-emerald-500 border-emerald-500 text-black'
-                                : 'border-[#3F3F46] hover:border-white'
-                            }`}
-                          >
-                            {task.status === 'Done' && <CheckCircle2 className="w-3 h-3" />}
-                          </button>
-
-                          <div className="min-w-0">
-                            <p
-                              className={`text-sm font-medium truncate ${
-                                task.status === 'Done'
-                                  ? 'text-[#71717A] line-through'
-                                  : 'text-white'
-                              }`}
-                            >
-                              {task.title}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2 mt-1">
-                              <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-[#1C1C1F] text-[#A1A1AA] border border-[#2C2C30] whitespace-nowrap">
-                                {t(`type.${task.type || 'Task'}`)}
-                              </span>
-                              {renderPriorityBadge(task.priority)}
-                              {task.department && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8] whitespace-nowrap">
-                                  {task.department}
-                                </span>
-                              )}
-                              {checklist.length > 0 && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-300">
-                                  <ListChecks className="w-3 h-3" />
-                                  <span>
-                                    {doneSubtasks}/{checklist.length}
-                                  </span>
-                                </span>
-                              )}
-                              {assignee && (
-                                <span className="inline-flex items-center gap-1.5 text-xs text-[#8E8E93]">
-                                  <UserAvatar
-                                    name={assignee.name}
-                                    avatarUrl={assignee.avatar_url}
-                                    size="xs"
-                                  />
-                                  <strong className="text-[#D4D4D8] font-medium">
-                                    {assignee.name} ({assignee.role_type})
-                                  </strong>
-                                </span>
-                              )}
-                              {(task.description || task.notes) && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
-                                  <FileText className="w-3 h-3" />
-                                  <span className="truncate max-w-[200px]">
-                                    {task.description || task.notes}
-                                  </span>
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div
-                          className="flex flex-wrap items-center gap-2 shrink-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {canCreateOrEditTasks && (
-                            <button
-                              type="button"
-                              disabled={isDecomposing}
-                              onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
-                              title="ИИ-декомпозиция задачи на чек-лист подзадач"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-medium text-emerald-300 transition-colors whitespace-nowrap"
-                            >
-                              {isDecomposing ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Sparkles className="w-3 h-3" />
-                              )}
-                              <span>ИИ-декомпозиция</span>
-                            </button>
-                          )}
-
-                          {perms.tasks_assign && (
-                            <select
-                              disabled={isBusy}
-                              value={task.assigned_to || ''}
-                              onChange={(e) =>
-                                handleTaskUpdate(task.id, {
-                                  assigned_to: e.target.value || null,
-                                })
-                              }
-                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
-                            >
-                              <option value="">{t('tasks.unassigned')}</option>
-                              {safeNodes.map((node) => (
-                                <option key={node.id} value={node.id}>
-                                  {node.name} — {node.role_type}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-
-                          <select
-                            disabled={isBusy || !canCreateOrEditTasks}
-                            value={task.priority || 'Medium'}
-                            onChange={(e) =>
-                              handleTaskUpdate(task.id, {
-                                priority: e.target.value as TaskPriority,
-                              })
-                            }
-                            className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
-                          >
-                            <option value="Low">{t('priority.Low')}</option>
-                            <option value="Medium">{t('priority.Medium')}</option>
-                            <option value="High">{t('priority.High')}</option>
-                          </select>
-
-                          <select
-                            disabled={isBusy || !canCreateOrEditTasks}
-                            value={task.status || 'Todo'}
-                            onChange={(e) =>
-                              handleTaskUpdate(task.id, {
-                                status: e.target.value as TaskStatus,
-                              })
-                            }
-                            className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
-                          >
-                            <option value="Todo">{t('status.Todo')}</option>
-                            <option value="In Progress">{t('status.In Progress')}</option>
-                            <option value="Done">{t('status.Done')}</option>
-                          </select>
-
-                          {canCreateOrEditTasks && (
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => requestDeleteRecord('tasks', task.id, task.title)}
-                              className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                            >
-                              {isBusy ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((columnStatus) => {
-                    const colTasks = filteredTasks.filter(
-                      (tItem) => (tItem.status || 'Todo') === columnStatus
-                    );
-                    return (
-                      <div
-                        key={columnStatus}
-                        className="rounded-lg border border-[#222225] bg-[#0D0D0F] p-3 flex flex-col gap-2.5"
-                      >
-                        <div className="flex items-center justify-between px-1">
-                          <span className="text-xs font-semibold text-[#D4D4D8]">
-                            {t(`status.${columnStatus}`)}
-                          </span>
-                          <span className="text-xs font-medium text-[#71717A]">
-                            {colTasks.length}
-                          </span>
-                        </div>
-
-                        {colTasks.length === 0 ? (
-                          <div className="py-8 text-center text-xs text-[#52525B] border border-dashed border-[#1F1F22] rounded-md">
-                            —
-                          </div>
-                        ) : (
-                          colTasks.map((task) => {
-                            const assignee = task.assigned_to
-                              ? nodeMap.get(task.assigned_to)
-                              : null;
-                            return (
-                              <div
-                                key={task.id}
-                                onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
-                                className="rounded-lg border border-[#242428] bg-[#141417] p-3 space-y-2.5 hover:border-[#3F3F46] transition-colors cursor-pointer"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className="text-xs font-medium text-white leading-snug">
-                                    {task.title}
-                                  </p>
-                                  {canCreateOrEditTasks && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        requestDeleteRecord('tasks', task.id, task.title);
-                                      }}
-                                      className="text-[#52525B] hover:text-red-400 transition-colors"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  )}
-                                </div>
-
-                                <div className="flex items-center justify-between gap-2">
-                                  {renderPriorityBadge(task.priority)}
-                                  {assignee ? (
-                                    <span className="inline-flex items-center gap-1.5 text-[11px] text-[#8E8E93] truncate">
-                                      <UserAvatar
-                                        name={assignee.name}
-                                        avatarUrl={assignee.avatar_url}
-                                        size="xs"
-                                      />
-                                      <span className="truncate">{assignee.name}</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-[11px] text-[#8E8E93] truncate">
-                                      {task.department || t('tasks.unassigned')}
-                                    </span>
-                                  )}
+                                    {checklist.length > 0 && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 border border-white/10 text-[11px] tabular-nums text-zinc-300">
+                                        <ListChecks className="w-3 h-3 text-indigo-400" />
+                                        <span>
+                                          {doneSubtasks}/{checklist.length}
+                                        </span>
+                                      </span>
+                                    )}
+                                    {assignee ? (
+                                      <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
+                                        <UserAvatar
+                                          name={assignee.name}
+                                          avatarUrl={assignee.avatar_url}
+                                          size="xs"
+                                        />
+                                        <span>
+                                          {assignee.name} ({assignee.role_type})
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-[#71717A]">
+                                        {t('tasks.unassigned')}
+                                      </span>
+                                    )}
+                                    {(task.description || task.notes) && (
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                                        <FileText className="w-3 h-3" />
+                                        <span>{t('drawer.openDetails')}</span>
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
 
                                 <div
-                                  className="pt-1 flex items-center justify-between gap-1.5 border-t border-[#1F1F23]"
+                                  className="flex items-center gap-2 shrink-0"
                                   onClick={(e) => e.stopPropagation()}
                                 >
-                                  {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((st) => (
+                                  {canCreateOrEditTasks && (
                                     <button
-                                      key={st}
-                                      disabled={!canCreateOrEditTasks}
-                                      onClick={() => handleTaskUpdate(task.id, { status: st })}
-                                      className={`flex-1 py-1 rounded text-[11px] transition-colors whitespace-nowrap ${
-                                        (task.status || 'Todo') === st
-                                          ? 'bg-white text-black font-semibold'
-                                          : 'bg-[#1C1C20] text-[#8E8E93] hover:text-white'
-                                      }`}
+                                      type="button"
+                                      disabled={isDecomposing}
+                                      onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
+                                      title="ИИ-декомпозиция задачи на чек-лист подзадач"
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
                                     >
-                                      {t(`status.${st}`)}
+                                      {isDecomposing ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Cpu className="w-3 h-3 text-indigo-400" />
+                                      )}
+                                      <span>ИИ-декомпозиция</span>
                                     </button>
-                                  ))}
+                                  )}
+
+                                  <select
+                                    disabled={!canCreateOrEditTasks}
+                                    value={task.status || 'Todo'}
+                                    onChange={(e) =>
+                                      handleTaskUpdate(task.id, {
+                                        status: e.target.value as TaskStatus,
+                                      })
+                                    }
+                                    className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                                  >
+                                    <option value="Todo">{t('status.Todo')}</option>
+                                    <option value="In Progress">{t('status.In Progress')}</option>
+                                    <option value="Done">{t('status.Done')}</option>
+                                  </select>
                                 </div>
                               </div>
                             );
-                          })
-                        )}
-                      </div>
-                    );
-                  })}
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* =================================================================
+                TAB 2: ЗАДАЧИ / TASKS (БЛОК 4: Полноценная Канбан-доска + Сроки due_date)
+            ================================================================== */}
+            {activeSection === 'tasks' && (
+              <section className="rounded-xl border border-white/[0.07] bg-[#111114] overflow-hidden shadow-2xl">
+                <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-[#A1A1AA]" />
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
+                      {t('tasks.sectionTitle')}
+                    </h2>
+                    <span className="text-[11px] font-medium tabular-nums text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
+                      {filteredTasks.length}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {perms.tasks_view_all && (
+                      <button
+                        onClick={() => setOnlyMyTasks((prev) => !prev)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors whitespace-nowrap ${
+                          onlyMyTasks
+                            ? 'bg-white text-black border-white'
+                            : 'bg-[#161618] text-[#A1A1AA] border-white/10 hover:text-white'
+                        }`}
+                      >
+                        {t('tasks.myTasks')}
+                      </button>
+                    )}
+
+                    <select
+                      value={priorityFilter}
+                      onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | 'ALL')}
+                      className="rounded-md border border-white/10 bg-[#161618] px-2.5 py-1 text-xs text-[#D4D4D8] focus:outline-none"
+                    >
+                      <option value="ALL">{t('tasks.allPriorities')}</option>
+                      <option value="High">{t('priority.High')}</option>
+                      <option value="Medium">{t('priority.Medium')}</option>
+                      <option value="Low">{t('priority.Low')}</option>
+                    </select>
+
+                    {perms.data_export && (
+                      <button
+                        onClick={handleExportTasksCsv}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/10 bg-[#161618] text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>CSV</span>
+                      </button>
+                    )}
+
+                    <div className="inline-flex rounded-lg border border-white/10 bg-[#16161A] p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setTaskViewMode('list')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                          taskViewMode === 'list'
+                            ? 'bg-zinc-800 text-white border border-white/10'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        <LayoutList className="w-3.5 h-3.5" />
+                        <span>Список</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaskViewMode('board')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                          taskViewMode === 'board'
+                            ? 'bg-zinc-800 text-white border border-white/10'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        <Columns3 className="w-3.5 h-3.5" />
+                        <span>Канбан-доска</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </section>
-          )}
+
+                {filteredTasks.length === 0 ? (
+                  <div className="p-12 text-center space-y-3">
+                    <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
+                    <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
+                    {canCreateOrEditTasks && (
+                      <button
+                        onClick={() => setModalType('tasks')}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{t('tasks.addBtn')}</span>
+                      </button>
+                    )}
+                  </div>
+                ) : taskViewMode === 'list' ? (
+                  <div className="divide-y divide-[#1A1A1C]">
+                    {filteredTasks.map((task) => {
+                      const isBusy = busyRecordId === task.id;
+                      const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
+                      const checklist = Array.isArray(task.checklist) ? task.checklist : [];
+                      const doneSubtasks = checklist.filter((c) => c.done).length;
+                      const isDecomposing = decomposingTaskId === task.id;
+
+                      return (
+                        <div
+                          key={task.id}
+                          onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
+                          className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#16161A] transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-start sm:items-center gap-3 min-w-0">
+                            <button
+                              type="button"
+                              disabled={isBusy || !canCreateOrEditTasks}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleTaskUpdate(task.id, {
+                                  status: task.status === 'Done' ? 'Todo' : 'Done',
+                                });
+                              }}
+                              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                task.status === 'Done'
+                                  ? 'bg-emerald-500 border-emerald-500 text-black'
+                                  : 'border-[#3F3F46] hover:border-white'
+                              }`}
+                            >
+                              {task.status === 'Done' && <CheckCircle2 className="w-3 h-3" />}
+                            </button>
+
+                            <div className="min-w-0">
+                              <p
+                                className={`text-sm font-medium truncate ${
+                                  task.status === 'Done'
+                                    ? 'text-[#71717A] line-through'
+                                    : 'text-white'
+                                }`}
+                              >
+                                {task.title}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2 mt-1">
+                                <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-[#1C1C1F] text-[#A1A1AA] border border-[#2C2C30] whitespace-nowrap">
+                                  {t(`type.${task.type || 'Task'}`)}
+                                </span>
+                                {renderPriorityBadge(task.priority)}
+                                {renderDueDateBadge(task.due_date, task.status)}
+                                {task.department && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8] whitespace-nowrap">
+                                    {task.department}
+                                  </span>
+                                )}
+                                {checklist.length > 0 && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 border border-white/10 text-[11px] tabular-nums text-zinc-300">
+                                    <ListChecks className="w-3 h-3 text-indigo-400" />
+                                    <span>
+                                      {doneSubtasks}/{checklist.length}
+                                    </span>
+                                  </span>
+                                )}
+                                {assignee && (
+                                  <span className="inline-flex items-center gap-1.5 text-xs text-[#8E8E93]">
+                                    <UserAvatar
+                                      name={assignee.name}
+                                      avatarUrl={assignee.avatar_url}
+                                      size="xs"
+                                    />
+                                    <strong className="text-[#D4D4D8] font-medium">
+                                      {assignee.name} ({assignee.role_type})
+                                    </strong>
+                                  </span>
+                                )}
+                                {(task.description || task.notes) && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
+                                    <FileText className="w-3 h-3" />
+                                    <span className="truncate max-w-[200px]">
+                                      {task.description || task.notes}
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div
+                            className="flex flex-wrap items-center gap-2 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {canCreateOrEditTasks && (
+                              <button
+                                type="button"
+                                disabled={isDecomposing}
+                                onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
+                                title="ИИ-декомпозиция задачи на чек-лист подзадач"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
+                              >
+                                {isDecomposing ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Cpu className="w-3 h-3 text-indigo-400" />
+                                )}
+                                <span>ИИ-декомпозиция</span>
+                              </button>
+                            )}
+
+                            {perms.tasks_assign && (
+                              <select
+                                disabled={isBusy}
+                                value={task.assigned_to || ''}
+                                onChange={(e) =>
+                                  handleTaskUpdate(task.id, {
+                                    assigned_to: e.target.value || null,
+                                  })
+                                }
+                                className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
+                              >
+                                <option value="">{t('tasks.unassigned')}</option>
+                                {safeNodes.map((node) => (
+                                  <option key={node.id} value={node.id}>
+                                    {node.name} — {node.role_type}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            <select
+                              disabled={isBusy || !canCreateOrEditTasks}
+                              value={task.priority || 'Medium'}
+                              onChange={(e) =>
+                                handleTaskUpdate(task.id, {
+                                  priority: e.target.value as TaskPriority,
+                                })
+                              }
+                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                            >
+                              <option value="Low">{t('priority.Low')}</option>
+                              <option value="Medium">{t('priority.Medium')}</option>
+                              <option value="High">{t('priority.High')}</option>
+                            </select>
+
+                            <select
+                              disabled={isBusy || !canCreateOrEditTasks}
+                              value={task.status || 'Todo'}
+                              onChange={(e) =>
+                                handleTaskUpdate(task.id, {
+                                  status: e.target.value as TaskStatus,
+                                })
+                              }
+                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                            >
+                              <option value="Todo">{t('status.Todo')}</option>
+                              <option value="In Progress">{t('status.In Progress')}</option>
+                              <option value="Done">{t('status.Done')}</option>
+                            </select>
+
+                            {canCreateOrEditTasks && (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => requestDeleteRecord('tasks', task.id, task.title)}
+                                className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                    {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((columnStatus) => {
+                      const colTasks = filteredTasks.filter(
+                        (tItem) => (tItem.status || 'Todo') === columnStatus
+                      );
+                      return (
+                        <div
+                          key={columnStatus}
+                          className="rounded-xl border border-white/[0.07] bg-[#0D0D10] p-3.5 flex flex-col gap-3"
+                        >
+                          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.06]">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`w-2 h-2 rounded-full ${
+                                  columnStatus === 'Done'
+                                    ? 'bg-emerald-400'
+                                    : columnStatus === 'In Progress'
+                                    ? 'bg-indigo-400'
+                                    : 'bg-zinc-500'
+                                }`}
+                              />
+                              <span className="text-xs font-semibold text-white">
+                                {t(`status.${columnStatus}`)}
+                              </span>
+                            </div>
+                            <span className="text-xs font-medium tabular-nums text-zinc-400 bg-zinc-900 border border-white/[0.07] px-2 py-0.5 rounded">
+                              {colTasks.length}
+                            </span>
+                          </div>
+
+                          {colTasks.length === 0 ? (
+                            <div className="py-10 text-center text-xs text-zinc-600 border border-dashed border-white/[0.06] rounded-lg">
+                              Нет задач в колонке
+                            </div>
+                          ) : (
+                            colTasks.map((task) => {
+                              const assignee = task.assigned_to
+                                ? nodeMap.get(task.assigned_to)
+                                : null;
+                              const checklist = Array.isArray(task.checklist)
+                                ? task.checklist
+                                : [];
+                              const doneSubtasks = checklist.filter((c) => c.done).length;
+                              const progressPct =
+                                checklist.length > 0
+                                  ? Math.round((doneSubtasks / checklist.length) * 100)
+                                  : 0;
+
+                              return (
+                                <div
+                                  key={task.id}
+                                  onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
+                                  className="rounded-xl border border-white/[0.08] bg-[#141418] p-3.5 space-y-3 hover:border-white/25 transition-colors cursor-pointer shadow-lg"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-xs font-semibold text-white leading-snug">
+                                      {task.title}
+                                    </p>
+                                    {canCreateOrEditTasks && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          requestDeleteRecord('tasks', task.id, task.title);
+                                        }}
+                                        className="text-zinc-500 hover:text-red-400 transition-colors shrink-0"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {renderPriorityBadge(task.priority)}
+                                    {renderDueDateBadge(task.due_date, task.status)}
+                                    {task.department && (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-900 border border-white/[0.08] text-[10px] text-zinc-300">
+                                        {task.department}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {checklist.length > 0 && (
+                                    <div className="space-y-1.5 pt-0.5">
+                                      <div className="flex items-center justify-between text-[11px] text-zinc-400 tabular-nums">
+                                        <span className="inline-flex items-center gap-1">
+                                          <ListChecks className="w-3 h-3 text-indigo-400" />
+                                          <span>Чек-лист</span>
+                                        </span>
+                                        <span>
+                                          {doneSubtasks}/{checklist.length} ({progressPct}%)
+                                        </span>
+                                      </div>
+                                      <div className="h-1.5 w-full rounded-full bg-zinc-900 overflow-hidden">
+                                        <div
+                                          className="h-full bg-indigo-500 transition-all duration-200"
+                                          style={{ width: `${progressPct}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                                    {assignee ? (
+                                      <span className="inline-flex items-center gap-1.5 text-[11px] text-zinc-300 truncate">
+                                        <UserAvatar
+                                          name={assignee.name}
+                                          avatarUrl={assignee.avatar_url}
+                                          size="xs"
+                                        />
+                                        <span className="truncate font-medium">{assignee.name}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] text-zinc-500 truncate">
+                                        {t('tasks.unassigned')}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div
+                                    className="pt-2 flex items-center justify-between gap-1.5 border-t border-white/[0.06]"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((st) => (
+                                      <button
+                                        key={st}
+                                        disabled={!canCreateOrEditTasks}
+                                        onClick={() => handleTaskUpdate(task.id, { status: st })}
+                                        className={`flex-1 py-1 rounded-md text-[11px] transition-colors whitespace-nowrap ${
+                                          (task.status || 'Todo') === st
+                                            ? 'bg-white text-black font-semibold'
+                                            : 'bg-zinc-900 text-zinc-400 hover:text-white border border-white/[0.06]'
+                                        }`}
+                                      >
+                                        {t(`status.${st}`)}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
 
           {/* =================================================================
               TAB 3: СДЕЛКИ / CRM DEALS (БЛОК 3: ИНН/КПП/VAT, Договор, Отдел, Менеджер)
           ================================================================== */}
           {activeSection === 'crm' && perms.crm_view && (
-            <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex flex-wrap items-center justify-between gap-3">
+            <section className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <Briefcase className="w-4 h-4 text-[#A1A1AA]" />
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
                     {t('crm.sectionTitle')}
                   </h2>
-                  <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
+                  <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded whitespace-nowrap tabular-nums">
                     {filteredLeads.length}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
+                  {/* Переключатель режима отображения: Воронка (Канбан) | Реестр (Таблица) */}
+                  <div className="inline-flex items-center rounded-lg border border-white/[0.07] bg-[#0B0B0E] p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCrmViewMode('board')}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                        crmViewMode === 'board'
+                          ? 'bg-white text-black'
+                          : 'text-[#8E8E93] hover:text-white'
+                      }`}
+                    >
+                      <Columns3 className="w-3.5 h-3.5" />
+                      <span>Воронка (Канбан)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCrmViewMode('table')}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                        crmViewMode === 'table'
+                          ? 'bg-white text-black'
+                          : 'text-[#8E8E93] hover:text-white'
+                      }`}
+                    >
+                      <LayoutList className="w-3.5 h-3.5" />
+                      <span>Реестр (Таблица)</span>
+                    </button>
+                  </div>
+
                   {/* Компактный переключатель валюты расчетов для сотрудников с доступом crm_view */}
                   <div
-                    className="inline-flex items-center rounded-md border border-[#262626] bg-[#161618] p-0.5"
+                    className="inline-flex items-center rounded-lg border border-white/[0.07] bg-[#0B0B0E] p-0.5"
                     aria-label="Currency switcher"
                   >
                     {(['RUB', 'USD', 'EUR'] as CurrencyCode[]).map((curr) => (
@@ -2332,11 +2463,145 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </button>
                   )}
                 </div>
+              ) : crmViewMode === 'board' ? (
+                /* 4 колонки стадий воронки CRM с автоподсчетом суммы в шапке каждой колонки */
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                  {(
+                    [
+                      { status: 'New' as CrmLeadStatus, label: t('stage.New'), dot: 'bg-zinc-400' },
+                      {
+                        status: 'Negotiation' as CrmLeadStatus,
+                        label: t('stage.Negotiation'),
+                        dot: 'bg-indigo-400',
+                      },
+                      { status: 'Won' as CrmLeadStatus, label: t('stage.Won'), dot: 'bg-emerald-400' },
+                      { status: 'Lost' as CrmLeadStatus, label: t('stage.Lost'), dot: 'bg-zinc-600' },
+                    ]
+                  ).map((col) => {
+                    const colLeads = filteredLeads.filter(
+                      (lead) => (lead.status || lead.stage || 'New') === col.status
+                    );
+                    const colTotal = colLeads.reduce(
+                      (sum, lead) => sum + Number(lead.amount ?? lead.deal_value ?? 0),
+                      0
+                    );
+
+                    return (
+                      <div
+                        key={col.status}
+                        className="rounded-xl border border-white/[0.07] bg-[#0B0B0E] p-3.5 flex flex-col min-h-[340px]"
+                      >
+                        <div className="pb-3 mb-3 border-b border-white/[0.06] space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${col.dot}`} />
+                              <span className="text-xs font-semibold uppercase tracking-wider text-white">
+                                {col.label}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-semibold text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded tabular-nums">
+                              {colLeads.length}
+                            </span>
+                          </div>
+                          <div className="text-xs font-semibold text-[#E4E4E7] tabular-nums">
+                            {formatMoney(colTotal)}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2.5 flex-1">
+                          {colLeads.length === 0 ? (
+                            <div className="py-10 text-center text-xs text-[#52525B]">
+                              Нет сделок на стадии
+                            </div>
+                          ) : (
+                            colLeads.map((lead) => {
+                              const displayName =
+                                lead.client_name || lead.full_name || lead.title || '';
+                              const displayValue = Number(lead.amount ?? lead.deal_value ?? 0);
+                              const managerId = lead.assigned_to || lead.owner_node_id;
+                              const manager = managerId ? nodeMap.get(managerId) : null;
+
+                              return (
+                                <div
+                                  key={lead.id}
+                                  onClick={() => setDrawerSelection({ kind: 'lead', id: lead.id })}
+                                  className="rounded-lg border border-white/[0.07] bg-[#131317] hover:border-white/[0.18] p-3.5 space-y-2.5 transition-all cursor-pointer group"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="text-xs font-medium text-white group-hover:text-zinc-100 leading-snug">
+                                      {displayName}
+                                    </div>
+                                    <div className="text-xs font-semibold text-white whitespace-nowrap tabular-nums">
+                                      {formatMoney(displayValue)}
+                                    </div>
+                                  </div>
+
+                                  {lead.contract_number && (
+                                    <div className="text-[11px] text-[#A1A1AA] tabular-nums">
+                                      Договор № {lead.contract_number}
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.05]">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      {manager ? (
+                                        <>
+                                          <UserAvatar
+                                            name={manager.name}
+                                            avatarUrl={manager.avatar_url}
+                                            size="xs"
+                                          />
+                                          <span className="text-[11px] text-[#A1A1AA] truncate">
+                                            {manager.name}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-[11px] text-[#71717A]">
+                                          {t('tasks.unassigned')}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {lead.department && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[10px] text-[#D4D4D8] truncate max-w-[110px]">
+                                        {lead.department}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {perms.crm_edit && (
+                                    <div
+                                      className="pt-2 border-t border-white/[0.05] flex items-center justify-between gap-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {(['New', 'Negotiation', 'Won', 'Lost'] as CrmLeadStatus[])
+                                        .filter((s) => s !== col.status)
+                                        .map((targetStage) => (
+                                          <button
+                                            key={targetStage}
+                                            type="button"
+                                            onClick={() => handleLeadStatusChange(lead, targetStage)}
+                                            className="flex-1 py-1 px-1.5 rounded bg-white/[0.03] hover:bg-white/[0.09] border border-white/[0.06] text-[10px] font-medium text-[#A1A1AA] hover:text-white transition-colors truncate"
+                                          >
+                                            → {t(`stage.${targetStage}` as any)}
+                                          </button>
+                                        ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                      <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
                         <th className="py-3 px-5">{t('crm.colClient')}</th>
                         <th className="py-3 px-5">{t('crm.colRequisites')}</th>
                         <th className="py-3 px-5">{t('crm.colAssigneeDept')}</th>
@@ -2348,7 +2613,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         )}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#1A1A1C] text-xs">
+                    <tbody className="divide-y divide-white/[0.05] text-xs">
                       {filteredLeads.map((lead) => {
                         const displayName =
                           lead.client_name || lead.full_name || lead.title || '';
@@ -2363,7 +2628,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <tr
                             key={lead.id}
                             onClick={() => setDrawerSelection({ kind: 'lead', id: lead.id })}
-                            className="hover:bg-[#161618] transition-colors cursor-pointer"
+                            className="hover:bg-[#16161A] transition-colors cursor-pointer"
                           >
                             <td className="py-3.5 px-5">
                               <div className="font-medium text-white">{displayName}</div>
@@ -2382,7 +2647,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               {lead.tax_id || lead.contract_number || lead.reg_number ? (
                                 <div className="space-y-0.5">
                                   {lead.tax_id && (
-                                    <div className="text-white font-mono text-[11px]">
+                                    <div className="text-white tabular-nums text-[11px]">
                                       <span className="text-[#71717A]">
                                         {isGlobal ? 'VAT/Tax:' : 'ИНН:'}
                                       </span>{' '}
@@ -2391,7 +2656,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                   )}
                                   {lead.contract_number && (
-                                    <div className="text-[11px] text-[#A1A1AA] font-mono">
+                                    <div className="text-[11px] text-[#A1A1AA] tabular-nums">
                                       № {lead.contract_number}
                                     </div>
                                   )}
@@ -2412,21 +2677,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <div className="text-[#71717A]">{t('tasks.unassigned')}</div>
                                 )}
                                 {lead.department && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[10px] text-[#D4D4D8] whitespace-nowrap">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[10px] text-[#D4D4D8] whitespace-nowrap">
                                     {lead.department}
                                   </span>
                                 )}
                               </div>
                             </td>
 
-                            <td className="py-3.5 px-5 text-[#A1A1AA]">
+                            <td className="py-3.5 px-5 text-[#A1A1AA] tabular-nums">
                               <span className="inline-flex items-center gap-1.5">
                                 <Phone className="w-3 h-3 text-[#71717A]" />
                                 {displayContact}
                               </span>
                             </td>
                             <td className="py-3.5 px-5">{renderLeadStatusBadge(displayStatus)}</td>
-                            <td className="py-3.5 px-5 text-right text-white font-semibold whitespace-nowrap">
+                            <td className="py-3.5 px-5 text-right text-white font-semibold whitespace-nowrap tabular-nums">
                               {formatMoney(displayValue)}
                             </td>
                             {perms.crm_edit && (
@@ -2440,7 +2705,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     onChange={(e) =>
                                       handleLeadStatusChange(lead, e.target.value as CrmLeadStatus)
                                     }
-                                    className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
+                                    className="rounded-md border border-white/[0.08] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
                                   >
                                     <option value="New">{t('stage.New')}</option>
                                     <option value="Negotiation">{t('stage.Negotiation')}</option>
@@ -2514,7 +2779,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           Общий поток (Циркуляры компании)
                         </span>
                       </div>
-                      <span className="text-[10px] font-mono text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                      <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
                         {broadcastMessagesCount}
                       </span>
                     </button>
@@ -2551,7 +2816,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <Hash className="w-3.5 h-3.5 text-[#71717A] shrink-0" />
                             <span className="text-xs font-medium truncate">{dept}</span>
                           </div>
-                          <span className="text-[10px] font-mono text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                          <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
                             {deptMsgCount}
                           </span>
                         </button>
@@ -2565,7 +2830,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
                         Личные диалоги (Сотрудники)
                       </span>
-                      <span className="text-[10px] font-mono text-[#71717A]">
+                      <span className="text-[10px] tabular-nums text-[#71717A]">
                         {colleagueNodes.length}
                       </span>
                     </div>
@@ -2636,7 +2901,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               </div>
                             </div>
 
-                            <span className="text-[10px] font-mono text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                            <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
                               {dialogCount}
                             </span>
                           </button>
@@ -2855,7 +3120,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 {messageBody}
                               </div>
                               {shortTime && (
-                                <span className="text-[10px] font-mono text-zinc-400/75 shrink-0 select-none leading-none pb-0.5">
+                                <span className="text-[10px] tabular-nums text-zinc-400/75 shrink-0 select-none leading-none pb-0.5">
                                   {shortTime}
                                 </span>
                               )}
@@ -2959,14 +3224,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   onSelectLead={(leadId) => setDrawerSelection({ kind: 'lead', id: leadId })}
                 />
               ) : (
-                <section className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+                <section className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <Users className="w-4 h-4 text-[#A1A1AA]" />
                       <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
                         {t('team.sectionTitle')}
                       </h2>
-                      <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
+                      <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded whitespace-nowrap tabular-nums">
                         {filteredNodes.length}
                       </span>
                     </div>
@@ -2997,7 +3262,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                          <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
                             <th className="py-3 px-5">{t('team.colEmployee')}</th>
                             <th className="py-3 px-5">{t('team.colJobTitle')}</th>
                             <th className="py-3 px-5">{t('team.colAccess')}</th>
@@ -3006,7 +3271,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <th className="py-3 px-5 text-right">{t('team.colActions')}</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-[#1A1A1C] text-xs">
+                        <tbody className="divide-y divide-white/[0.05] text-xs">
                           {filteredNodes.map((node) => {
                             const { access_level, permissions } = normalizeEmployeePermissions(
                               node.access_level,
@@ -3018,7 +3283,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             ).length;
 
                             return (
-                              <tr key={node.id} className="hover:bg-[#161618] transition-colors">
+                              <tr key={node.id} className="hover:bg-[#16161A] transition-colors">
                                 <td className="py-4 px-5">
                                   <div className="flex items-center gap-3">
                                     <UserAvatar
@@ -3040,7 +3305,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 </td>
 
                                 <td className="py-4 px-5">
-                                  <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#1C1C1F] text-white border border-[#2C2C30] font-medium whitespace-nowrap">
+                                  <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] text-white border border-white/[0.08] font-medium whitespace-nowrap">
                                     {node.role_type}
                                   </div>
                                   <div className="text-[11px] text-[#8E8E93] mt-1">
@@ -3050,13 +3315,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                 <td className="py-4 px-5">
                                   <div className="flex flex-col items-start gap-1.5">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#18181B] border border-[#2C2C30] text-[#E4E4E7] font-medium whitespace-nowrap">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[#E4E4E7] font-medium whitespace-nowrap tabular-nums">
                                       {t(`accessShort.${access_level}`)} ({activeFlagsCount}/7)
                                     </span>
                                     <button
                                       type="button"
                                       onClick={() => setPermissionsModalNode(node)}
-                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#2E2E32] bg-[#161618] hover:bg-[#222226] text-[11px] font-medium text-white transition-colors whitespace-nowrap"
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/[0.08] bg-[#16161A] hover:bg-white/[0.08] text-[11px] font-medium text-white transition-colors whitespace-nowrap"
                                     >
                                       <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
                                       <span>{t('permModal.btnLabel')}</span>
@@ -3066,13 +3331,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                 <td className="py-4 px-5">
                                   <div className="flex flex-col items-start gap-1.5">
-                                    <span className="text-xs px-2.5 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-white font-semibold whitespace-nowrap">
+                                    <span className="text-xs px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-white font-semibold whitespace-nowrap tabular-nums">
                                       {node.invite_code || 'TC-0000'}
                                     </span>
                                     <button
                                       type="button"
                                       onClick={() => setInspectInviteNode(node)}
-                                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#A1A1AA] hover:text-white bg-[#1C1C1F] hover:bg-[#27272A] transition-colors whitespace-nowrap"
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#A1A1AA] hover:text-white bg-white/[0.04] hover:bg-white/[0.08] transition-colors whitespace-nowrap"
                                     >
                                       <KeyRound className="w-3 h-3" />
                                       <span>{t('team.inviteLinkBtn')}</span>
@@ -3082,7 +3347,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                 <td className="py-4 px-5">
                                   {node.telegram_chat_id ? (
-                                    <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium whitespace-nowrap tabular-nums">
                                       <Send className="w-3 h-3" />
                                       {t('team.connected')} ({node.telegram_chat_id})
                                     </span>
@@ -3116,19 +3381,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 6: ЛИЧНЫЙ КАБИНЕТ / MY PROFILE (БЛОК 1, БЛОК 2, БЛОК 3)
+              TAB 6: ЛИЧНЫЙ КАБИНЕТ / MY PROFILE (БЛОК 3: Obsidian & Titanium standard)
           ================================================================== */}
           {activeSection === 'profile' && currentProfile && (
             <div className="space-y-6">
-              {/* Верхняя карточка-баннер: Крупный аватар с загрузкой/удалением фото, ФИО, должность, подразделение и статус Telegram */}
-              <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
+              {/* Верхняя карточка-баннер: Клик прямо по кружку аватара открывает выбор файла (без белой кнопки справа) */}
+              <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="relative group shrink-0">
-                    <UserAvatar
-                      name={currentProfile.name}
-                      avatarUrl={currentProfile.avatar_url}
-                      size="xl"
-                    />
+                    <button
+                      type="button"
+                      disabled={isUploadingAvatar}
+                      onClick={() => avatarFileInputRef.current?.click()}
+                      title="Нажмите, чтобы обновить фотографию профиля"
+                      className="relative rounded-full focus:outline-none group"
+                    >
+                      <UserAvatar
+                        name={currentProfile.name}
+                        avatarUrl={currentProfile.avatar_url}
+                        size="xl"
+                      />
+                      <span className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        {isUploadingAvatar ? (
+                          <Loader2 className="w-5 h-5 text-white animate-spin" />
+                        ) : (
+                          <Camera className="w-5 h-5 text-white" />
+                        )}
+                      </span>
+                    </button>
                     <input
                       ref={avatarFileInputRef}
                       type="file"
@@ -3144,29 +3424,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <h2 className="text-lg font-semibold text-white tracking-tight truncate">
                         {currentProfile.name}
                       </h2>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#1C1C20] border border-[#2C2C32] text-xs font-medium text-white whitespace-nowrap">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-medium text-white whitespace-nowrap">
                         {currentProfile.role_type}
                       </span>
                       {currentProfile.department && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#16161A] border border-[#27272A] text-xs text-[#A1A1AA] whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.07] text-xs text-[#A1A1AA] whitespace-nowrap">
                           {currentProfile.department}
                         </span>
                       )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2.5 text-xs">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[#D4D4D8] font-medium">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[#D4D4D8] font-medium">
                         <Shield className="w-3 h-3 text-emerald-400" />
                         <span>{t(`access.${currentAccessLevel}`)}</span>
                       </span>
 
                       {currentProfile.telegram_chat_id ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium tabular-nums">
                           <Send className="w-3 h-3" />
                           <span>Telegram синхронизирован ({currentProfile.telegram_chat_id})</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[#8E8E93]">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[#8E8E93]">
                           <span>Telegram не привязан</span>
                         </span>
                       )}
@@ -3174,45 +3454,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Кнопки управления фотографией профиля (БЛОК 1) */}
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    disabled={isUploadingAvatar}
-                    onClick={() => avatarFileInputRef.current?.click()}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
-                  >
-                    {isUploadingAvatar ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Camera className="w-3.5 h-3.5" />
-                    )}
-                    <span>Загрузить фото</span>
-                  </button>
-
-                  {currentProfile.avatar_url && (
+                {currentProfile.avatar_url && (
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <button
                       type="button"
                       disabled={isUploadingAvatar}
                       onClick={() => void handleRemoveAvatar()}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#262626] bg-[#17171A] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-[#17171B] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Удалить фото</span>
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
-              {/* Компактная сетка из 2 колонок (БЛОК 3: без сырой формы из 6 инпутов БД) */}
+              {/* Компактная сетка из 2 колонок */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                 {/* Левая колонка: Редактируемый профиль + чистая карточка учетных идентификаторов */}
                 <div className="space-y-6">
                   <form
                     onSubmit={handleSaveMyProfile}
-                    className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 space-y-5"
+                    className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-6 space-y-5"
                   >
-                    <div className="flex items-center justify-between border-b border-[#1F1F1F] pb-4">
+                    <div className="flex items-center justify-between border-b border-white/[0.07] pb-4">
                       <div>
                         <h3 className="text-sm font-semibold text-white">
                           Личные реквизиты и контакты
@@ -3233,7 +3498,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           required
                           value={profileName}
                           onChange={(e) => setProfileName(e.target.value)}
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3246,7 +3511,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={profileEmail}
                           onChange={(e) => setProfileEmail(e.target.value)}
                           placeholder="name@company.com"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3261,7 +3526,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               required
                               value={profileRoleTitle}
                               onChange={(e) => setProfileRoleTitle(e.target.value)}
-                              className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white focus:border-[#52525B] focus:outline-none"
+                              className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
                             />
                           </div>
 
@@ -3274,7 +3539,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               value={profileDepartment}
                               onChange={(e) => setProfileDepartment(e.target.value)}
                               placeholder="Например: Дирекция"
-                              className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                              className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                             />
                           </div>
                         </>
@@ -3282,7 +3547,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
 
                     {!perms.team_manage && (
-                      <div className="rounded-lg border border-[#1F1F23] bg-[#141417] p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="rounded-lg border border-white/[0.07] bg-[#141418] p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                         <div>
                           <div className="text-[11px] text-[#71717A] flex items-center gap-1">
                             <Lock className="w-3 h-3" />
@@ -3304,13 +3569,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     )}
 
-                    {/* Компактная информационная панель системных идентификаторов вместо сырых readOnly-инпутов */}
-                    <div className="rounded-lg border border-[#1F1F23] bg-[#141417] p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    {/* Компактная информационная панель системных идентификаторов */}
+                    <div className="rounded-lg border border-white/[0.07] bg-[#141418] p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2.5">
                         <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
                         <div>
                           <div className="text-[11px] text-[#8E8E93]">Персональный код входа</div>
-                          <div className="font-mono font-semibold text-white mt-0.5">
+                          <div className="font-semibold text-white mt-0.5 tabular-nums">
                             {currentProfile.invite_code || 'TC-0000'}
                           </div>
                         </div>
@@ -3323,7 +3588,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             'profile-invite-code'
                           )
                         }
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#2C2C32] bg-[#1C1C21] hover:bg-[#27272E] text-xs font-medium text-white transition-colors"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
                       >
                         {copiedToken === 'profile-invite-code' ? (
                           <>
@@ -3360,8 +3625,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 {/* Правая колонка: Синхронизация с Telegram-ботом + Активный рабочий контур */}
                 <div className="space-y-6">
-                  {/* Карточка синхронизации с Telegram-ботом */}
-                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                  {/* Карточка синхронизации с Telegram-ботом (Без сырого инпута с URL и без плашки /start) */}
+                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <Send className="w-4 h-4 text-emerald-400" />
@@ -3369,8 +3634,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           Синхронизация с Telegram-ботом
                         </h3>
                       </div>
-                      <span className="text-[11px] font-mono text-[#A1A1AA] bg-[#18181B] border border-[#27272A] px-2 py-0.5 rounded">
-                        /start {currentProfile.invite_code || 'TC-0000'}
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-medium border ${
+                          currentProfile.telegram_chat_id
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : 'bg-white/[0.04] border-white/[0.08] text-[#A1A1AA]'
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            currentProfile.telegram_chat_id ? 'bg-emerald-400' : 'bg-zinc-500'
+                          }`}
+                        />
+                        <span>
+                          {currentProfile.telegram_chat_id ? 'Подключено' : 'Ожидает привязки'}
+                        </span>
                       </span>
                     </div>
 
@@ -3378,15 +3656,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       Подключите личный аккаунт Telegram для мгновенного получения уведомлений о новых задачах и прямых сообщений от коллег.
                     </p>
 
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={`https://t.me/${
+                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                      <a
+                        href={`https://t.me/${
                           botUsername || 'TedCloudEnterpriseBot'
                         }?start=${currentProfile.invite_code || 'TC-0000'}`}
-                        className="w-full rounded-lg border border-[#262626] bg-[#0D0D0F] px-3 py-2 text-xs text-[#D4D4D8] focus:outline-none"
-                      />
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Открыть Telegram-бот</span>
+                      </a>
+
                       <button
                         type="button"
                         onClick={() =>
@@ -3397,25 +3679,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             'profile-link'
                           )
                         }
-                        className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
                       >
                         {copiedToken === 'profile-link' ? (
                           <>
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
                             <span>{t('invite.copied')}</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>{t('invite.copyLink')}</span>
+                            <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                            <span>Скопировать ссылку привязки</span>
                           </>
                         )}
                       </button>
                     </div>
                   </div>
 
-                  {/* Компактная карточка «Активный рабочий контур» (БЛОК 2: без серых OFF) */}
-                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                  {/* Компактная карточка «Активный рабочий контур» с полным спектром управленческих прав для Superadmin/Manager */}
+                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <Shield className="w-4 h-4 text-emerald-400" />
@@ -3433,17 +3715,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </p>
 
                     <div className="space-y-2">
-                      {[
-                        'Управление личными задачами',
-                        'Корпоративный мессенджер и каналы отделов',
-                        'Прямая синхронизация с Telegram-ботом',
-                        ...PERMISSION_KEYS.filter((k) => Boolean(perms[k])).map((k) =>
-                          t(`perm.${k}`)
-                        ),
-                      ].map((capabilityLabel) => (
+                      {Array.from(
+                        new Set([
+                          ...(currentAccessLevel === 'root' || currentAccessLevel === 'manager'
+                            ? [
+                                'Управление коммерческой воронкой CRM',
+                                'Управление штатом и матрицей доступа',
+                                'Международный биллинг и аудит безопасности',
+                              ]
+                            : []),
+                          'Управление операционными задачами и SLA',
+                          'Корпоративный мессенджер и каналы отделов',
+                          'Прямая синхронизация с Telegram-ботом',
+                          ...PERMISSION_KEYS.filter((k) => Boolean(perms[k])).map((k) =>
+                            t(`perm.${k}`)
+                          ),
+                        ])
+                      ).map((capabilityLabel) => (
                         <div
                           key={capabilityLabel}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-[#1F1F23] bg-[#141417] px-3 py-2 text-xs"
+                          className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.07] bg-[#141418] px-3 py-2 text-xs"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
@@ -3498,12 +3789,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                      <div className="rounded-lg border border-[#222228] bg-[#151519] p-3.5 space-y-2">
+                      <div className="rounded-lg border border-white/[0.07] bg-[#151519] p-3.5 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-[#A1A1AA] font-medium">
                             Активные сотрудники (Тариф {selectedPlan})
                           </span>
-                          <span className="font-mono font-semibold text-white">
+                          <span className="tabular-nums font-semibold text-white">
                             {safeNodes.length} / {selectedPlan === 'Enterprise' ? '∞' : maxSeats}
                           </span>
                         </div>
@@ -3515,12 +3806,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       </div>
 
-                      <div className="rounded-lg border border-[#222228] bg-[#151519] p-3.5 space-y-2">
+                      <div className="rounded-lg border border-white/[0.07] bg-[#151519] p-3.5 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-[#A1A1AA] font-medium">
-                            Хранилище, Telegram Webhook и TedCloud AI Copilot
+                            Хранилище, Telegram Webhook и TedCloud Intelligence
                           </span>
-                          <span className="font-mono font-semibold text-emerald-400">
+                          <span className="tabular-nums font-semibold text-emerald-400">
                             Активно · 99.98% SLA
                           </span>
                         </div>
@@ -3535,7 +3826,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* 2. Параметры организации и Выбор тарифа */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                   <div className="flex items-center gap-2.5">
                     <Building2 className="w-4 h-4 text-[#A1A1AA]" />
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
@@ -3560,7 +3851,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           type="text"
                           value={botUsername}
                           onChange={(e) => handleBotUsernameChange(e.target.value)}
-                          className="w-full rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1.5 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-2.5 py-1.5 text-xs text-white focus:border-white/40 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -3568,7 +3859,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
 
                 {/* Subscription Plan Selector (открывает модальное окно оформления подписки и B2B-счета) */}
-                <div className="lg:col-span-2 rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                <div className="lg:col-span-2 rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <Shield className="w-4 h-4 text-emerald-400" />
@@ -3607,8 +3898,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           key={planItem.tier}
                           className={`rounded-lg border p-4 flex flex-col justify-between transition-colors ${
                             isCurrent
-                              ? 'border-white bg-[#18181B]'
-                              : 'border-[#262626] bg-[#141416] hover:border-[#3F3F46]'
+                              ? 'border-white/80 bg-white/[0.04]'
+                              : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
                           }`}
                         >
                           <div>
@@ -3616,7 +3907,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               <span className="text-sm font-semibold text-white">
                                 {planItem.tier}
                               </span>
-                              <span className="text-xs font-medium text-[#D4D4D8] whitespace-nowrap">
+                              <span className="text-xs font-medium text-[#D4D4D8] whitespace-nowrap tabular-nums">
                                 {formatMoney(planItem.priceRub)}
                               </span>
                             </div>
@@ -3637,7 +3928,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             className={`mt-4 w-full py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
                               isCurrent
                                 ? 'bg-white text-black hover:bg-[#E4E4E7]'
-                                : 'bg-[#222226] text-[#D4D4D8] hover:bg-white hover:text-black'
+                                : 'bg-white/[0.06] text-[#D4D4D8] hover:bg-white hover:text-black'
                             }`}
                           >
                             {planItem.tier === 'Trial'
@@ -3658,7 +3949,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {/* 3. Платежный шлюз и Форма «Реквизиты плательщика» (companies.billing_details) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                 <div className="space-y-4">
-                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                     <div className="flex items-center gap-2.5">
                       <CreditCard className="w-4 h-4 text-[#A1A1AA]" />
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
@@ -3672,8 +3963,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         onClick={() => handleRegionChange('RU')}
                         className={`text-left rounded-lg border p-3.5 transition-colors ${
                           paymentRegion === 'RU'
-                            ? 'border-white bg-[#18181B]'
-                            : 'border-[#262626] bg-[#141416] hover:border-[#3F3F46]'
+                            ? 'border-white/80 bg-white/[0.04]'
+                            : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
                         }`}
                       >
                         <div className="text-xs font-semibold text-white mb-1">
@@ -3689,8 +3980,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         onClick={() => handleRegionChange('GLOBAL')}
                         className={`text-left rounded-lg border p-3.5 transition-colors ${
                           paymentRegion === 'GLOBAL'
-                            ? 'border-white bg-[#18181B]'
-                            : 'border-[#262626] bg-[#141416] hover:border-[#3F3F46]'
+                            ? 'border-white/80 bg-white/[0.04]'
+                            : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
                         }`}
                       >
                         <div className="text-xs font-semibold text-white mb-1">
@@ -3709,9 +4000,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {/* Форма «Реквизиты плательщика» (сохранение в companies.billing_details) */}
                 <form
                   onSubmit={handleSaveBillingDetails}
-                  className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4"
+                  className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4"
                 >
-                  <div className="flex items-center justify-between border-b border-[#1F1F1F] pb-3.5">
+                  <div className="flex items-center justify-between border-b border-white/[0.07] pb-3.5">
                     <div className="flex items-center gap-2.5">
                       <Receipt className="w-4 h-4 text-emerald-400" />
                       <div>
@@ -3737,7 +4028,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerLegalName}
                           onChange={(e) => setPayerLegalName(e.target.value)}
                           placeholder='ООО «Сигма Технологии»'
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3750,7 +4041,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerTaxId}
                           onChange={(e) => setPayerTaxId(e.target.value)}
                           placeholder="7701234567"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3763,7 +4054,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerRegNumber}
                           onChange={(e) => setPayerRegNumber(e.target.value)}
                           placeholder="770101001"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3776,7 +4067,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerLegalAddress}
                           onChange={(e) => setPayerLegalAddress(e.target.value)}
                           placeholder="г. Москва, Пресненская наб., д. 12"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3789,7 +4080,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerBillingEmail}
                           onChange={(e) => setPayerBillingEmail(e.target.value)}
                           placeholder="finance@company.ru"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -3805,7 +4096,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerLegalName}
                           onChange={(e) => setPayerLegalName(e.target.value)}
                           placeholder="Sigma Enterprise Holdings Inc."
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3818,7 +4109,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerTaxId}
                           onChange={(e) => setPayerTaxId(e.target.value)}
                           placeholder="EU-992018412"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3831,7 +4122,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerCountry}
                           onChange={(e) => setPayerCountry(e.target.value)}
                           placeholder="United Kingdom / Germany / UAE"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
@@ -3844,7 +4135,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value={payerBillingEmail}
                           onChange={(e) => setPayerBillingEmail(e.target.value)}
                           placeholder="billing@company.com"
-                          className="w-full rounded-lg border border-[#262626] bg-[#17171A] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -3856,7 +4147,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       onClick={() =>
                         setCheckoutModalPlan(selectedPlan === 'Trial' ? 'Business' : selectedPlan)
                       }
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#2C2C34] bg-[#17171C] hover:bg-[#222229] text-xs font-medium text-white transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
                     >
                       <Printer className="w-3.5 h-3.5 text-emerald-400" />
                       <span>Сформировать B2B-счет</span>
@@ -3879,14 +4170,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
 
               {/* 4. Таблица «История счетов и платежей» (billing_invoices) */}
-              <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex flex-wrap items-center justify-between gap-3">
+              <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     <FileText className="w-4 h-4 text-emerald-400" />
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
                       История счетов и платежей (B2B Invoices)
                     </h3>
-                    <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded">
+                    <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded tabular-nums">
                       {safeInvoices.length}
                     </span>
                   </div>
@@ -3915,7 +4206,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                        <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
                           <th className="py-3 px-5">№ счета</th>
                           <th className="py-3 px-5">Дата</th>
                           <th className="py-3 px-5">Тариф и период</th>
@@ -3924,25 +4215,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <th className="py-3 px-5 text-right">Документ</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[#1A1A1C] text-xs">
+                      <tbody className="divide-y divide-white/[0.05] text-xs">
                         {safeInvoices.map((inv) => {
                           const isPaid = inv.status === 'Paid';
                           const dateStr = inv.created_at
                             ? new Date(inv.created_at).toLocaleDateString('ru-RU')
                             : '—';
                           return (
-                            <tr key={inv.id} className="hover:bg-[#161618] transition-colors">
-                              <td className="py-3.5 px-5 font-mono font-semibold text-white">
+                            <tr key={inv.id} className="hover:bg-[#16161A] transition-colors">
+                              <td className="py-3.5 px-5 tabular-nums font-semibold text-white">
                                 {inv.invoice_number}
                               </td>
-                              <td className="py-3.5 px-5 text-[#A1A1AA]">{dateStr}</td>
+                              <td className="py-3.5 px-5 text-[#A1A1AA] tabular-nums">{dateStr}</td>
                               <td className="py-3.5 px-5">
                                 <span className="font-medium text-white">Тариф {inv.plan}</span>
                                 <span className="text-[11px] text-[#71717A] ml-1.5">
                                   ({inv.billing_cycle === 'yearly' ? '12 месяцев, -20%' : '1 месяц'})
                                 </span>
                               </td>
-                              <td className="py-3.5 px-5 font-mono font-semibold text-white">
+                              <td className="py-3.5 px-5 tabular-nums font-semibold text-white">
                                 {formatMoney(Number(inv.amount || 0))}
                               </td>
                               <td className="py-3.5 px-5">
@@ -3962,7 +4253,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setPrintableInvoice(inv)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2C2C34] bg-[#18181D] hover:bg-white hover:text-black text-xs font-medium text-white transition-colors whitespace-nowrap"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white hover:text-black text-xs font-medium text-white transition-colors whitespace-nowrap"
                                 >
                                   <Printer className="w-3.5 h-3.5" />
                                   <span>Открыть счет (Печать / PDF)</span>
@@ -3979,7 +4270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Экспорт реестров CSV */}
               {perms.data_export && (
-                <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
+                <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                   <div className="flex items-center gap-2.5">
                     <Download className="w-4 h-4 text-[#A1A1AA]" />
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
@@ -3993,7 +4284,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <button
                       type="button"
                       onClick={handleExportDealsCsv}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#262626] bg-[#161618] hover:bg-[#1F1F23] text-xs font-medium text-white transition-colors whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors whitespace-nowrap"
                     >
                       <Download className="w-3.5 h-3.5 text-[#A1A1AA]" />
                       <span>{t('workspace.exportDealsCsv')}</span>
@@ -4002,7 +4293,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <button
                       type="button"
                       onClick={handleExportTasksCsv}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#262626] bg-[#161618] hover:bg-[#1F1F23] text-xs font-medium text-white transition-colors whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors whitespace-nowrap"
                     >
                       <Download className="w-3.5 h-3.5 text-[#A1A1AA]" />
                       <span>{t('workspace.exportTasksCsv')}</span>
@@ -4011,7 +4302,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <button
                       type="button"
                       onClick={handleExportTeamCsv}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#262626] bg-[#161618] hover:bg-[#1F1F23] text-xs font-medium text-white transition-colors whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors whitespace-nowrap"
                     >
                       <Download className="w-3.5 h-3.5 text-[#A1A1AA]" />
                       <span>{t('workspace.exportTeamCsv')}</span>
@@ -4021,8 +4312,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               )}
 
               {/* 5. БЛОК 5: ЖУРНАЛ БЕЗОПАСНОСТИ И АУДИТА ДЕЙСТВИЙ (AUDIT LOG) */}
-              <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+              <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <History className="w-4 h-4 text-emerald-400" />
                     <div>
@@ -4034,7 +4325,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </p>
                     </div>
                   </div>
-                  <span className="text-[11px] font-mono text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded">
+                  <span className="text-[11px] tabular-nums text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded">
                     {safeAuditLogs.length} событий
                   </span>
                 </div>
@@ -4047,7 +4338,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-[#1F1F1F] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                        <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
                           <th className="py-3 px-5">Время</th>
                           <th className="py-3 px-5">Сотрудник (Инициатор)</th>
                           <th className="py-3 px-5">Действие</th>
@@ -4055,7 +4346,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <th className="py-3 px-5">Детали</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[#1A1A1C] text-xs">
+                      <tbody className="divide-y divide-white/[0.05] text-xs">
                         {safeAuditLogs.slice(0, 40).map((log) => {
                           const timeFormatted = log.created_at
                             ? new Date(log.created_at).toLocaleString('ru-RU', {
@@ -4066,8 +4357,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               })
                             : '—';
                           return (
-                            <tr key={log.id} className="hover:bg-[#161618] transition-colors">
-                              <td className="py-3 px-5 font-mono text-[11px] text-[#8E8E93] whitespace-nowrap">
+                            <tr key={log.id} className="hover:bg-[#16161A] transition-colors">
+                              <td className="py-3 px-5 tabular-nums text-[11px] text-[#8E8E93] whitespace-nowrap">
                                 {timeFormatted}
                               </td>
                               <td className="py-3 px-5">
@@ -4077,11 +4368,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 )}
                               </td>
                               <td className="py-3 px-5">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181D] border border-[#2C2C34] text-[11px] font-mono font-medium text-emerald-300">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[11px] font-medium text-emerald-300">
                                   {log.action_type || (log as any).action}
                                 </span>
                               </td>
-                              <td className="py-3 px-5 text-[#A1A1AA] font-mono text-[11px]">
+                              <td className="py-3 px-5 text-[#A1A1AA] text-[11px]">
                                 {log.entity_type}
                               </td>
                               <td className="py-3 px-5 text-[#D4D4D8]">{log.details}</td>
@@ -4158,7 +4449,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       />
 
-      {/* TedCloud AI Copilot Drawer (БЛОК 2) */}
+      {/* TedCloud Intelligence Drawer (БЛОК 1) */}
       <TedCloudAiDrawer
         isOpen={isAiDrawerOpen}
         onClose={() => setIsAiDrawerOpen(false)}
@@ -4168,6 +4459,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
         tasks={visibleTasks}
         leads={visibleLeads}
         messages={visibleMessages}
+        onCreateFollowUpTask={(suggestedTitle) => {
+          setInitialTaskDraft({
+            title:
+              suggestedTitle ||
+              'Операционное поручение по итогам сводки TedCloud Intelligence',
+            description:
+              'Задача создана на основе аналитического отчета TedCloud Intelligence.',
+            priority: 'High',
+          });
+          setModalType('tasks');
+        }}
+        onNavigateToCrm={() => {
+          if (perms.crm_view) {
+            setActiveSection('crm');
+          }
+        }}
+        onNavigateToTasks={() => {
+          setActiveSection('tasks');
+          setTaskViewMode('board');
+        }}
       />
 
       {/* Global Command Bar & Omnisearch (Cmd+K / БЛОК 3) */}

@@ -123,10 +123,10 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Регулярная выручка (MRR / мес)</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
             {metrics.totalMrrRub.toLocaleString('ru-RU')} ₽
           </div>
-          <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+          <div className="mt-1 text-xs text-slate-500 tabular-nums">
             Партнёры: {(metrics.partnerMrrRub / 1_000_000).toFixed(2)}M ₽ · B2B:{' '}
             {(metrics.corporateMrrRub / 1_000_000).toFixed(2)}M ₽
           </div>
@@ -134,30 +134,30 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
 
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Годовая выручка (ARR)</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
             {(metrics.arrRub / 1_000_000).toFixed(1)} млн ₽
           </div>
-          <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+          <div className="mt-1 text-xs text-slate-500 tabular-nums">
             Удержание NDR: {metrics.netDollarRetentionPercent}% в год
           </div>
         </div>
 
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Юнит-экономика (LTV / CAC)</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-emerald-700">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
             {metrics.ltvCacRatio}x
           </div>
-          <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+          <div className="mt-1 text-xs text-slate-500 tabular-nums">
             LTV: {metrics.ltvRub.toLocaleString('ru-RU')} ₽ · Оценка: {metrics.revenueMultiple}x ARR
           </div>
         </div>
 
         <div className="p-4 bg-slate-900 text-white border border-slate-900 rounded-lg">
           <div className="text-xs text-slate-300">Оценка SaaS для M&A продажи</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-white">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-white">
             {(metrics.enterpriseValuationRub / 1_000_000).toFixed(1)} млн ₽
           </div>
-          <div className="mt-1 text-xs text-emerald-300 font-mono tabular-nums">
+          <div className="mt-1 text-xs text-emerald-300 tabular-nums">
             ≈ ${metrics.enterpriseValuationUsd.toLocaleString('en-US')} USD
           </div>
         </div>
@@ -186,7 +186,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                 className="flex justify-between text-xs font-semibold text-slate-700 mb-1.5"
               >
                 <span>Независимые партнёры (B2C)</span>
-                <span className="font-mono tabular-nums text-emerald-700">
+                <span className="tabular-nums text-emerald-700">
                   {valuationInput.activePartnersCount} чел.
                 </span>
               </label>
@@ -213,7 +213,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                 className="flex justify-between text-xs font-semibold text-slate-700 mb-1.5"
               >
                 <span>Чек подписки партнёра (ARPU)</span>
-                <span className="font-mono tabular-nums text-slate-900">
+                <span className="tabular-nums text-slate-900">
                   {valuationInput.arpuMonthlyRub.toLocaleString('ru-RU')} ₽/мес
                 </span>
               </label>
@@ -240,7 +240,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                 className="flex justify-between text-xs font-semibold text-slate-700 mb-1.5"
               >
                 <span>Корпоративные B2B-лицензии</span>
-                <span className="font-mono tabular-nums text-emerald-700">
+                <span className="tabular-nums text-emerald-700">
                   {valuationInput.corporateEnterpriseSeats} мест
                 </span>
               </label>
@@ -267,7 +267,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                 className="flex justify-between text-xs font-semibold text-slate-700 mb-1.5"
               >
                 <span>Ежемесячный отток (Churn)</span>
-                <span className="font-mono tabular-nums text-slate-900">
+                <span className="tabular-nums text-slate-900">
                   {valuationInput.monthlyChurnPercent}%
                 </span>
               </label>
@@ -325,7 +325,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
           <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-slate-600">
               Индекс готовности к M&A Due Diligence:{' '}
-              <span className="font-mono tabular-nums font-bold text-emerald-700">
+              <span className="tabular-nums font-bold text-emerald-700">
                 {metrics.readinessScore}/100
               </span>
             </div>
@@ -350,12 +350,12 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
               </div>
               <p className="text-slate-700 leading-relaxed">
                 Целевой покупатель: <strong>{activePreset.corporateBuyerExample}</strong>.
-                Текущая база: <strong className="font-mono tabular-nums">{valuationInput.activePartnersCount}</strong> независимых партнёров и{' '}
-                <strong className="font-mono tabular-nums">{valuationInput.corporateEnterpriseSeats}</strong> корпоративных лицензий.
-                Годовая выручка (ARR): <strong className="font-mono tabular-nums">{metrics.arrRub.toLocaleString('ru-RU')} ₽</strong> при Net Dollar Retention{' '}
-                <strong className="font-mono tabular-nums">{metrics.netDollarRetentionPercent}%</strong>.
+                Текущая база: <strong className="tabular-nums">{valuationInput.activePartnersCount}</strong> независимых партнёров и{' '}
+                <strong className="tabular-nums">{valuationInput.corporateEnterpriseSeats}</strong> корпоративных лицензий.
+                Годовая выручка (ARR): <strong className="tabular-nums">{metrics.arrRub.toLocaleString('ru-RU')} ₽</strong> при Net Dollar Retention{' '}
+                <strong className="tabular-nums">{metrics.netDollarRetentionPercent}%</strong>.
                 Оценка актива при продаже стратегическому инвестору ({metrics.revenueMultiple}x ARR):{' '}
-                <strong className="font-mono tabular-nums text-emerald-800">
+                <strong className="tabular-nums text-emerald-800">
                   {metrics.enterpriseValuationRub.toLocaleString('ru-RU')} ₽ (${metrics.enterpriseValuationUsd.toLocaleString('en-US')})
                 </strong>.
               </p>
@@ -389,7 +389,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                     <div className="text-xs text-slate-500 mt-0.5">
                       {preset.industryLabel}
                     </div>
-                    <div className="text-xs text-slate-600 font-mono mt-0.5">
+                    <div className="text-xs text-slate-600 mt-0.5">
                       Покупатель: {preset.corporateBuyerExample}
                     </div>
                   </div>
@@ -424,7 +424,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                     Плейбук 14 дней · До 50 клиентов в CRM · Чек-листы марафона
                   </div>
                 </div>
-                <div className="font-mono tabular-nums font-bold text-slate-900 whitespace-nowrap ml-3">
+                <div className="tabular-nums font-bold text-slate-900 whitespace-nowrap ml-3">
                   1 990 ₽ / мес
                 </div>
               </div>
@@ -438,7 +438,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                     Контроль ветки до 25 партнёров · Авто-раздача задач · Аналитика PV
                   </div>
                 </div>
-                <div className="font-mono tabular-nums font-bold text-emerald-700 whitespace-nowrap ml-3">
+                <div className="tabular-nums font-bold text-emerald-700 whitespace-nowrap ml-3">
                   4 900 ₽ / мес
                 </div>
               </div>
@@ -452,7 +452,7 @@ export const EnterpriseExitView: React.FC<EnterpriseExitViewProps> = ({
                     Собственный домен · SSO интеграция с ERP · Выделенный контур
                   </div>
                 </div>
-                <div className="font-mono tabular-nums font-bold text-slate-900 whitespace-nowrap ml-3">
+                <div className="tabular-nums font-bold text-slate-900 whitespace-nowrap ml-3">
                   от 450 000 ₽ / мес
                 </div>
               </div>

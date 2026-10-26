@@ -35,7 +35,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
   onSelectTask,
   onSelectLead,
 }) => {
-  const { formatMoney } = useLocale();
+  const { formatMoney, t } = useLocale();
 
   const openTasks = tasks.filter((t) => t.status !== 'Done');
   const activeLeads = canViewCrm
@@ -55,9 +55,9 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
   }
 
   return (
-    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-6 space-y-6">
+    <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-6 space-y-6">
       {/* Header & Legend */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#1F1F1F] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.07] pb-4">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
             <Network className="w-4 h-4 text-emerald-400" />
@@ -97,7 +97,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
             <div className="text-xs font-semibold text-white uppercase tracking-wider">
               {companyName}
             </div>
-            <div className="text-[11px] text-[#8E8E93]">
+            <div className="text-[11px] text-[#8E8E93] tabular-nums">
               Подразделений: {effectiveDepts.length} · Штат: {nodes.length} · Активных задач: {openTasks.length}
             </div>
           </div>
@@ -127,17 +127,17 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
           return (
             <div
               key={deptName}
-              className="rounded-xl border border-[#24242C] bg-[#141418] p-4 space-y-4"
+              className="rounded-xl border border-white/[0.07] bg-[#141418] p-4 space-y-4"
             >
               {/* Department Header Node */}
-              <div className="flex items-center justify-between border-b border-[#222228] pb-3">
+              <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
                     Подразделение: {deptName}
                   </h3>
                 </div>
-                <span className="text-[11px] font-mono text-[#8E8E93] bg-[#1C1C22] px-2 py-0.5 rounded border border-[#2C2C34]">
+                <span className="text-[11px] tabular-nums text-[#8E8E93] bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.08]">
                   {deptEmployees.length} сотр.
                 </span>
               </div>
@@ -168,7 +168,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                     return (
                       <div
                         key={emp.id}
-                        className="rounded-lg border border-[#26262F] bg-[#18181E] p-3.5 space-y-3"
+                        className="rounded-lg border border-white/[0.07] bg-[#18181E] p-3.5 space-y-3"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -188,7 +188,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                           </div>
 
                           <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded border whitespace-nowrap ${loadBadgeClass}`}
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded border whitespace-nowrap tabular-nums ${loadBadgeClass}`}
                           >
                             Задач: {loadCount}
                           </span>
@@ -202,7 +202,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                                 key={tItem.id}
                                 type="button"
                                 onClick={() => onSelectTask && onSelectTask(tItem.id)}
-                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[#121216] hover:bg-[#1F1F26] border border-[#24242C] text-left transition-colors"
+                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[#121216] hover:bg-[#1F1F26] border border-white/[0.06] text-left transition-colors"
                               >
                                 <span className="inline-flex items-center gap-1.5 text-xs text-zinc-200 truncate">
                                   <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -211,7 +211,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                                 {tItem.priority === 'High' && (
                                   <span className="inline-flex items-center gap-0.5 text-[10px] text-red-400 font-medium shrink-0">
                                     <AlertCircle className="w-2.5 h-2.5" />
-                                    <span>High</span>
+                                    <span>{t('priority.High')}</span>
                                   </span>
                                 )}
                               </button>
@@ -222,7 +222,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                                 key={dItem.id}
                                 type="button"
                                 onClick={() => onSelectLead && onSelectLead(dItem.id)}
-                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[#121216] hover:bg-[#1F1F26] border border-[#24242C] text-left transition-colors"
+                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[#121216] hover:bg-[#1F1F26] border border-white/[0.06] text-left transition-colors"
                               >
                                 <span className="inline-flex items-center gap-1.5 text-xs text-amber-200 truncate">
                                   <Briefcase className="w-3 h-3 text-amber-400 shrink-0" />
@@ -230,7 +230,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                                     {dItem.client_name || dItem.title}
                                   </span>
                                 </span>
-                                <span className="text-[10px] font-mono text-emerald-400 shrink-0">
+                                <span className="text-[10px] tabular-nums text-emerald-400 shrink-0">
                                   {formatMoney(Number(dItem.amount ?? dItem.deal_value ?? 0))}
                                 </span>
                               </button>
@@ -245,8 +245,8 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
 
               {/* Department-level unassigned tasks */}
               {deptUnassignedTasks.length > 0 && (
-                <div className="pt-2 border-t border-[#222228] space-y-1.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#8E8E93]">
+                <div className="pt-2 border-t border-white/[0.07] space-y-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#8E8E93] tabular-nums">
                     Общие поручения на отдел ({deptUnassignedTasks.length})
                   </div>
                   {deptUnassignedTasks.map((tItem) => (
@@ -254,10 +254,12 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                       key={tItem.id}
                       type="button"
                       onClick={() => onSelectTask && onSelectTask(tItem.id)}
-                      className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[#121216] hover:bg-[#1F1F26] border border-[#24242C] text-left text-xs text-white"
+                      className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[#121216] hover:bg-[#1F1F26] border border-white/[0.06] text-left text-xs text-white"
                     >
                       <span className="truncate">{tItem.title}</span>
-                      <span className="text-[10px] text-[#8E8E93]">{tItem.priority}</span>
+                      <span className="text-[10px] text-[#8E8E93]">
+                        {t(`priority.${tItem.priority}` as any)}
+                      </span>
                     </button>
                   ))}
                 </div>

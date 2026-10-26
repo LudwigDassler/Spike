@@ -142,20 +142,20 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
       <div className={`grid grid-cols-2 ${canViewCrmAndPv ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Всего карточек в потоке</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
             {metrics.total}
           </div>
-          <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+          <div className="mt-1 text-xs text-slate-500 tabular-nums">
             В работе: {metrics.inProgress} · На проверке: {metrics.review}
           </div>
         </div>
 
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Индекс выполнения</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-emerald-700">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
             {metrics.completionRate}%
           </div>
-          <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+          <div className="mt-1 text-xs text-slate-500 tabular-nums">
             Завершено {metrics.done} из {metrics.total}
           </div>
         </div>
@@ -165,10 +165,10 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
             <div className="text-xs text-slate-500">
               Потенциал объёма · {activePreset.volumeUnitLabel}
             </div>
-            <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
+            <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
               +{metrics.totalPvImpact.toLocaleString('ru-RU')}
             </div>
-            <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+            <div className="mt-1 text-xs text-slate-500 tabular-nums">
               Уже подтверждено: {metrics.earnedPvImpact.toLocaleString('ru-RU')} PV
             </div>
           </div>
@@ -177,7 +177,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Критичный приоритет</div>
           <div
-            className={`mt-1 text-2xl font-bold font-mono tabular-nums ${
+            className={`mt-1 text-2xl font-bold tabular-nums ${
               metrics.criticalCount > 0 ? 'text-amber-700' : 'text-slate-900'
             }`}
           >
@@ -304,7 +304,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                   <h2 className="text-xs font-bold text-slate-800">
                     {col.label}
                   </h2>
-                  <span className="text-xs font-mono tabular-nums text-slate-500">
+                  <span className="text-xs tabular-nums text-slate-500">
                     {colTasks.length} зад. · {colPv} PV
                   </span>
                 </div>
@@ -326,7 +326,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                       >
                         {/* Unboxed Metadata Kicker */}
                         <div className="flex items-center justify-between text-xs text-slate-500">
-                          <span className="font-mono tabular-nums font-medium text-slate-700">
+                          <span className="tabular-nums font-medium text-slate-700">
                             {task.code} ·{' '}
                             {task.task_class === 'internal_ticket' && task.targetDepartment
                               ? `[${task.targetDepartment}]`
@@ -352,13 +352,13 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                             {task.assigneeName}
                           </span>
                           <span aria-hidden="true">·</span>
-                          <span className="font-mono tabular-nums">
+                          <span className="tabular-nums">
                             Срок: {task.dueDate}
                           </span>
                           {task.task_class !== 'internal_ticket' && task.pvImpact > 0 && (
                             <>
                               <span aria-hidden="true">·</span>
-                              <span className="font-mono tabular-nums text-emerald-700 font-semibold">
+                              <span className="tabular-nums text-emerald-700 font-semibold">
                                 +{task.pvImpact} PV
                               </span>
                             </>
@@ -377,7 +377,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                               className="text-xs font-medium text-slate-700 hover:text-slate-900 flex items-center gap-1.5"
                             >
                               <CheckSquare className="w-3.5 h-3.5 text-emerald-700" />
-                              <span className="font-mono tabular-nums">
+                              <span className="tabular-nums">
                                 Чек-лист: {completedSubtasks}/{task.subtasks.length}
                               </span>
                               <span className="text-slate-400 underline ml-1">
@@ -473,7 +473,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                     key={task.id}
                     className="hover:bg-slate-50/80 transition-colors"
                   >
-                    <td className="py-3 px-4 font-mono tabular-nums font-medium text-slate-700 whitespace-nowrap">
+                    <td className="py-3 px-4 tabular-nums font-medium text-slate-700 whitespace-nowrap">
                       {task.code}
                     </td>
                     <td className="py-3 px-4">
@@ -508,10 +508,10 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                         <option value="done">Готово</option>
                       </select>
                     </td>
-                    <td className="py-3 px-4 text-right font-mono tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
+                    <td className="py-3 px-4 text-right tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
                       +{task.pvImpact} PV
                     </td>
-                    <td className="py-3 px-4 text-right font-mono tabular-nums text-slate-600 whitespace-nowrap">
+                    <td className="py-3 px-4 text-right tabular-nums text-slate-600 whitespace-nowrap">
                       {task.dueDate}
                     </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap">
@@ -544,7 +544,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
               className="p-5 bg-white border border-slate-200 rounded-lg flex flex-col justify-between gap-4"
             >
               <div>
-                <div className="text-xs text-slate-500 font-mono tabular-nums">
+                <div className="text-xs text-slate-500 tabular-nums">
                   {pb.category} · {pb.durationDays} дней · +{pb.expectedPvGain} PV
                 </div>
                 <h2 className="mt-1 text-base font-bold text-slate-900">
@@ -564,7 +564,7 @@ export const TasksWorkspaceView: React.FC<TasksWorkspaceViewProps> = ({
                         <span>
                           {i + 1}. {tpl.title}
                         </span>
-                        <span className="font-mono tabular-nums text-emerald-700 font-medium shrink-0">
+                        <span className="tabular-nums text-emerald-700 font-medium shrink-0">
                           +{tpl.pvImpact} PV
                         </span>
                       </li>

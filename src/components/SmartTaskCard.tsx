@@ -16,7 +16,7 @@ import {
   PhoneCall,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
+  Cpu,
 } from 'lucide-react';
 
 interface SmartTaskCardProps {
@@ -145,7 +145,7 @@ export const SmartTaskCard: React.FC<SmartTaskCardProps> = ({
           </div>
 
           <div className="flex items-center gap-2.5">
-            <span className="px-3 py-1 rounded-full text-xs font-mono font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+            <span className="px-3 py-1 rounded-full text-xs tabular-nums font-semibold bg-slate-100 text-slate-800 border border-slate-200">
               {kpiValue} Story Points
             </span>
             <span
@@ -193,7 +193,7 @@ export const SmartTaskCard: React.FC<SmartTaskCardProps> = ({
             </button>
           </div>
 
-          <span className="text-xs text-slate-500 font-mono">
+          <span className="text-xs text-slate-500 tabular-nums">
             Тикет {currentIndex + 1} из {totalTasks} · Срок: {task.dueDate}
           </span>
         </div>
@@ -263,8 +263,8 @@ export const SmartTaskCard: React.FC<SmartTaskCardProps> = ({
         </span>
 
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-600 text-white shadow-xs">
-            <Sparkles className="w-3.5 h-3.5" />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs tabular-nums font-bold bg-emerald-600 text-white shadow-xs">
+            <Cpu className="w-3.5 h-3.5" />
             <span>+{kpiValue} VP</span>
           </span>
 
@@ -288,7 +288,7 @@ export const SmartTaskCard: React.FC<SmartTaskCardProps> = ({
         </h2>
 
         <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
-          <span className="font-mono tabular-nums font-medium text-slate-800">
+          <span className="tabular-nums font-medium text-slate-800">
             {task.phoneRaw}
             {task.telegramUsername ? ` · @${task.telegramUsername.replace(/^@/, '')}` : ''}
           </span>
@@ -333,7 +333,7 @@ export const SmartTaskCard: React.FC<SmartTaskCardProps> = ({
             <span className="font-semibold text-emerald-900">
               Переход в {activeDeepLinkPreview.channel} готов (текст скопирован):
             </span>
-            <p className="font-mono text-[11px] text-emerald-800 truncate mt-0.5">
+            <p className="tabular-nums text-[11px] text-emerald-800 truncate mt-0.5">
               {activeDeepLinkPreview.url}
             </p>
           </div>

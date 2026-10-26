@@ -95,6 +95,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const [taskDepartment, setTaskDepartment] = useState<string>('');
   const [taskCustomDept, setTaskCustomDept] = useState<string>('');
   const [isTaskCustomDept, setIsTaskCustomDept] = useState<boolean>(false);
+  const [taskDueDate, setTaskDueDate] = useState<string>('');
 
   useEffect(() => {
     if (type === 'tasks' && initialTaskDraft) {
@@ -228,6 +229,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           assigned_to: enforcedAssignee,
           owner_node_id: enforcedAssignee || currentProfileId || safeNodes[0]?.id || null,
           created_by: currentProfileId || enforcedAssignee || null,
+          due_date: taskDueDate.trim() || null,
         };
       } else if (type === 'organization_nodes') {
         if (!empName.trim() || !empRoleTitle.trim()) {
@@ -367,7 +369,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   {t('invite.codeLabel')}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-white font-semibold font-mono bg-[#242428] px-2.5 py-1 rounded border border-[#333338] whitespace-nowrap">
+                  <span className="text-xs text-white font-semibold tabular-nums bg-[#242428] px-2.5 py-1 rounded border border-[#333338] whitespace-nowrap">
                     {createdEmployeeInvite.inviteCode}
                   </span>
                   <button
@@ -542,7 +544,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
                     {t('modal.taskTypeLabel')}
@@ -586,6 +588,18 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     <option value="In Progress">{t('status.In Progress')}</option>
                     <option value="Done">{t('status.Done')}</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    Срок исполнения (Дедлайн)
+                  </label>
+                  <input
+                    type="date"
+                    value={taskDueDate}
+                    onChange={(e) => setTaskDueDate(e.target.value)}
+                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white tabular-nums focus:border-[#52525B] focus:outline-none"
+                  />
                 </div>
               </div>
 
@@ -935,7 +949,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                           ? t('modal.taxIdRuPlaceholder')
                           : t('modal.taxIdGlobalPlaceholder')
                       }
-                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                     />
                   </div>
 
@@ -952,7 +966,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                           ? t('modal.regNumRuPlaceholder')
                           : t('modal.regNumGlobalPlaceholder')
                       }
-                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                     />
                   </div>
 
@@ -965,7 +979,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                       value={leadContractNumber}
                       onChange={(e) => setLeadContractNumber(e.target.value)}
                       placeholder={t('modal.contractNumberPlaceholder')}
-                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                      className="w-full rounded-lg border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                     />
                   </div>
                 </div>

@@ -296,7 +296,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                   type="number"
                   value={pvImpact}
                   onChange={(e) => setPvImpact(e.target.value)}
-                  className="w-full px-3 py-2 text-xs font-mono tabular-nums text-slate-900 bg-white border border-slate-300 rounded-md"
+                  className="w-full px-3 py-2 text-xs tabular-nums text-slate-900 bg-white border border-slate-300 rounded-md"
                 />
               </div>
             )}
@@ -313,7 +313,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-3 py-2 text-xs font-mono tabular-nums text-slate-900 bg-white border border-slate-300 rounded-md"
+                className="w-full px-3 py-2 text-xs tabular-nums text-slate-900 bg-white border border-slate-300 rounded-md"
               />
             </div>
           </div>

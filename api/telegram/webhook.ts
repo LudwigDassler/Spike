@@ -81,6 +81,7 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'created_by',
     'checklist',
     'ai_summary',
+    'due_date',
   ],
   organization_nodes: [
     'name',
@@ -629,7 +630,7 @@ export default async function handler(req: any, res: any) {
                   role: 'user',
                   parts: [
                     {
-                      text: `Ты — корпоративный ИИ-ассистент TedCloud AI (Jira Rovo style) в Telegram.
+                      text: `Ты — корпоративный аналитический копилот TedCloud Intelligence в Telegram.
 Сотрудник: ${user.name} (${user.role_type || 'Специалист'}).
 Базовая сводка по данным компании «${companyName}»:
 ${builtIn.reply}

@@ -91,7 +91,7 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
     leads: sampleLeads,
     messages: [],
   });
-  assert.ok(workload.reply.includes('БАЛАНС НАГРУЗКИ ПО ШТАТУ'));
+  assert.ok(workload.reply.includes('Баланс нагрузки по штату'));
 
   const custom = runBuiltInAiAssistant({
     mode: 'custom',

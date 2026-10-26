@@ -7,7 +7,7 @@ import {
   Users,
   MessageSquare,
   Plus,
-  Sparkles,
+  Cpu,
   ArrowRight,
   Command,
 } from 'lucide-react';
@@ -52,7 +52,7 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
   onCreateTask,
   onOpenAiCopilot,
 }) => {
-  const { formatMoney } = useLocale();
+  const { t, formatMoney } = useLocale();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -78,28 +78,28 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl border border-[#2A2A32] bg-[#111115] shadow-2xl overflow-hidden"
+        className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#111115] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Omnisearch Input */}
-        <div className="px-4 py-3.5 border-b border-[#222228] flex items-center gap-3 bg-[#141419]">
-          <Search className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="px-4 py-3.5 border-b border-white/[0.07] flex items-center gap-3 bg-[#141419]">
+          <Search className="w-4 h-4 text-zinc-400 shrink-0" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Мгновенный поиск: задачи, сделки, ИНН контрагента, сотрудники, сообщения..."
-            className="flex-1 bg-transparent text-sm text-white placeholder-[#71717A] focus:outline-none"
+            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none"
           />
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1F1F26] border border-[#2E2E38] text-[#8E8E93]">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-400">
               ESC
             </span>
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-[#8E8E93] hover:text-white hover:bg-[#1E1E24]"
+              className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -109,8 +109,8 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
         <div className="max-h-[70vh] overflow-y-auto p-4 space-y-5">
           {/* Quick Actions */}
           <div className="space-y-1.5">
-            <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
-              Быстрые команды (Quick Actions)
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Быстрые команды
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {canCreateTasks && (
@@ -120,13 +120,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                     onClose();
                     onCreateTask();
                   }}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[#24242C] bg-[#16161C] hover:border-white/40 text-xs font-medium text-white transition-colors"
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-white/[0.08] bg-[#16161C] hover:border-white/30 text-xs font-medium text-white transition-colors"
                 >
                   <span className="inline-flex items-center gap-2">
-                    <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                    <Plus className="w-3.5 h-3.5 text-zinc-300" />
                     <span>Создать задачу</span>
                   </span>
-                  <ArrowRight className="w-3 h-3 text-[#71717A]" />
+                  <ArrowRight className="w-3 h-3 text-zinc-500" />
                 </button>
               )}
 
@@ -136,13 +136,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                   onClose();
                   onSelectSection('communications');
                 }}
-                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[#24242C] bg-[#16161C] hover:border-white/40 text-xs font-medium text-white transition-colors"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-white/[0.08] bg-[#16161C] hover:border-white/30 text-xs font-medium text-white transition-colors"
               >
                 <span className="inline-flex items-center gap-2">
-                  <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+                  <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
                   <span>Перейти в чат</span>
                 </span>
-                <ArrowRight className="w-3 h-3 text-[#71717A]" />
+                <ArrowRight className="w-3 h-3 text-zinc-500" />
               </button>
 
               <button
@@ -151,13 +151,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                   onClose();
                   onOpenAiCopilot();
                 }}
-                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-semibold text-emerald-300 transition-colors"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors"
               >
                 <span className="inline-flex items-center gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Запустить TedCloud AI</span>
+                  <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>TedCloud Intelligence</span>
                 </span>
-                <ArrowRight className="w-3 h-3 text-emerald-400" />
+                <ArrowRight className="w-3 h-3 text-zinc-400" />
               </button>
             </div>
           </div>
@@ -165,31 +165,42 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
           {/* Tasks Results */}
           {results.tasks.length > 0 && (
             <div className="space-y-1.5">
-              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
+              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
-                  <CheckSquare className="w-3 h-3 text-emerald-400" />
+                  <CheckSquare className="w-3 h-3 text-indigo-400" />
                   <span>Задачи ({results.tasks.length})</span>
                 </span>
               </div>
               <div className="space-y-1">
-                {results.tasks.map((t) => (
+                {results.tasks.map((taskItem) => (
                   <button
-                    key={t.id}
+                    key={taskItem.id}
                     type="button"
                     onClick={() => {
                       onClose();
-                      onSelectTask(t.id);
+                      onSelectTask(taskItem.id);
                     }}
-                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-[#191920] text-left transition-colors"
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.04] text-left transition-colors"
                   >
                     <div className="min-w-0">
-                      <div className="text-xs font-medium text-white truncate">{t.title}</div>
-                      <div className="text-[11px] text-[#8E8E93] truncate">
-                        {t.department || 'Общий контур'} · {t.status}
+                      <div className="text-xs font-medium text-white truncate">
+                        {taskItem.title}
+                      </div>
+                      <div className="text-[11px] text-zinc-400 truncate">
+                        {taskItem.department || t('common.generalScope')} ·{' '}
+                        {t(`status.${taskItem.status}`)}
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1C1C22] border border-[#2C2C35] text-[#A1A1AA] shrink-0">
-                      {t.priority}
+                    <span
+                      className={`text-[10px] font-medium px-2 py-0.5 rounded-md border shrink-0 ${
+                        taskItem.priority === 'High'
+                          ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                          : taskItem.priority === 'Low'
+                          ? 'bg-zinc-800 border-white/10 text-zinc-400'
+                          : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                      }`}
+                    >
+                      {t(`priority.${taskItem.priority}`)}
                     </span>
                   </button>
                 ))}
@@ -197,38 +208,38 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
             </div>
           )}
 
-          {/* CRM Deals Results (including tax_id / ИНН) */}
+          {/* CRM Deals Results */}
           {canViewCrm && results.leads.length > 0 && (
             <div className="space-y-1.5">
-              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
+              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
                   <Briefcase className="w-3 h-3 text-amber-400" />
                   <span>Сделки и контрагенты CRM ({results.leads.length})</span>
                 </span>
               </div>
               <div className="space-y-1">
-                {results.leads.map((l) => (
+                {results.leads.map((leadItem) => (
                   <button
-                    key={l.id}
+                    key={leadItem.id}
                     type="button"
                     onClick={() => {
                       onClose();
-                      onSelectLead(l.id);
+                      onSelectLead(leadItem.id);
                     }}
-                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-[#191920] text-left transition-colors"
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.04] text-left transition-colors"
                   >
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-white truncate">
-                        {l.client_name || l.title}
+                        {leadItem.client_name || leadItem.title}
                       </div>
-                      <div className="text-[11px] text-[#8E8E93] truncate font-mono">
-                        {l.tax_id ? `ИНН/VAT: ${l.tax_id}` : 'Без ИНН'}
-                        {l.contract_number ? ` · Договор № ${l.contract_number}` : ''}
-                        {l.department ? ` · ${l.department}` : ''}
+                      <div className="text-[11px] text-zinc-400 truncate tabular-nums">
+                        {leadItem.tax_id ? `ИНН/VAT: ${leadItem.tax_id}` : 'Без ИНН'}
+                        {leadItem.contract_number ? ` · Договор № ${leadItem.contract_number}` : ''}
+                        {leadItem.department ? ` · ${leadItem.department}` : ''}
                       </div>
                     </div>
-                    <span className="text-xs font-semibold text-emerald-400 shrink-0 font-mono">
-                      {formatMoney(Number(l.amount ?? l.deal_value ?? 0))}
+                    <span className="text-xs font-semibold text-white shrink-0 tabular-nums">
+                      {formatMoney(Number(leadItem.amount ?? leadItem.deal_value ?? 0))}
                     </span>
                   </button>
                 ))}
@@ -239,31 +250,33 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
           {/* Employees Results */}
           {results.nodes.length > 0 && (
             <div className="space-y-1.5">
-              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
+              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
-                  <Users className="w-3 h-3 text-blue-400" />
+                  <Users className="w-3 h-3 text-sky-400" />
                   <span>Сотрудники ({results.nodes.length})</span>
                 </span>
               </div>
               <div className="space-y-1">
-                {results.nodes.map((n) => (
+                {results.nodes.map((nodeItem) => (
                   <button
-                    key={n.id}
+                    key={nodeItem.id}
                     type="button"
                     onClick={() => {
                       onClose();
                       onSelectSection('communications');
                     }}
-                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-[#191920] text-left transition-colors"
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.04] text-left transition-colors"
                   >
                     <div className="min-w-0">
-                      <div className="text-xs font-medium text-white truncate">{n.name}</div>
-                      <div className="text-[11px] text-[#8E8E93] truncate">
-                        {n.role_type} {n.department ? `· ${n.department}` : ''}
+                      <div className="text-xs font-medium text-white truncate">
+                        {nodeItem.name}
+                      </div>
+                      <div className="text-[11px] text-zinc-400 truncate">
+                        {nodeItem.role_type} {nodeItem.department ? `· ${nodeItem.department}` : ''}
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-[#A1A1AA] bg-[#1C1C22] px-2 py-0.5 rounded border border-[#2C2C35]">
-                      {n.invite_code || 'TC'}
+                    <span className="text-[10px] font-medium tabular-nums text-zinc-300 bg-zinc-800/80 px-2 py-0.5 rounded-md border border-white/10">
+                      {nodeItem.invite_code || 'TC'}
                     </span>
                   </button>
                 ))}
@@ -274,29 +287,30 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
           {/* Chat Messages Results */}
           {results.messages.length > 0 && (
             <div className="space-y-1.5">
-              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
+              <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
-                  <MessageSquare className="w-3 h-3 text-purple-400" />
+                  <MessageSquare className="w-3 h-3 text-indigo-400" />
                   <span>Сообщения чата ({results.messages.length})</span>
                 </span>
               </div>
               <div className="space-y-1">
-                {results.messages.map((m) => (
+                {results.messages.map((msgItem) => (
                   <button
-                    key={m.id}
+                    key={msgItem.id}
                     type="button"
                     onClick={() => {
                       onClose();
                       onSelectSection('communications');
                     }}
-                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-[#191920] text-left transition-colors"
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.04] text-left transition-colors"
                   >
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-white truncate">
-                        {m.message_text || m.text || m.content}
+                        {msgItem.message_text || msgItem.text || msgItem.content}
                       </div>
-                      <div className="text-[11px] text-[#8E8E93] truncate">
-                        От: {m.sender_name || 'Сотрудник'} · {m.target_label || 'Инфополе'}
+                      <div className="text-[11px] text-zinc-400 truncate">
+                        От: {msgItem.sender_name || 'Сотрудник'} ·{' '}
+                        {msgItem.target_label || 'Инфополе'}
                       </div>
                     </div>
                   </button>
@@ -309,16 +323,16 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
             results.leads.length === 0 &&
             results.nodes.length === 0 &&
             results.messages.length === 0 && (
-              <div className="py-8 text-center text-xs text-[#71717A]">
+              <div className="py-8 text-center text-xs text-zinc-500">
                 По запросу «{query}» совпадений не найдено.
               </div>
             )}
         </div>
 
-        <div className="px-4 py-2.5 border-t border-[#222228] bg-[#141419] flex items-center justify-between text-[11px] text-[#71717A]">
+        <div className="px-4 py-2.5 border-t border-white/[0.07] bg-[#141419] flex items-center justify-between text-[11px] text-zinc-500">
           <span className="inline-flex items-center gap-1.5">
             <Command className="w-3 h-3" />
-            <span>TedCloud Omnisearch & Teamwork Graph</span>
+            <span>TedCloud Omnisearch</span>
           </span>
           <span>Поиск по задачам, ИНН контрагентов, сотрудникам и чату</span>
         </div>

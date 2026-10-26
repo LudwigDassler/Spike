@@ -78,7 +78,7 @@ class GlobalErrorBoundary extends React.Component<
               Структура данных в браузере устарела после обновления платформы. Сбросьте локальный кэш сессии для безопасной перезагрузки рабочего пространства.
             </p>
             {this.state.errorText && (
-              <div className="text-[11px] font-mono text-[#71717A] bg-[#18181B] p-2.5 rounded-lg border border-[#27272A] break-words">
+              <div className="text-[11px] font-sans text-[#71717A] bg-[#18181B] p-2.5 rounded-lg border border-[#27272A] break-words">
                 {this.state.errorText}
               </div>
             )}

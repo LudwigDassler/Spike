@@ -157,25 +157,25 @@ export const PartnerNetworkView: React.FC<PartnerNetworkViewProps> = ({
       <div className="p-4 bg-white border border-slate-200 rounded-lg grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
           <div className="text-xs font-semibold text-slate-900">1. Консультант (25%)</div>
-          <div className="text-xs text-slate-500 font-mono tabular-nums mt-0.5">
+          <div className="text-xs text-slate-500 tabular-nums mt-0.5">
             0 – 499 PV · Старт онбординга
           </div>
         </div>
         <div>
           <div className="text-xs font-semibold text-slate-900">2. Старший консультант (35%)</div>
-          <div className="text-xs text-slate-500 font-mono tabular-nums mt-0.5">
+          <div className="text-xs text-slate-500 tabular-nums mt-0.5">
             500 – 2 499 PV · Первые 5–7 клиентов
           </div>
         </div>
         <div>
           <div className="text-xs font-semibold text-slate-900">3. Успешный строитель (42%)</div>
-          <div className="text-xs text-slate-500 font-mono tabular-nums mt-0.5">
+          <div className="text-xs text-slate-500 tabular-nums mt-0.5">
             2 500 – 3 999 PV · Командный марафон
           </div>
         </div>
         <div>
           <div className="text-xs font-semibold text-emerald-800">4. Супервайзор (50% + Роялти)</div>
-          <div className="text-xs text-slate-500 font-mono tabular-nums mt-0.5">
+          <div className="text-xs text-slate-500 tabular-nums mt-0.5">
             4 000+ PV · Лидер партнёрской ветки
           </div>
         </div>
@@ -198,7 +198,7 @@ export const PartnerNetworkView: React.FC<PartnerNetworkViewProps> = ({
               <div>
                 <div className="flex items-baseline justify-between gap-2">
                   <h2 className="text-base font-bold text-slate-900">{partner.name}</h2>
-                  <span className="text-xs font-semibold text-emerald-800 font-mono tabular-nums">
+                  <span className="text-xs font-semibold text-emerald-800 tabular-nums">
                     {currentRank}
                   </span>
                 </div>
@@ -206,26 +206,26 @@ export const PartnerNetworkView: React.FC<PartnerNetworkViewProps> = ({
                 {/* Clean Business Metadata (No raw technical paths) */}
                 <div className="mt-1 text-xs text-slate-500">
                   Город: {partner.city} · Наставник: {partner.uplineName} · В сети с{' '}
-                  <span className="font-mono tabular-nums">{partner.joinedDate}</span>
+                  <span className="tabular-nums">{partner.joinedDate}</span>
                 </div>
 
                 {/* Volume Metrics */}
                 <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-xs">
                   <div>
                     <div className="text-slate-500">Личный объём</div>
-                    <div className="font-mono tabular-nums font-semibold text-slate-900 mt-0.5">
+                    <div className="tabular-nums font-semibold text-slate-900 mt-0.5">
                       {partner.personalPv.toLocaleString('ru-RU')} PV
                     </div>
                   </div>
                   <div>
                     <div className="text-slate-500">Групповой объём</div>
-                    <div className="font-mono tabular-nums font-semibold text-slate-900 mt-0.5">
+                    <div className="tabular-nums font-semibold text-slate-900 mt-0.5">
                       {partner.groupPv.toLocaleString('ru-RU')} PV
                     </div>
                   </div>
                   <div>
                     <div className="text-slate-500">Клиентов в CRM</div>
-                    <div className="font-mono tabular-nums font-semibold text-emerald-700 mt-0.5">
+                    <div className="tabular-nums font-semibold text-emerald-700 mt-0.5">
                       {partner.activeClients} чел.
                     </div>
                   </div>
@@ -237,7 +237,7 @@ export const PartnerNetworkView: React.FC<PartnerNetworkViewProps> = ({
                     <span className="text-slate-600 font-medium">
                       Прогресс стартового онбординга партнёра
                     </span>
-                    <span className="font-mono tabular-nums font-semibold text-slate-900">
+                    <span className="tabular-nums font-semibold text-slate-900">
                       {partner.onboardingCompletedSteps}/{partner.onboardingTotalSteps} ({onboardingPct}%)
                     </span>
                   </div>
@@ -256,7 +256,7 @@ export const PartnerNetworkView: React.FC<PartnerNetworkViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onAddPartnerVolume(partner.id, 150)}
-                    className="px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-colors font-mono tabular-nums whitespace-nowrap shrink-0"
+                    className="px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-colors tabular-nums whitespace-nowrap shrink-0"
                   >
                     +150 PV заказа
                   </button>

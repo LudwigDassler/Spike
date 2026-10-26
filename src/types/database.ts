@@ -54,6 +54,9 @@ export interface CompanyBillingDetails {
   legal_address?: string;
   country?: string;
   billing_email?: string;
+  iban_swift?: string;
+  wallet_network?: string;
+  wallet_address?: string;
 }
 
 export interface Company {
@@ -176,7 +179,12 @@ export interface WorkspaceMessageRecord {
 }
 
 export type BillingInvoiceStatus = 'Paid' | 'Issued' | 'Pending';
-export type BillingPaymentMethod = 'card_sbp' | 'b2b_invoice';
+export type BillingPaymentMethod =
+  | 'card_sbp'
+  | 'b2b_invoice'
+  | 'stripe_card'
+  | 'swift_wire'
+  | 'crypto_usdt';
 
 export interface BillingInvoiceRecord {
   id: string;

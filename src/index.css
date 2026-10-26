@@ -3,7 +3,6 @@
 @layer base {
   :root {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color-scheme: dark;
   }
 
@@ -11,10 +10,12 @@
     font-family: var(--font-sans);
     color: #ededed;
     background-color: #09090b;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  code, pre, .font-mono {
-    font-family: var(--font-mono);
+  code, pre {
+    font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
   }
 }

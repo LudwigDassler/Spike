@@ -2,7 +2,9 @@ import {
   AiAssistantMode,
   BillingCycle,
   CrmLeadRecord,
+  CurrencyCode,
   OrganizationNode,
+  PaymentGatewayRegion,
   SubscriptionPlanTier,
   TaskChecklistItem,
   TaskRecord,
@@ -35,7 +37,7 @@ export function formatError(err: any): string {
 }
 
 /**
- * БЛОК 1: Разбор срочности сообщения из Telegram-бота.
+ * Разбор срочности сообщения из Telegram-бота.
  * is_urgent = true ТОЛЬКО если сообщение начинается с символа "!" (сам символ "!" убирается).
  */
 export function parseTelegramUrgentMessage(rawText: string): {
@@ -56,7 +58,7 @@ export function parseTelegramUrgentMessage(rawText: string): {
 }
 
 /**
- * Генерация детерминированного чек-листа из 4-5 подзадач для задачи (ИИ-декомпозиция)
+ * Генерация детерминированного чек-листа из 4-5 подзадач для задачи (TedCloud Intelligence)
  */
 export function buildBuiltInChecklistForTask(
   taskTitle: string,
@@ -77,7 +79,7 @@ export function buildBuiltInChecklistForTask(
     lower.includes('коммерческ')
   ) {
     steps = [
-      `Проверить юридические реквизиты контрагента (ИНН/КПП) по задаче «${titleClean}»`,
+      `Проверить юридические реквизиты контрагента (ИНН/КПП или VAT) по задаче «${titleClean}»`,
       'Согласовать финансовые условия, спецификацию и график расчетов',
       'Провести правовую экспертизу проекта документа с профильным отделом',
       'Направить финальную редакцию на подписание и зафиксировать номер в CRM',
@@ -130,6 +132,17 @@ export function buildBuiltInChecklistForTask(
   return { checklist, summary };
 }
 
+export interface AiAssistantMetric {
+  label: string;
+  value: string;
+  sublabel?: string;
+}
+
+export interface AiAssistantSection {
+  title: string;
+  items: string[];
+}
+
 export interface AiAssistantInput {
   mode: AiAssistantMode;
   prompt?: string;
@@ -145,14 +158,29 @@ export interface AiAssistantInput {
 
 export interface AiAssistantOutput {
   mode: AiAssistantMode;
+  headline?: string;
+  metrics?: AiAssistantMetric[];
+  sections?: AiAssistantSection[];
   reply: string;
   checklist?: TaskChecklistItem[];
   aiSummary?: string;
   provider: 'gemini' | 'tedcloud-engine';
 }
 
+function formatPriorityLabelRu(prio?: string | null): string {
+  if (prio === 'High') return 'Высокий приоритет';
+  if (prio === 'Low') return 'Низкий приоритет';
+  return 'Средний приоритет';
+}
+
+function formatStatusLabelRu(st?: string | null): string {
+  if (st === 'Done') return 'Завершено';
+  if (st === 'In Progress') return 'В работе';
+  return 'К выполнению';
+}
+
 /**
- * Встроенный алгоритмический анализатор TedCloud AI (Jira Rovo style) по реальным данным компании
+ * Интеллектуальный аналитический движок TedCloud Intelligence по реальным данным компании
  */
 export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutput {
   const {
@@ -167,27 +195,6 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
     leads = [],
     messages = [],
   } = input;
-
-  if (mode === 'decompose_task') {
-    const { checklist, summary } = buildBuiltInChecklistForTask(
-      taskTitle || prompt || 'Поручение',
-      taskDescription
-    );
-    const replyLines = [
-      `ИИ-декомпозиция задачи «${taskTitle || prompt || 'Поручение'}» выполнена (${checklist.length} шага):`,
-      '',
-      ...checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
-      '',
-      summary,
-    ];
-    return {
-      mode: 'decompose_task',
-      reply: replyLines.join('\n'),
-      checklist,
-      aiSummary: summary,
-      provider: 'tedcloud-engine',
-    };
-  }
 
   const openTasks = tasks.filter((t) => t.status !== 'Done');
   const highPriorityTasks = openTasks.filter((t) => t.priority === 'High');
@@ -218,56 +225,115 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   const conversionRate =
     leads.length > 0 ? Math.round((wonLeads.length / leads.length) * 100) : 0;
 
+  const baseMetrics: AiAssistantMetric[] = [
+    {
+      label: 'Активные задачи',
+      value: String(openTasks.length),
+      sublabel: `Выполнено: ${doneTasks.length}`,
+    },
+    {
+      label: 'Срочные поручения',
+      value: String(highPriorityTasks.length),
+      sublabel: urgentMessages.length > 0 ? `Срочных сообщений: ${urgentMessages.length}` : 'Критичный контур',
+    },
+    {
+      label: 'Сумма воронки',
+      value: `${Math.round(activePipelineSum).toLocaleString('ru-RU')} ₽`,
+      sublabel: `Сделок: ${activeLeads.length} · Конверсия ${conversionRate}%`,
+    },
+  ];
+
+  if (mode === 'decompose_task') {
+    const targetTitle = taskTitle || prompt || 'Поручение';
+    const { checklist, summary } = buildBuiltInChecklistForTask(
+      targetTitle,
+      taskDescription
+    );
+    const sections: AiAssistantSection[] = [
+      {
+        title: `Этапы выполнения поручения «${targetTitle}»`,
+        items: checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
+      },
+    ];
+    const replyLines = [
+      `Декомпозиция задачи «${targetTitle}» (${checklist.length} этапа):`,
+      '',
+      ...checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
+      '',
+      summary,
+    ];
+    return {
+      mode: 'decompose_task',
+      headline: `Декомпозиция поручения «${targetTitle}»`,
+      metrics: baseMetrics,
+      sections,
+      reply: replyLines.join('\n'),
+      checklist,
+      aiSummary: summary,
+      provider: 'tedcloud-engine',
+    };
+  }
+
   if (mode === 'daily_brief') {
     const userName = currentUser?.name || 'Сотрудник';
     const userRole = currentUser?.role_type || 'Специалист';
     const topUserTasks = userTasks.slice(0, 4);
 
-    const lines: string[] = [
-      `ПЕРСОНАЛЬНАЯ СВОДКА ДНЯ — ${userName} (${userRole})`,
-      `Организация: ${companyName}`,
-      '',
-      `1. ОПЕРАЦИОННЫЙ КОНТУР ЗАДАЧ:`,
-      `• Активных задач в вашей зоне ответственности: ${userTasks.length} (всего по компании открыто: ${openTasks.length}, выполнено: ${doneTasks.length}).`,
-      `• Срочных поручений высокого приоритета (High): ${
-        userTasks.filter((t) => t.priority === 'High').length
-      }.`,
+    const taskItems: string[] = [
+      `Активных задач в вашей зоне ответственности: ${userTasks.length} (всего по организации открыто: ${openTasks.length}, завершено: ${doneTasks.length}).`,
+      `Поручений высокого приоритета: ${userTasks.filter((t) => t.priority === 'High').length}.`,
     ];
 
     if (topUserTasks.length > 0) {
-      lines.push('• Приоритетный фокус на сегодня:');
-      topUserTasks.forEach((t, idx) => {
-        lines.push(
-          `  ${idx + 1}) [${t.priority || 'Medium'} | ${t.status || 'Todo'}] ${t.title}${
+      topUserTasks.forEach((t) => {
+        const duePart = t.due_date ? ` · Срок: ${t.due_date}` : '';
+        taskItems.push(
+          `${t.title} — ${formatPriorityLabelRu(t.priority)}, ${formatStatusLabelRu(t.status)}${
             t.department ? ` (${t.department})` : ''
-          }`
+          }${duePart}`
         );
       });
     } else {
-      lines.push('• Все текущие задачи закрыты или ожидают новых назначений.');
+      taskItems.push('Все текущие поручения закрыты или ожидают новых назначений.');
     }
 
-    lines.push('');
-    lines.push('2. ИНФОПОЛЕ И КОММУНИКАЦИИ:');
-    lines.push(
-      `• Всего сообщений в рабочем контуре: ${messages.length} (срочных уведомлений: ${urgentMessages.length}).`
-    );
+    const commItems: string[] = [
+      `Сообщений в рабочем контуре: ${messages.length} (срочных уведомлений: ${urgentMessages.length}).`,
+    ];
 
-    lines.push('');
-    lines.push('3. КОММЕРЧЕСКИЙ КОНТУР CRM:');
-    lines.push(
-      `• Активных сделок в воронке: ${activeLeads.length} на сумму ${Math.round(
+    const crmItems: string[] = [
+      `Активных сделок в работе: ${activeLeads.length} на сумму ${Math.round(
         activePipelineSum
-      ).toLocaleString('ru-RU')} RUB.`
-    );
-    lines.push(
-      `• Закрыто контрактов (Won): ${wonLeads.length} на сумму ${Math.round(
+      ).toLocaleString('ru-RU')} RUB.`,
+      `Закрыто контрактов: ${wonLeads.length} на сумму ${Math.round(
         wonPipelineSum
-      ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`
-    );
+      ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
+    ];
+
+    const sections: AiAssistantSection[] = [
+      { title: 'Операционный контур задач', items: taskItems },
+      { title: 'Инфополе и коммуникации', items: commItems },
+      { title: 'Коммерческий контур CRM', items: crmItems },
+    ];
+
+    const lines: string[] = [
+      `Персональная сводка дня — ${userName} (${userRole}), ${companyName}`,
+      '',
+      'Операционный контур задач:',
+      ...taskItems.map((i) => `• ${i}`),
+      '',
+      'Инфополе и коммуникации:',
+      ...commItems.map((i) => `• ${i}`),
+      '',
+      'Коммерческий контур CRM:',
+      ...crmItems.map((i) => `• ${i}`),
+    ];
 
     return {
       mode: 'daily_brief',
+      headline: `Персональная сводка дня — ${userName} (${userRole})`,
+      metrics: baseMetrics,
+      sections,
       reply: lines.join('\n'),
       provider: 'tedcloud-engine',
     };
@@ -284,7 +350,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       return {
         name: n.name || 'Сотрудник',
         role: n.role_type || 'Специалист',
-        dept: n.department || 'Без отдела',
+        dept: n.department || 'Общий контур',
         openCount: assignedOpen,
         highCount,
       };
@@ -295,65 +361,82 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
     const overloaded = nodeLoad.filter((n) => n.openCount >= 3);
     const underloaded = nodeLoad.filter((n) => n.openCount === 0);
 
-    const lines: string[] = [
-      `АНАЛИЗ ЗАГРУЗКИ КОМАНДЫ И ВОРОНКИ CRM — ${companyName}`,
-      '',
-      `1. БАЛАНС НАГРУЗКИ ПО ШТАТУ (${nodes.length} сотр. / ${openTasks.length} активных задач):`,
+    const staffItems: string[] =
+      nodeLoad.length === 0
+        ? ['Штатное расписание пусто.']
+        : nodeLoad.slice(0, 6).map((item) => {
+            const statusIndicator =
+              item.openCount >= 3
+                ? 'Высокая нагрузка'
+                : item.openCount >= 1
+                ? 'Оптимальная загрузка'
+                : 'Свободен для поручений';
+            return `${item.name} (${item.role}, ${item.dept}) — активных задач: ${item.openCount}, срочных: ${item.highCount} · ${statusIndicator}`;
+          });
+
+    const crmAuditItems: string[] = [
+      `Всего сделок в реестре: ${leads.length} · На согласовании: ${
+        leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
+      } · Выиграно: ${wonLeads.length}.`,
+      `Объем активного пайплайна: ${Math.round(activePipelineSum).toLocaleString(
+        'ru-RU'
+      )} RUB · Конверсия в контракт: ${conversionRate}%.`,
     ];
 
-    if (nodeLoad.length === 0) {
-      lines.push('• Штатное расписание пусто.');
-    } else {
-      nodeLoad.slice(0, 6).forEach((item) => {
-        const statusIndicator =
-          item.openCount >= 3
-            ? 'Высокая нагрузка'
-            : item.openCount >= 1
-            ? 'Оптимально'
-            : 'Свободен';
-        lines.push(
-          `• ${item.name} (${item.role}, ${item.dept}): ${item.openCount} акт. задач (High: ${item.highCount}) — [${statusIndicator}]`
-        );
-      });
-    }
-
-    lines.push('');
-    lines.push('2. АУДИТ КОММЕРЧЕСКОЙ ВОРОНКИ CRM:');
-    lines.push(
-      `• Всего сделок: ${leads.length} | На согласовании (Negotiation): ${
-        leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
-      } | Успешно закрыто (Won): ${wonLeads.length}.`
-    );
-    lines.push(
-      `• Объем активного пайплайна: ${Math.round(activePipelineSum).toLocaleString(
-        'ru-RU'
-      )} RUB | Конверсия в контракт: ${conversionRate}%.`
-    );
-
-    lines.push('');
-    lines.push('3. УПРАВЛЕНЧЕСКИЕ РЕКОМЕНДАЦИИ TEDCLOUD AI:');
+    const recommendationItems: string[] = [];
     if (overloaded.length > 0 && underloaded.length > 0) {
-      lines.push(
-        `• Рекомендуется перераспределить часть задач от ${overloaded[0].name} (${overloaded[0].openCount} зад.) сотруднику ${underloaded[0].name} (0 активных поручений).`
+      recommendationItems.push(
+        `Перераспределить часть поручений от ${overloaded[0].name} (${overloaded[0].openCount} зад.) сотруднику ${underloaded[0].name} (0 активных задач).`
       );
     } else if (highPriorityTasks.length > 0) {
-      lines.push(
-        `• В контуре ${highPriorityTasks.length} задач с высоким приоритетом (High) — рекомендуется провести декомпозицию на чек-листы и зафиксировать промежуточный статус.`
+      recommendationItems.push(
+        `В работе находится ${highPriorityTasks.length} поручений высокого приоритета — рекомендуется выполнить декомпозицию на чек-листы и назначить контрольные сроки.`
       );
     } else {
-      lines.push(
-        '• Распределение задач сбалансировано, критических блокировок по подразделениям не выявлено.'
+      recommendationItems.push(
+        'Распределение задач между подразделениями сбалансировано, критических блокировок не выявлено.'
       );
     }
+
+    const sections: AiAssistantSection[] = [
+      {
+        title: `Баланс нагрузки по штату (${nodes.length} сотр.)`,
+        items: staffItems,
+      },
+      {
+        title: 'Аудит коммерческой воронки CRM',
+        items: crmAuditItems,
+      },
+      {
+        title: 'Рекомендации TedCloud Intelligence',
+        items: recommendationItems,
+      },
+    ];
+
+    const lines: string[] = [
+      `Анализ загрузки команды и воронки CRM — ${companyName}`,
+      '',
+      'Баланс нагрузки по штату:',
+      ...staffItems.map((i) => `• ${i}`),
+      '',
+      'Аудит коммерческой воронки CRM:',
+      ...crmAuditItems.map((i) => `• ${i}`),
+      '',
+      'Рекомендации TedCloud Intelligence:',
+      ...recommendationItems.map((i) => `• ${i}`),
+    ];
 
     return {
       mode: 'workload_analysis',
+      headline: `Анализ загрузки команды и воронки CRM — ${companyName}`,
+      metrics: baseMetrics,
+      sections,
       reply: lines.join('\n'),
       provider: 'tedcloud-engine',
     };
   }
 
-  // mode === 'custom': Свободный вопрос по базе знаний компании
+  // mode === 'custom': Свободный запрос по данным компании
   const q = prompt.trim().toLowerCase();
   const matchedTasks = tasks.filter(
     (t) =>
@@ -375,96 +458,137 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       (n.department || '').toLowerCase().includes(q)
   );
 
+  const sections: AiAssistantSection[] = [];
   const lines: string[] = [
-    `ОТВЕТ TEDCLOUD AI ПО ЗАПРОСУ: «${prompt.trim() || 'Обзор компании'}»`,
+    `Аналитический отчет TedCloud Intelligence по запросу: «${prompt.trim() || 'Обзор компании'}»`,
     '',
   ];
 
   if (matchedLeads.length > 0) {
-    lines.push(`Найденные сделки CRM (${matchedLeads.length}):`);
-    matchedLeads.slice(0, 4).forEach((l) => {
-      lines.push(
-        `• ${l.client_name || l.title} — ${Math.round(
+    const items = matchedLeads.slice(0, 4).map(
+      (l) =>
+        `${l.client_name || l.title} — ${Math.round(
           Number(l.amount ?? l.deal_value ?? 0)
-        ).toLocaleString('ru-RU')} RUB | Статус: ${l.status || 'New'}${
-          l.tax_id ? ` | ИНН/VAT: ${l.tax_id}` : ''
-        }${l.contract_number ? ` | Договор: ${l.contract_number}` : ''}`
-      );
-    });
-    lines.push('');
+        ).toLocaleString('ru-RU')} RUB · Статус: ${l.status || 'New'}${
+          l.tax_id ? ` · ИНН/VAT: ${l.tax_id}` : ''
+        }${l.contract_number ? ` · Договор: ${l.contract_number}` : ''}`
+    );
+    sections.push({ title: `Найденные сделки CRM (${matchedLeads.length})`, items });
+    lines.push(`Найденные сделки CRM (${matchedLeads.length}):`, ...items.map((i) => `• ${i}`), '');
   }
 
   if (matchedTasks.length > 0) {
-    lines.push(`Найденные задачи (${matchedTasks.length}):`);
-    matchedTasks.slice(0, 4).forEach((t) => {
-      lines.push(
-        `• [${t.priority || 'Medium'} | ${t.status || 'Todo'}] ${t.title}${
+    const items = matchedTasks.slice(0, 4).map(
+      (t) =>
+        `${t.title} — ${formatPriorityLabelRu(t.priority)}, ${formatStatusLabelRu(t.status)}${
           t.department ? ` (${t.department})` : ''
         }`
-      );
-    });
-    lines.push('');
+    );
+    sections.push({ title: `Найденные задачи (${matchedTasks.length})`, items });
+    lines.push(`Найденные задачи (${matchedTasks.length}):`, ...items.map((i) => `• ${i}`), '');
   }
 
   if (matchedNodes.length > 0) {
-    lines.push(`Профильные сотрудники (${matchedNodes.length}):`);
-    matchedNodes.slice(0, 4).forEach((n) => {
-      lines.push(
-        `• ${n.name} — ${n.role_type || 'Специалист'}${
-          n.department ? ` · Отдел: ${n.department}` : ''
+    const items = matchedNodes.slice(0, 4).map(
+      (n) =>
+        `${n.name} — ${n.role_type || 'Специалист'}${
+          n.department ? ` · Подразделение: ${n.department}` : ''
         }`
-      );
-    });
-    lines.push('');
+    );
+    sections.push({ title: `Профильные сотрудники (${matchedNodes.length})`, items });
+    lines.push(`Профильные сотрудники (${matchedNodes.length}):`, ...items.map((i) => `• ${i}`), '');
   }
 
-  if (matchedLeads.length === 0 && matchedTasks.length === 0 && matchedNodes.length === 0) {
-    lines.push(
-      `Сводная статистика пространства «${companyName}»:`,
-      `• Сотрудников в штате: ${nodes.length}`,
-      `• Открытых задач: ${openTasks.length} (высокого приоритета: ${highPriorityTasks.length})`,
-      `• Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${Math.round(
+  if (sections.length === 0) {
+    const fallbackItems = [
+      `Сотрудников в штате: ${nodes.length}`,
+      `Открытых задач: ${openTasks.length} (высокого приоритета: ${highPriorityTasks.length})`,
+      `Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${Math.round(
         activePipelineSum
       ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
-      'Для точечного поиска укажите название контрагента, ИНН, фамилию сотрудника или тему поручения.'
+      'Для точечного поиска укажите название контрагента, ИНН/VAT, фамилию сотрудника или тему поручения.',
+    ];
+    sections.push({
+      title: `Сводная статистика пространства «${companyName}»`,
+      items: fallbackItems,
+    });
+    lines.push(
+      `Сводная статистика пространства «${companyName}»:`,
+      ...fallbackItems.map((i) => `• ${i}`)
     );
   }
 
   return {
     mode: 'custom',
+    headline: `Ответ по запросу «${prompt.trim() || 'Обзор компании'}»`,
+    metrics: baseMetrics,
+    sections,
     reply: lines.join('\n'),
     provider: 'tedcloud-engine',
   };
 }
 
 /**
- * Расчет стоимости корпоративного тарифа с учетом скидки -20% при годовой оплате
+ * Расчет стоимости корпоративного тарифа с поддержкой глобальных валют (USD/EUR) и РФ/СНГ (RUB),
+ * а также скидки -20% при годовом контракте.
  */
 export function calculateSubscriptionPricing(
   plan: SubscriptionPlanTier,
-  cycle: BillingCycle
+  cycle: BillingCycle,
+  region: PaymentGatewayRegion = 'RU',
+  currencyOverride?: CurrencyCode
 ): {
   monthlyPriceRub: number;
   totalAmountRub: number;
+  monthlyPrice: number;
+  totalAmount: number;
+  currency: CurrencyCode;
   discountPercent: number;
   periodLabelRu: string;
+  periodLabelEn: string;
 } {
   const baseMonthlyRub = plan === 'Enterprise' ? 89000 : plan === 'Business' ? 24900 : 0;
+  const baseMonthlyUsd = plan === 'Enterprise' ? 960 : plan === 'Business' ? 269 : 0;
+  const baseMonthlyEur = plan === 'Enterprise' ? 890 : plan === 'Business' ? 249 : 0;
+
+  const resolvedCurrency: CurrencyCode =
+    currencyOverride || (region === 'GLOBAL' ? 'USD' : 'RUB');
+
+  const baseMonthly =
+    resolvedCurrency === 'USD'
+      ? baseMonthlyUsd
+      : resolvedCurrency === 'EUR'
+      ? baseMonthlyEur
+      : baseMonthlyRub;
+
   if (cycle === 'yearly') {
-    const discountedMonthly = Math.round(baseMonthlyRub * 0.8);
-    const totalAmountRub = discountedMonthly * 12;
+    const discountedMonthlyRub = Math.round(baseMonthlyRub * 0.8);
+    const totalAmountRub = discountedMonthlyRub * 12;
+
+    const discountedMonthly = Math.round(baseMonthly * 0.8);
+    const totalAmount = discountedMonthly * 12;
+
     return {
-      monthlyPriceRub: discountedMonthly,
+      monthlyPriceRub: discountedMonthlyRub,
       totalAmountRub,
+      monthlyPrice: discountedMonthly,
+      totalAmount,
+      currency: resolvedCurrency,
       discountPercent: 20,
       periodLabelRu: '12 месяцев (Годовой контракт, -20%)',
+      periodLabelEn: '12 Months (Annual Contract, -20%)',
     };
   }
+
   return {
     monthlyPriceRub: baseMonthlyRub,
     totalAmountRub: baseMonthlyRub,
+    monthlyPrice: baseMonthly,
+    totalAmount: baseMonthly,
+    currency: resolvedCurrency,
     discountPercent: 0,
     periodLabelRu: '1 месяц (Ежемесячная подписка)',
+    periodLabelEn: '1 Month (Monthly Subscription)',
   };
 }
 

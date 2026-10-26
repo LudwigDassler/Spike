@@ -187,7 +187,7 @@ export const CrmPipelineView: React.FC<CrmPipelineViewProps> = ({
                 type="number"
                 value={monthlyPv}
                 onChange={(e) => setMonthlyPv(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs font-mono tabular-nums bg-slate-50 border border-slate-300 rounded-md"
+                className="w-full px-3 py-1.5 text-xs tabular-nums bg-slate-50 border border-slate-300 rounded-md"
               />
             </div>
 
@@ -200,7 +200,7 @@ export const CrmPipelineView: React.FC<CrmPipelineViewProps> = ({
                 type="number"
                 value={dealValueRub}
                 onChange={(e) => setDealValueRub(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs font-mono tabular-nums bg-slate-50 border border-slate-300 rounded-md"
+                className="w-full px-3 py-1.5 text-xs tabular-nums bg-slate-50 border border-slate-300 rounded-md"
               />
             </div>
           </div>
@@ -238,17 +238,17 @@ export const CrmPipelineView: React.FC<CrmPipelineViewProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Объём клиентской базы в работе</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
             {totalPipelineRub.toLocaleString('ru-RU')} ₽
           </div>
-          <div className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
+          <div className="mt-1 text-xs text-slate-500 tabular-nums">
             {leads.length} активных карточек клиентов
           </div>
         </div>
 
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Ежемесячный клиентский объём</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-emerald-700">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
             {totalPipelinePv.toLocaleString('ru-RU')} PV
           </div>
           <div className="mt-1 text-xs text-slate-500">
@@ -258,7 +258,7 @@ export const CrmPipelineView: React.FC<CrmPipelineViewProps> = ({
 
         <div className="p-4 bg-white border border-slate-200 rounded-lg">
           <div className="text-xs text-slate-500">Переведено из клиентов в партнёры</div>
-          <div className="mt-1 text-2xl font-bold font-mono tabular-nums text-slate-900">
+          <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
             {convertedCount} чел.
           </div>
           <div className="mt-1 text-xs text-slate-500">
@@ -331,7 +331,7 @@ export const CrmPipelineView: React.FC<CrmPipelineViewProps> = ({
 
                   <td className="py-3.5 px-4 whitespace-nowrap">
                     <div className="font-semibold text-slate-800">{stageInfo.label}</div>
-                    <div className="text-slate-500 font-mono tabular-nums mt-0.5">
+                    <div className="text-slate-500 tabular-nums mt-0.5">
                       Шаг {stageInfo.stepIndex} из 5
                     </div>
                   </td>
@@ -341,11 +341,11 @@ export const CrmPipelineView: React.FC<CrmPipelineViewProps> = ({
                     <div className="text-slate-500">{lead.city}</div>
                   </td>
 
-                  <td className="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
+                  <td className="py-3.5 px-4 text-right tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
                     {lead.monthlyPv} PV
                   </td>
 
-                  <td className="py-3.5 px-4 text-right font-mono tabular-nums font-medium text-slate-900 whitespace-nowrap">
+                  <td className="py-3.5 px-4 text-right tabular-nums font-medium text-slate-900 whitespace-nowrap">
                     {lead.dealValueRub.toLocaleString('ru-RU')} ₽
                   </td>
 

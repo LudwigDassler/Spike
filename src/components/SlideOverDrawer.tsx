@@ -13,10 +13,11 @@ import {
   Building2,
   MessageSquare,
   Send,
-  Sparkles,
+  Cpu,
   Plus,
   Trash2,
   Check,
+  Clock,
 } from 'lucide-react';
 import {
   CounterpartyJurisdiction,
@@ -357,7 +358,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   <Calendar className="w-3.5 h-3.5 text-[#71717A]" />
                   {t('drawer.createdAt')}
                 </span>
-                <span className="text-white font-mono tabular-nums">{createdAtFormatted}</span>
+                <span className="text-white tabular-nums">{createdAtFormatted}</span>
               </div>
 
               <div className="px-4 py-3 flex items-center justify-between gap-4">
@@ -466,12 +467,30 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       <option value="High">{t('priority.High')}</option>
                     </select>
                   </div>
+
+                  <div className="px-4 py-3 flex items-center justify-between gap-4">
+                    <span className="text-[#8E8E93] flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 text-[#71717A]" />
+                      <span>Срок исполнения (SLA)</span>
+                    </span>
+                    <input
+                      type="date"
+                      disabled={!canEditTasks}
+                      value={(record as TaskRecord).due_date || ''}
+                      onChange={(e) =>
+                        void onPatchRecord('tasks', record.id, {
+                          due_date: e.target.value || null,
+                        })
+                      }
+                      className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white tabular-nums disabled:opacity-50 focus:outline-none"
+                    />
+                  </div>
                 </>
               ) : (
                 <>
                   <div className="px-4 py-3 flex items-center justify-between gap-4">
                     <span className="text-[#8E8E93]">{t('drawer.dealAmount')}</span>
-                    <span className="text-white font-semibold font-mono tabular-nums">
+                    <span className="text-white font-semibold tabular-nums">
                       {formatMoney(
                         Number(
                           (record as CrmLeadRecord).amount ??
@@ -534,14 +553,14 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       type="button"
                       disabled={isDecomposing}
                       onClick={() => void handleAiDecomposeTask()}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-semibold text-emerald-300 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-semibold text-zinc-100 transition-colors"
                     >
                       {isDecomposing ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
-                        <Sparkles className="w-3 h-3 text-emerald-400" />
+                        <Cpu className="w-3 h-3 text-indigo-400" />
                       )}
-                      <span>ИИ-декомпозиция</span>
+                      <span>Декомпозировать</span>
                     </button>
                   )}
                 </div>
@@ -551,11 +570,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   <div className="space-y-1">
                     <div className="h-1.5 w-full rounded-full bg-[#22222A] overflow-hidden">
                       <div
-                        className="h-full bg-emerald-400 transition-all duration-300"
+                        className="h-full bg-indigo-400 transition-all duration-300"
                         style={{ width: `${progressPercent}%` }}
                       />
                     </div>
-                    <div className="flex justify-between text-[10px] text-[#8E8E93] font-mono">
+                    <div className="flex justify-between text-[10px] text-[#8E8E93] tabular-nums">
                       <span>Выполнено: {progressPercent}%</span>
                       <span>
                         {doneCount} из {totalCount}
@@ -565,8 +584,8 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 )}
 
                 {aiSummary && (
-                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/15 px-3 py-2 text-[11px] text-emerald-200/90 leading-relaxed">
-                    <strong className="text-emerald-400">Резюме TedCloud AI:</strong> {aiSummary}
+                  <div className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-[11px] text-zinc-200 leading-relaxed">
+                    <strong className="text-indigo-300">TedCloud Intelligence:</strong> {aiSummary}
                   </div>
                 )}
 
@@ -688,7 +707,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       value={taxId}
                       onChange={(e) => setTaxId(e.target.value)}
                       placeholder="—"
-                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none disabled:opacity-60"
+                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
                     />
                   </div>
                   <div>
@@ -701,7 +720,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       value={regNumber}
                       onChange={(e) => setRegNumber(e.target.value)}
                       placeholder="—"
-                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none disabled:opacity-60"
+                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
                     />
                   </div>
                   <div>
@@ -714,7 +733,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       value={contractNumber}
                       onChange={(e) => setContractNumber(e.target.value)}
                       placeholder="—"
-                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none disabled:opacity-60"
+                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -760,7 +779,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
                   <span>{t('drawer.threadTitle')}</span>
                 </div>
-                <span className="text-[11px] font-mono text-[#71717A]">
+                <span className="text-[11px] tabular-nums text-[#71717A]">
                   {entityComments.length}
                 </span>
               </div>
@@ -794,7 +813,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                               <span className="text-[#8E8E93] font-normal"> · {roleLabel}</span>
                             ) : null}
                           </span>
-                          <span className="text-[10px] font-mono text-[#71717A] shrink-0">
+                          <span className="text-[10px] tabular-nums text-[#71717A] shrink-0">
                             {timeStr}
                           </span>
                         </div>
@@ -852,7 +871,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               <div className="space-y-2.5 text-xs text-[#8E8E93] border-l border-[#2C2C30] pl-3 ml-1.5">
                 <div>
                   <div className="text-white font-medium">{t('drawer.historyCreated')}</div>
-                  <div className="text-[11px] font-mono tabular-nums text-[#71717A]">
+                  <div className="text-[11px] tabular-nums text-[#71717A]">
                     {createdAtFormatted}
                   </div>
                 </div>

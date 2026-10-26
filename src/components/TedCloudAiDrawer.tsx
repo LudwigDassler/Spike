@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import {
   X,
-  Sparkles,
+  Cpu,
   Send,
   Loader2,
   CheckCircle2,
   BarChart3,
   Briefcase,
-  Bot,
+  Layers,
+  Plus,
+  ArrowRight,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   AiAssistantMode,
@@ -17,14 +20,19 @@ import {
   TaskRecord,
   WorkspaceMessageRecord,
 } from '../types/database';
-import { runBuiltInAiAssistant } from '../utils/enterpriseLogic';
+import {
+  AiAssistantMetric,
+  AiAssistantSection,
+  runBuiltInAiAssistant,
+} from '../utils/enterpriseLogic';
 
 interface AiChatEntry {
   id: string;
   role: 'user' | 'assistant';
-  label?: string;
+  headline?: string;
+  metrics?: AiAssistantMetric[];
+  sections?: AiAssistantSection[];
   text: string;
-  provider?: string;
   timestamp: string;
 }
 
@@ -37,6 +45,9 @@ interface TedCloudAiDrawerProps {
   tasks: TaskRecord[];
   leads: CrmLeadRecord[];
   messages: WorkspaceMessageRecord[];
+  onCreateFollowUpTask?: (suggestedTitle?: string) => void;
+  onNavigateToCrm?: () => void;
+  onNavigateToTasks?: () => void;
 }
 
 export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
@@ -48,6 +59,9 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   tasks,
   leads,
   messages,
+  onCreateFollowUpTask,
+  onNavigateToCrm,
+  onNavigateToTasks,
 }) => {
   const [entries, setEntries] = useState<AiChatEntry[]>([]);
   const [question, setQuestion] = useState('');
@@ -58,7 +72,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const companyId = company?.id || currentProfile?.company_id || '';
   const companyName = company?.name || 'TedCloud';
 
-  const triggerAiAction = async (mode: AiAssistantMode, userPromptLabel: string, customPrompt?: string) => {
+  const triggerAiAction = async (
+    mode: AiAssistantMode,
+    userPromptLabel: string,
+    customPrompt?: string
+  ) => {
     if (isLoading) return;
     const nowTime = new Date().toLocaleTimeString('ru-RU', {
       hour: '2-digit',
@@ -74,6 +92,17 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
     setEntries((prev) => [...prev, userMsg]);
     setIsLoading(true);
+
+    const localBaseline = runBuiltInAiAssistant({
+      mode,
+      prompt: customPrompt ?? userPromptLabel,
+      companyName,
+      currentUser: currentProfile,
+      nodes,
+      tasks,
+      leads,
+      messages,
+    });
 
     try {
       const response = await fetch('/api/db', {
@@ -96,8 +125,16 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           {
             id: `a_${Date.now()}`,
             role: 'assistant',
+            headline: payload.headline || localBaseline.headline,
+            metrics:
+              Array.isArray(payload.metrics) && payload.metrics.length > 0
+                ? payload.metrics
+                : localBaseline.metrics,
+            sections:
+              Array.isArray(payload.sections) && payload.sections.length > 0
+                ? payload.sections
+                : localBaseline.sections,
             text: payload.reply,
-            provider: payload.provider === 'gemini' ? 'Gemini 2.5 Flash' : 'TedCloud Core AI',
             timestamp: new Date().toLocaleTimeString('ru-RU', {
               hour: '2-digit',
               minute: '2-digit',
@@ -108,23 +145,15 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       }
       throw new Error(payload?.error || 'Fallback');
     } catch {
-      const fallback = runBuiltInAiAssistant({
-        mode,
-        prompt: customPrompt ?? userPromptLabel,
-        companyName,
-        currentUser: currentProfile,
-        nodes,
-        tasks,
-        leads,
-        messages,
-      });
       setEntries((prev) => [
         ...prev,
         {
           id: `a_${Date.now()}`,
           role: 'assistant',
-          text: fallback.reply,
-          provider: 'TedCloud Core AI',
+          headline: localBaseline.headline,
+          metrics: localBaseline.metrics,
+          sections: localBaseline.sections,
+          text: localBaseline.reply,
           timestamp: new Date().toLocaleTimeString('ru-RU', {
             hour: '2-digit',
             minute: '2-digit',
@@ -146,28 +175,28 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-xs font-sans"
+      className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-xs font-sans"
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-lg bg-[#0F0F12] border-l border-[#26262C] h-full flex flex-col justify-between shadow-2xl">
+      <div className="w-full max-w-xl bg-[#0D0D11] border-l border-white/[0.08] h-full flex flex-col justify-between shadow-2xl">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#222228] bg-[#121216] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/35 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-emerald-400" />
+        <div className="px-5 py-4 border-b border-white/[0.07] bg-[#111116] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center">
+              <Cpu className="w-4 h-4 text-indigo-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-semibold text-white tracking-tight">
-                  TedCloud AI Copilot
+                  TedCloud Intelligence
                 </h2>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                  Enterprise Rovo
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-white/[0.05] text-zinc-300 border border-white/10">
+                  Corporate Copilot
                 </span>
               </div>
-              <p className="text-[11px] text-[#8E8E93]">
-                Интеллектуальная аналитика задач, штата и сделок {companyName}
+              <p className="text-[11px] text-zinc-400">
+                Структурная аналитика поручений, штата и сделок {companyName}
               </p>
             </div>
           </div>
@@ -175,26 +204,26 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Закрыть TedCloud AI"
-            className="p-1.5 rounded-lg text-[#8E8E93] hover:text-white hover:bg-[#1C1C22] transition-colors"
+            aria-label="Закрыть TedCloud Intelligence"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Quick Prompts Bar */}
-        <div className="px-5 py-3 border-b border-[#1E1E24] bg-[#111115] space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
-            Быстрые сценарии анализа
+        <div className="px-5 py-3 border-b border-white/[0.06] bg-[#0F0F14] space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Аналитические сценарии
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               disabled={isLoading}
               onClick={() => void triggerAiAction('daily_brief', 'Сводка моего дня')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#272730] bg-[#17171D] hover:bg-[#202028] hover:border-emerald-500/40 text-xs font-medium text-white transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-[#15151B] hover:bg-zinc-800 hover:border-white/20 text-xs font-medium text-zinc-100 transition-colors"
             >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
               <span>Сводка моего дня</span>
             </button>
 
@@ -204,9 +233,9 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               onClick={() =>
                 void triggerAiAction('workload_analysis', 'Анализ загрузки команды')
               }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#272730] bg-[#17171D] hover:bg-[#202028] hover:border-emerald-500/40 text-xs font-medium text-white transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-[#15151B] hover:bg-zinc-800 hover:border-white/20 text-xs font-medium text-zinc-100 transition-colors"
             >
-              <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
+              <BarChart3 className="w-3.5 h-3.5 text-sky-400" />
               <span>Анализ загрузки команды</span>
             </button>
 
@@ -220,7 +249,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   'Аудит воронки CRM и конверсии сделок компании'
                 )
               }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#272730] bg-[#17171D] hover:bg-[#202028] hover:border-emerald-500/40 text-xs font-medium text-white transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-[#15151B] hover:bg-zinc-800 hover:border-white/20 text-xs font-medium text-zinc-100 transition-colors"
             >
               <Briefcase className="w-3.5 h-3.5 text-amber-400" />
               <span>Аудит воронки CRM</span>
@@ -231,18 +260,33 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         {/* Conversation Stream */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {entries.length === 0 ? (
-            <div className="rounded-xl border border-[#22222A] bg-[#141419] p-5 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-white">
-                <Bot className="w-4 h-4 text-emerald-400" />
-                <span>Готов к работе с данными «{companyName}»</span>
+            <div className="rounded-xl border border-white/[0.07] bg-[#121217] p-5 space-y-4">
+              <div className="flex items-center gap-2.5 text-xs font-semibold text-white">
+                <Layers className="w-4 h-4 text-indigo-400" />
+                <span>Аналитический контур «{companyName}» активен</span>
               </div>
-              <p className="text-xs text-[#A1A1AA] leading-relaxed">
-                TedCloud AI анализирует активные поручения ({tasks.length}), штатную структуру ({nodes.length} сотр.) и коммерческий пайплайн CRM ({leads.length} сделок) строго внутри вашего изолированного рабочего пространства.
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                TedCloud Intelligence обрабатывает текущие поручения ({tasks.length}), штатную матрицу ({nodes.length} сотр.) и коммерческую воронку CRM ({leads.length} сделок) в изолированном пространстве вашей организации.
               </p>
-              <div className="text-[11px] text-[#71717A] space-y-1 pt-1">
-                <div>• Нажмите «Сводка моего дня» для приоритизации личных задач.</div>
-                <div>• Нажмите «Анализ загрузки команды» для поиска узких мест по отделам.</div>
-                <div>• Или задайте любой вопрос по ИНН контрагента, договору или задаче ниже.</div>
+              <div className="grid grid-cols-3 gap-2.5 pt-1">
+                <div className="rounded-lg border border-white/[0.06] bg-[#17171E] p-3">
+                  <div className="text-[10px] font-medium text-zinc-400">Активные задачи</div>
+                  <div className="text-base font-semibold text-white tabular-nums mt-0.5">
+                    {tasks.filter((t) => t.status !== 'Done').length}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/[0.06] bg-[#17171E] p-3">
+                  <div className="text-[10px] font-medium text-zinc-400">Штат компании</div>
+                  <div className="text-base font-semibold text-white tabular-nums mt-0.5">
+                    {nodes.length}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/[0.06] bg-[#17171E] p-3">
+                  <div className="text-[10px] font-medium text-zinc-400">Сделки CRM</div>
+                  <div className="text-base font-semibold text-white tabular-nums mt-0.5">
+                    {leads.length}
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -253,38 +297,146 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   entry.role === 'user' ? 'items-end' : 'items-start'
                 }`}
               >
-                <div
-                  className={`max-w-[90%] rounded-xl border px-4 py-3 space-y-1.5 ${
-                    entry.role === 'user'
-                      ? 'bg-emerald-950/35 border-emerald-500/35 text-white'
-                      : 'bg-[#16161C] border-[#262630] text-zinc-100'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3 text-[10px] text-[#8E8E93]">
-                    <span className="font-semibold text-white">
-                      {entry.role === 'user'
-                        ? currentProfile?.name || 'Вы'
-                        : 'TedCloud AI'}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {entry.provider && (
-                        <span className="font-mono text-emerald-400">{entry.provider}</span>
+                {entry.role === 'user' ? (
+                  <div className="max-w-[85%] rounded-xl border border-white/15 bg-zinc-800/90 px-4 py-2.5 text-white space-y-1">
+                    <div className="flex items-center justify-between gap-3 text-[10px] text-zinc-400">
+                      <span className="font-semibold text-zinc-200">
+                        {currentProfile?.name || 'Вы'}
+                      </span>
+                      <span className="tabular-nums">{entry.timestamp}</span>
+                    </div>
+                    <div className="text-xs leading-relaxed">{entry.text}</div>
+                  </div>
+                ) : (
+                  <div className="w-full rounded-xl border border-white/[0.08] bg-[#131319] p-4 space-y-4 text-zinc-100 shadow-lg">
+                    {/* Assistant Header */}
+                    <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="text-xs font-semibold text-white">
+                          {entry.headline || 'TedCloud Intelligence'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-zinc-500 tabular-nums">
+                        {entry.timestamp}
+                      </span>
+                    </div>
+
+                    {/* 1. Mini-Grid of Key Metrics */}
+                    {entry.metrics && entry.metrics.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        {entry.metrics.map((m, idx) => (
+                          <div
+                            key={idx}
+                            className="rounded-lg border border-white/[0.07] bg-[#181820] px-3 py-2.5 space-y-0.5"
+                          >
+                            <div className="text-[10px] font-medium text-zinc-400">
+                              {m.label}
+                            </div>
+                            <div className="text-sm font-semibold text-white tabular-nums">
+                              {m.value}
+                            </div>
+                            {m.sublabel && (
+                              <div className="text-[10px] text-zinc-500 truncate">
+                                {m.sublabel}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 2. Structured Sections & Bullet Lists */}
+                    {entry.sections && entry.sections.length > 0 ? (
+                      <div className="space-y-3">
+                        {entry.sections.map((sec, sIdx) => (
+                          <div
+                            key={sIdx}
+                            className="rounded-lg border border-white/[0.06] bg-[#16161D] p-3 space-y-2"
+                          >
+                            <h4 className="text-xs font-semibold text-white tracking-tight">
+                              {sec.title}
+                            </h4>
+                            <ul className="space-y-1.5">
+                              {sec.items.map((item, iIdx) => (
+                                <li
+                                  key={iIdx}
+                                  className="text-xs text-zinc-300 leading-relaxed flex items-start gap-2"
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/80 mt-1.5 shrink-0" />
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
+                        {entry.text}
+                      </div>
+                    )}
+
+                    {/* 3. Interactive Quick Actions under the AI Response */}
+                    <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center gap-2">
+                      {onCreateFollowUpTask && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onCreateFollowUpTask('Поручение по итогам аналитики TedCloud');
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 text-[11px] font-semibold transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Создать задачу по итогам</span>
+                        </button>
                       )}
-                      <span className="font-mono">{entry.timestamp}</span>
+
+                      {onNavigateToCrm && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onNavigateToCrm();
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors"
+                        >
+                          <Briefcase className="w-3 h-3 text-amber-400" />
+                          <span>Перейти к сделкам</span>
+                          <ArrowRight className="w-3 h-3 text-zinc-500" />
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onNavigateToTasks) {
+                            onClose();
+                            onNavigateToTasks();
+                          } else {
+                            void triggerAiAction(
+                              'workload_analysis',
+                              'Сбалансировать нагрузку'
+                            );
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors"
+                      >
+                        <SlidersHorizontal className="w-3 h-3 text-indigo-400" />
+                        <span>Сбалансировать нагрузку</span>
+                      </button>
                     </div>
                   </div>
-                  <div className="text-xs leading-relaxed whitespace-pre-wrap break-words">
-                    {entry.text}
-                  </div>
-                </div>
+                )}
               </div>
             ))
           )}
 
           {isLoading && (
-            <div className="flex items-center gap-2 text-xs text-emerald-300 bg-[#16161C] border border-[#262630] rounded-xl px-4 py-3 w-fit">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-              <span>TedCloud AI анализирует данные компании...</span>
+            <div className="flex items-center gap-2.5 text-xs text-zinc-200 bg-[#14141B] border border-white/[0.08] rounded-xl px-4 py-3 w-fit">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+              <span>TedCloud Intelligence формирует структурный отчет...</span>
             </div>
           )}
         </div>
@@ -292,26 +444,26 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         {/* Question Composer */}
         <form
           onSubmit={handleSubmitQuestion}
-          className="p-4 border-t border-[#222228] bg-[#121216] flex items-center gap-2"
+          className="p-4 border-t border-white/[0.07] bg-[#111116] flex items-center gap-2"
         >
           <input
             type="text"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Спросите ИИ о задачах, контрагентах, ИНН или загрузке отдела..."
-            className="flex-1 rounded-xl border border-[#2A2A32] bg-[#18181F] px-3.5 py-2 text-xs text-white placeholder-[#52525B] focus:border-emerald-500/50 focus:outline-none"
+            placeholder="Запрос по задачам, контрагентам, ИНН/VAT или подразделениям..."
+            className="flex-1 rounded-xl border border-white/10 bg-[#17171F] px-3.5 py-2 text-xs text-white placeholder-zinc-500 focus:border-white/30 focus:outline-none"
           />
           <button
             type="submit"
             disabled={isLoading || !question.trim()}
-            className="inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors shrink-0"
+            className="inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-white text-black hover:bg-zinc-200 disabled:opacity-50 text-xs font-semibold transition-colors shrink-0"
           >
             {isLoading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Send className="w-3.5 h-3.5" />
             )}
-            <span>Спросить</span>
+            <span>Запрос</span>
           </button>
         </form>
       </div>

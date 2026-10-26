@@ -219,7 +219,7 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
           <div className="flex items-center justify-between text-xs text-slate-600">
             <span>
               В очереди на сегодня:{' '}
-              <strong className="font-mono tabular-nums text-slate-900">
+              <strong className="tabular-nums text-slate-900">
                 {pendingTasks.length}
               </strong>
             </span>
@@ -313,13 +313,13 @@ export const TmaCopilotView: React.FC<TmaCopilotViewProps> = ({
                       </div>
                       <div className="text-slate-500 mt-0.5">
                         Завершение курса:{' '}
-                        <span className="font-mono tabular-nums text-slate-700">
+                        <span className="tabular-nums text-slate-700">
                           {cycle.cycleEndDate}
                         </span>
                       </div>
                     </div>
 
-                    <span className="px-2.5 py-0.5 rounded-full font-mono tabular-nums font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 self-start sm:self-center">
+                    <span className="px-2.5 py-0.5 rounded-full tabular-nums font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 self-start sm:self-center">
                       +{cycle.pvValue} VP
                     </span>
                   </div>
