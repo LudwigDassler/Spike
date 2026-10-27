@@ -112,6 +112,7 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [serverBotUsername, setServerBotUsername] = useState<string>('');
 
   const loadWorkspaceData = useCallback(async (isInitial = false, silent = false) => {
     if (isInitial) setIsLoading(true);
@@ -174,6 +175,12 @@ function AppContent() {
       setMessages(Array.isArray(payload.messages) ? payload.messages : []);
       setInvoices(Array.isArray(payload.invoices) ? payload.invoices : []);
       setAuditLogs(Array.isArray(payload.auditLogs) ? payload.auditLogs : []);
+
+      if (typeof payload.botUsername === 'string' && payload.botUsername.trim()) {
+        const cleanBot = payload.botUsername.replace(/^@/, '').trim();
+        setServerBotUsername(cleanBot);
+        localStorage.setItem('tedcloud_bot_username', cleanBot);
+      }
 
       if (payload.currentProfile) {
         setCurrentProfile(payload.currentProfile);
@@ -534,6 +541,7 @@ function AppContent() {
       company={company}
       currentProfile={currentProfile}
       activeChatId={activeChatId}
+      botUsername={serverBotUsername}
       nodes={nodes}
       tasks={tasks}
       leads={leads}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X,
   Calendar,
@@ -18,8 +18,10 @@ import {
   Trash2,
   Check,
   Clock,
+  Paperclip,
 } from 'lucide-react';
 import {
+  AttachmentItem,
   CounterpartyJurisdiction,
   CrmLeadRecord,
   CrmLeadStatus,
@@ -30,8 +32,14 @@ import {
   TaskStatus,
   WorkspaceMessageRecord,
 } from '../types/database';
-import { buildBuiltInChecklistForTask } from '../utils/enterpriseLogic';
+import { buildBuiltInChecklistForTask, normalizeAttachments } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
+import {
+  ACCEPTED_ATTACHMENT_TYPES,
+  AttachmentListRenderer,
+  PendingAttachmentsStrip,
+  processFilesToAttachments,
+} from './AttachmentSystem';
 
 export type DrawerTarget =
   | { type: 'task'; record: TaskRecord }
@@ -74,11 +82,13 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Task checklist & AI decomposition state
+  // Task checklist, attachments & AI decomposition state
   const [checklist, setChecklist] = useState<TaskChecklistItem[]>([]);
+  const [taskAttachments, setTaskAttachments] = useState<AttachmentItem[]>([]);
   const [aiSummary, setAiSummary] = useState<string>('');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [isDecomposing, setIsDecomposing] = useState(false);
+  const taskAttachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   // Deal legal requisites state
   const [jurisdiction, setJurisdiction] = useState<CounterpartyJurisdiction>('RU');
@@ -88,8 +98,10 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
 
   // Comment stream state
   const [commentText, setCommentText] = useState('');
+  const [commentAttachments, setCommentAttachments] = useState<AttachmentItem[]>([]);
   const [commentUrgent, setCommentUrgent] = useState(false);
   const [isSendingComment, setIsSendingComment] = useState(false);
+  const commentFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const safeNodes = Array.isArray(nodes) ? nodes : [];
   const safeDepartments = Array.isArray(departments) ? departments : [];
@@ -109,6 +121,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
     if (target.type === 'task') {
       const taskRec = target.record as TaskRecord;
       setChecklist(Array.isArray(taskRec.checklist) ? taskRec.checklist : []);
+      setTaskAttachments(normalizeAttachments(taskRec.attachments));
       setAiSummary(taskRec.ai_summary || '');
     } else if (target.type === 'deal') {
       const lead = target.record as CrmLeadRecord;
@@ -124,6 +137,35 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   const isTask = target.type === 'task';
   const record = target.record;
   const table = isTask ? 'tasks' : 'crm_leads';
+
+  const handleUploadTaskAttachments = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !isTask) return;
+    const { attachments } = await processFilesToAttachments(files, language);
+    e.target.value = '';
+    if (attachments.length > 0) {
+      const next = [...taskAttachments, ...attachments];
+      setTaskAttachments(next);
+      await onPatchRecord('tasks', record.id, { attachments: next });
+    }
+  };
+
+  const handleRemoveTaskAttachment = async (attId: string) => {
+    if (!isTask || !canEditTasks) return;
+    const next = taskAttachments.filter((a) => a.id !== attId);
+    setTaskAttachments(next);
+    await onPatchRecord('tasks', record.id, { attachments: next });
+  };
+
+  const handleCommentFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const { attachments } = await processFilesToAttachments(files, language);
+    e.target.value = '';
+    if (attachments.length > 0) {
+      setCommentAttachments((prev) => [...prev, ...attachments]);
+    }
+  };
 
   const entityComments = safeMessages.filter((m) => {
     if (!m) return false;
@@ -256,6 +298,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
         await onPatchRecord('tasks', record.id, {
           description: notes.trim(),
           checklist,
+          attachments: taskAttachments,
           ai_summary: aiSummary || null,
         });
       } else {
@@ -274,7 +317,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
 
   const handlePostComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentText.trim() || !onSendMessage) return;
+    if ((!commentText.trim() && commentAttachments.length === 0) || !onSendMessage) return;
     setIsSendingComment(true);
     try {
       const recipientId = currentAssigneeId || authorNode?.id || null;
@@ -283,7 +326,9 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
         : (record as CrmLeadRecord).client_name ||
           (record as CrmLeadRecord).title ||
           (isEn ? 'CRM Deal' : 'Сделка CRM');
-      const cleanComment = commentText.trim();
+      const cleanComment =
+        commentText.trim() ||
+        commentAttachments.map((a) => `[${a.name}]`).join(' ');
       await onSendMessage({
         company_id: record.company_id,
         sender_id: currentProfile?.id || null,
@@ -301,9 +346,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
         entity_title: entityTitle,
         message_text: cleanComment,
         text: cleanComment,
+        attachments: commentAttachments,
         is_urgent: commentUrgent,
       });
       setCommentText('');
+      setCommentAttachments([]);
       setCommentUrgent(false);
     } finally {
       setIsSendingComment(false);
@@ -764,6 +811,54 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               </div>
             )}
 
+            {/* Вложения к задаче */}
+            {isTask && (
+              <div className="rounded-xl border border-white/10 bg-[#15151A] p-4 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="w-3.5 h-3.5 text-sky-400" />
+                    <span className="text-xs font-semibold text-white">
+                      {isEn ? 'Attachments' : 'Вложения и документы'} ({taskAttachments.length})
+                    </span>
+                  </div>
+                  {canEditTasks && (
+                    <>
+                      <input
+                        ref={taskAttachmentInputRef}
+                        type="file"
+                        multiple
+                        accept={ACCEPTED_ATTACHMENT_TYPES}
+                        onChange={handleUploadTaskAttachments}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => taskAttachmentInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{isEn ? 'Attach file' : 'Прикрепить'}</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {taskAttachments.length === 0 ? (
+                  <p className="text-xs text-[#71717A]">
+                    {isEn
+                      ? 'No files attached to this task yet.'
+                      : 'К поручению еще не прикреплены файлы или фото.'}
+                  </p>
+                ) : (
+                  <AttachmentListRenderer
+                    attachments={taskAttachments}
+                    lang={language}
+                    onRemove={canEditTasks ? handleRemoveTaskAttachment : undefined}
+                  />
+                )}
+              </div>
+            )}
+
             {/* Working Description / Notes Form */}
             <form onSubmit={handleSaveNotes} className="space-y-2.5">
               <label className="flex items-center gap-2 text-xs font-medium text-[#D4D4D8]">
@@ -849,6 +944,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         <p className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
                           {msg.message_text || msg.text || msg.content}
                         </p>
+                        <AttachmentListRenderer
+                          attachments={msg.attachments}
+                          lang={language}
+                          compact
+                        />
                       </div>
                     );
                   })
@@ -857,34 +957,53 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
 
               {onSendMessage && (
                 <form onSubmit={handlePostComment} className="space-y-2 pt-1">
-                  <textarea
-                    rows={2}
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    placeholder={t('drawer.threadPlaceholder')}
-                    className="w-full rounded-lg border border-[#262626] bg-[#111113] p-2.5 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
-                  />
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="inline-flex items-center gap-1.5 text-[11px] text-[#A1A1AA] cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={commentUrgent}
-                        onChange={(e) => setCommentUrgent(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-[#3F3F46] bg-[#0D0D0F]"
-                      />
-                      <span>Telegram Push</span>
-                    </label>
+                  {commentAttachments.length > 0 && (
+                    <PendingAttachmentsStrip
+                      attachments={commentAttachments}
+                      onRemove={(id) =>
+                        setCommentAttachments((prev) => prev.filter((a) => a.id !== id))
+                      }
+                      className="rounded-lg border border-white/[0.08]"
+                    />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={commentFileInputRef}
+                      type="file"
+                      multiple
+                      accept={ACCEPTED_ATTACHMENT_TYPES}
+                      onChange={handleCommentFilesSelected}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => commentFileInputRef.current?.click()}
+                      className="w-9 h-9 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition"
+                      title={isEn ? 'Attach file' : 'Прикрепить файл'}
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+                    <input
+                      type="text"
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      placeholder={t('drawer.threadPlaceholder')}
+                      className="flex-1 h-10 rounded-xl border border-white/10 bg-[#111113] px-3 text-xs text-white placeholder-[#52525B] focus:border-zinc-500 focus:outline-none"
+                    />
                     <button
                       type="submit"
-                      disabled={isSendingComment || !commentText.trim()}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
+                      disabled={
+                        isSendingComment ||
+                        (!commentText.trim() && commentAttachments.length === 0)
+                      }
+                      className="w-9 h-9 rounded-xl bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors"
+                      title={t('drawer.threadSendBtn')}
                     >
                       {isSendingComment ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
                         <Send className="w-3.5 h-3.5" />
                       )}
-                      <span>{t('drawer.threadSendBtn')}</span>
                     </button>
                   </div>
                 </form>

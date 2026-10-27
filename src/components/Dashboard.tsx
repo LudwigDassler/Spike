@@ -50,9 +50,13 @@ import {
   LogOut,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
+  Paperclip,
+  Link2,
 } from 'lucide-react';
 import {
   AccessLevel,
+  AttachmentItem,
   AuditLogRecord,
   BillingCycle,
   BillingInvoiceRecord,
@@ -89,7 +93,15 @@ import { TedCloudAiDrawer } from './TedCloudAiDrawer';
 import { CommandBarModal } from './CommandBarModal';
 import { TeamworkGraphView } from './TeamworkGraphView';
 import { SubscriptionCheckoutModal, PrintableInvoiceModal } from './BillingModals';
-import { buildBuiltInChecklistForTask } from '../utils/enterpriseLogic';
+import {
+  buildBuiltInChecklistForTask,
+  normalizeAttachments,
+} from '../utils/enterpriseLogic';
+import {
+  AttachmentListRenderer,
+  PendingAttachmentsStrip,
+  processAttachmentFiles,
+} from './AttachmentSystem';
 import { useLocale } from '../i18n/LocaleContext';
 import {
   ActiveMessengerThread,
@@ -103,6 +115,7 @@ interface DashboardProps {
   company: Company | null;
   currentProfile: OrganizationNode | null;
   activeChatId: string | null;
+  botUsername?: string;
   nodes: OrganizationNode[];
   tasks: TaskRecord[];
   leads: CrmLeadRecord[];
@@ -142,6 +155,7 @@ const CUSTOM_DEPTS_STORAGE_PREFIX = 'tedcloud_custom_departments_';
 export const Dashboard: React.FC<DashboardProps> = ({
   company,
   currentProfile,
+  botUsername: serverBotUsername,
   nodes,
   tasks,
   leads,
@@ -287,10 +301,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   });
   const [commText, setCommText] = useState<string>('');
   const [commUrgent, setCommUrgent] = useState<boolean>(false);
+  const [commAttachments, setCommAttachments] = useState<AttachmentItem[]>([]);
+  const [isProcessingCommAttachment, setIsProcessingCommAttachment] = useState<boolean>(false);
   const [isSendingComm, setIsSendingComm] = useState<boolean>(false);
   const [initialTaskDraft, setInitialTaskDraft] = useState<InitialTaskDraft | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
   const avatarFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const commFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Confirm Dialog state
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmAction | null>(null);
@@ -380,8 +397,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return company?.payment_region || (localStorage.getItem('tedcloud_payment_region') as PaymentGatewayRegion | null) || 'RU';
   });
   const [botUsername, setBotUsername] = useState<string>(() => {
-    return localStorage.getItem('tedcloud_bot_username') || 'TedCloudEnterpriseBot';
+    const stored = (localStorage.getItem('tedcloud_bot_username') || '').replace(/^@/, '').trim();
+    return stored === 'TedCloudEnterpriseBot' ? '' : stored;
   });
+
+  useEffect(() => {
+    const cleanServerBot = (serverBotUsername || '').replace(/^@/, '').trim();
+    if (cleanServerBot && cleanServerBot !== 'TedCloudEnterpriseBot') {
+      setBotUsername(cleanServerBot);
+      localStorage.setItem('tedcloud_bot_username', cleanServerBot);
+    }
+  }, [serverBotUsername]);
 
   // Payer Requisites (Реквизиты плательщика — companies.billing_details)
   const [payerLegalName, setPayerLegalName] = useState<string>(
@@ -932,11 +958,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleSaveNodePermissionsMatrix = async (
     nodeId: string,
     accessLevel: AccessLevel,
-    permissions: EmployeePermissions
+    permissions: EmployeePermissions,
+    profileUpdates?: {
+      name?: string;
+      role_type?: string;
+      department?: string | null;
+      email?: string | null;
+    }
   ) => {
     setBusyRecordId(nodeId);
     try {
       const res = await onPatchRecord('organization_nodes', nodeId, {
+        ...(profileUpdates || {}),
         access_level: accessLevel,
         permissions,
       });
@@ -1013,10 +1046,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const handleCommFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsProcessingCommAttachment(true);
+    try {
+      const processed = await processAttachmentFiles(files);
+      setCommAttachments((prev) => [...prev, ...processed]);
+    } catch (err: any) {
+      showToast(
+        err?.message || (isEn ? 'Failed to attach file' : 'Ошибка прикрепления файла')
+      );
+    } finally {
+      setIsProcessingCommAttachment(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   // Send Corporate Message from Split-View Messenger (Инфополе и Связь)
   const submitCurrentCommMessage = async () => {
     const msgBody = commText.trim();
-    if (!msgBody || !onSendMessage || isSendingComm) return;
+    if ((!msgBody && commAttachments.length === 0) || !onSendMessage || isSendingComm) return;
+
+    const finalText =
+      msgBody ||
+      (isEn
+        ? `📎 Attached: ${commAttachments.map((a) => a.name).join(', ')}`
+        : `📎 Вложение: ${commAttachments.map((a) => a.name).join(', ')}`);
 
     setIsSendingComm(true);
     try {
@@ -1052,15 +1108,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
         scope_type: targetType,
         recipient_id: recipientId,
         target_department: targetDepartment,
-        message_text: msgBody,
-        text: msgBody,
+        message_text: finalText,
+        text: finalText,
         is_urgent: commUrgent,
         is_read: false,
+        attachments: commAttachments,
       };
 
       const res = await onSendMessage(payload);
       if (res.ok) {
         setCommText('');
+        setCommAttachments([]);
+        setCommUrgent(false);
         showToast(t('comm.sentToast'));
       }
     } finally {
@@ -1601,7 +1660,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <main className="flex-1 px-4 sm:px-6 py-5 sm:py-6 pb-24 lg:pb-8 max-w-7xl w-full max-w-full overflow-x-hidden mx-auto space-y-6">
           {/* Page Header & Contextual Controls */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div
+            className={`${
+              activeSection === 'communications' && mobileChatOpen ? 'hidden lg:flex' : 'flex'
+            } flex-col sm:flex-row sm:items-center justify-between gap-4`}
+          >
             <div>
               <h1 className="text-xl font-semibold text-white tracking-tight">
                 {activeSection === 'overview' && t('header.overviewTitle')}
@@ -1612,7 +1675,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {activeSection === 'profile' && t('header.profileTitle')}
                 {activeSection === 'workspace' && t('header.workspaceTitle')}
               </h1>
-              <p className="text-xs text-[#8E8E93] mt-1">
+              <p className="hidden sm:block text-xs text-[#8E8E93] mt-1">
                 {activeSection === 'overview' && t('header.overviewSubtitle')}
                 {activeSection === 'tasks' && t('header.tasksSubtitle')}
                 {activeSection === 'crm' && t('header.crmSubtitle')}
@@ -3446,7 +3509,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   mobileChatOpen ? 'flex' : 'hidden lg:flex'
                 } flex-1 flex-col min-w-0 bg-[#111113]`}
               >
-                {/* Шапка диалога */}
+                {/* Чистая 1-строчная шапка диалога (Linear / Telegram iOS standard) */}
                 {(() => {
                   const selectedColleague =
                     activeCommThread.type === 'direct'
@@ -3468,16 +3531,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ]
                           .filter(Boolean)
                           .join(' · ') ||
-                        (isEn
-                          ? 'Private Direct Message'
-                          : 'Личный защищенный диалог (Direct)')
+                        (isEn ? 'Direct Message' : 'Личный диалог')
                       : activeCommThread.type === 'department'
                       ? isEn
-                        ? 'Department channel · Visible to department members and management'
-                        : 'Канал подразделения · Сообщения видны сотрудникам отдела и руководству'
+                        ? 'Department channel'
+                        : 'Канал подразделения'
                       : isEn
-                      ? 'Public corporate stream · Visible to all company employees'
-                      : 'Публичный корпоративный поток · Виден всем сотрудникам компании';
+                      ? 'Company-wide broadcast stream'
+                      : 'Корпоративный поток компании';
 
                   const tgActive =
                     activeCommThread.type === 'direct'
@@ -3485,66 +3546,48 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       : safeNodes.some((n) => Boolean(n.telegram_chat_id));
 
                   return (
-                    <div className="px-4 sm:px-5 py-3.5 border-b border-white/[0.07] bg-[#131316] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {/* Кнопка возврата к списку диалогов на мобильном экране (< 1024px) */}
+                    <div className="px-3.5 sm:px-5 py-2.5 border-b border-white/[0.07] bg-[#131316] flex items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {/* Компактная круглая/квадратная иконка возврата ← (w-8 h-8) на мобильном */}
                         <button
                           type="button"
                           onClick={() => setMobileChatOpen(false)}
-                          className="lg:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] text-xs font-medium text-white shrink-0"
+                          aria-label={isEn ? 'Back to dialogs' : 'Назад к диалогам'}
+                          className="lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-white shrink-0 transition-colors"
                         >
-                          <ArrowLeft className="w-3.5 h-3.5" />
-                          <span>{isEn ? 'All Threads' : 'Все диалоги'}</span>
+                          <ArrowLeft className="w-4 h-4" />
                         </button>
 
-                        {activeCommThread.type === 'direct' && (
+                        {activeCommThread.type === 'direct' ? (
                           <UserAvatar
                             name={headerTitle}
                             avatarUrl={selectedColleague?.avatar_url}
                             size="md"
                           />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center shrink-0">
+                            {activeCommThread.type === 'department' ? (
+                              <Hash className="w-4 h-4 text-zinc-300" />
+                            ) : (
+                              <Radio className="w-4 h-4 text-emerald-400" />
+                            )}
+                          </div>
                         )}
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h2 className="text-sm font-semibold text-white truncate">
-                              {headerTitle}
-                            </h2>
-                            {activeCommThread.type === 'direct' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#1C1C22] text-[#A1A1AA] border border-[#2C2C35] shrink-0">
-                                <Lock className="w-2.5 h-2.5 text-emerald-400" />
-                                <span>{isEn ? 'Private DM' : 'Приватный диалог'}</span>
+
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-sm font-semibold text-white truncate">
+                            {headerTitle}
+                          </h2>
+                          <div className="flex items-center gap-2 text-[11px] text-[#8E8E93] truncate mt-0.5">
+                            <span className="truncate">{headerSubtitle}</span>
+                            {tgActive && (
+                              <span className="inline-flex items-center gap-1 text-emerald-400 font-medium shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                <span>TG Online</span>
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-[#8E8E93] truncate mt-0.5">
-                            {headerSubtitle}
-                          </p>
                         </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border ${
-                            tgActive
-                              ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                              : 'bg-[#18181B] text-[#71717A] border-[#27272A]'
-                          }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              tgActive ? 'bg-emerald-400' : 'bg-[#52525B]'
-                            }`}
-                          />
-                          <span>
-                            {tgActive
-                              ? isEn
-                                ? 'Telegram sync active'
-                                : 'Доставка в Telegram активна'
-                              : isEn
-                              ? 'Telegram not linked'
-                              : 'Telegram не привязан у получателя'}
-                          </span>
-                        </span>
                       </div>
                     </div>
                   );
@@ -3612,6 +3655,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                       const messageBody =
                         msg.message_text || msg.text || msg.content || '';
+                      const msgAttachments = normalizeAttachments(msg.attachments);
 
                       const shortTime = msg.created_at
                         ? new Date(msg.created_at).toLocaleTimeString(
@@ -3646,7 +3690,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 : 'bg-[#16161A] border-[#26262C] rounded-bl-sm'
                             }`}
                           >
-                            {/* Компактная шапка внутри бабла: Имя, роль, опциональная плашка Срочно и полупрозрачная кнопка + В задачу по ховеру */}
+                            {/* Компактная шапка внутри бабла */}
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                                 <span className="text-xs font-semibold text-white truncate">
@@ -3691,15 +3735,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               )}
                             </div>
 
-                            {/* Текст сообщения + аккуратное время в правом нижнем углу бабла */}
-                            <div className="flex items-end justify-between gap-3 pt-0.5">
-                              <div className="text-sm text-zinc-100 leading-relaxed whitespace-pre-wrap break-words">
-                                {messageBody}
+                            {/* Текст сообщения + вложения + аккуратное время в правом нижнем углу бабла */}
+                            <div className="space-y-1.5 pt-0.5">
+                              <div className="flex items-end justify-between gap-3">
+                                <div className="text-sm text-zinc-100 leading-relaxed whitespace-pre-wrap break-words">
+                                  {messageBody}
+                                </div>
+                                {shortTime && (
+                                  <span className="text-[10px] tabular-nums text-zinc-400/75 shrink-0 select-none leading-none pb-0.5">
+                                    {shortTime}
+                                  </span>
+                                )}
                               </div>
-                              {shortTime && (
-                                <span className="text-[10px] tabular-nums text-zinc-400/75 shrink-0 select-none leading-none pb-0.5">
-                                  {shortTime}
-                                </span>
+
+                              {msgAttachments.length > 0 && (
+                                <AttachmentListRenderer
+                                  attachments={msgAttachments}
+                                  compact
+                                />
                               )}
                             </div>
                           </div>
@@ -3718,77 +3771,94 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   )}
                 </div>
 
-                {/* Нижняя панель ввода (Composer): по умолчанию не срочно, иконка молнии рядом с кнопкой отправки */}
-                <form
-                  onSubmit={handleSendCorporateMessage}
-                  className="p-3.5 border-t border-white/[0.07] bg-[#0E0E11] flex items-end gap-2.5"
-                >
-                  <div className="flex-1 min-w-0">
-                    <textarea
-                      rows={2}
-                      value={commText}
-                      onChange={(e) => setCommText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          void submitCurrentCommMessage();
-                        }
-                      }}
-                      placeholder={
-                        activeCommThread.type === 'direct'
-                          ? isEn
-                            ? `Message ${activeCommThread.label}... (Enter to send)`
-                            : `Написать личное сообщение для ${activeCommThread.label}... (Enter — отправить)`
-                          : activeCommThread.type === 'department'
-                          ? isEn
-                            ? `Message #${formatRole(activeCommThread.label)}... (Enter to send)`
-                            : `Сообщение в отдел #${activeCommThread.label}... (Enter — отправить)`
-                          : isEn
-                          ? 'Post a company-wide broadcast... (Enter to send)'
-                          : 'Опубликовать циркуляр по компании... (Enter — отправить)'
+                {/* Превью выбранных вложений перед отправкой */}
+                {commAttachments.length > 0 && (
+                  <div className="px-3 pt-2.5 pb-1 border-t border-white/[0.06] bg-zinc-950/90">
+                    <PendingAttachmentsStrip
+                      attachments={commAttachments}
+                      onRemove={(id) =>
+                        setCommAttachments((prev) => prev.filter((item) => item.id !== id))
                       }
-                      className="w-full rounded-xl border border-[#262626] bg-[#16161A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none leading-relaxed resize-none"
                     />
                   </div>
+                )}
 
-                  <div className="flex items-center gap-2 shrink-0 pb-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setCommUrgent((prev) => !prev)}
-                      aria-label={isEn ? 'Urgent Telegram Push' : 'Срочный Push в Telegram'}
-                      title={
-                        commUrgent
-                          ? isEn
-                            ? 'Urgent push enabled (click to make normal)'
-                            : 'Срочный Push-статус включен (отметить как обычное)'
-                          : isEn
-                          ? 'Mark message as Urgent'
-                          : 'Отметить сообщение как «Срочно»'
-                      }
-                      className={`inline-flex items-center justify-center w-9 h-9 rounded-xl border transition-colors ${
-                        commUrgent
-                          ? 'bg-red-500/15 border-red-500/40 text-red-400'
-                          : 'bg-[#16161A] border-[#262626] text-[#71717A] hover:text-white hover:border-[#3F3F46]'
-                      }`}
-                    >
-                      <Zap className="w-4 h-4" />
-                    </button>
+                {/* Современная 1-строчная панель ввода (Composer) со скрепкой, полем Сообщение..., молнией и отправкой */}
+                <form
+                  onSubmit={handleSendCorporateMessage}
+                  className="flex items-center gap-2 p-2.5 border-t border-white/[0.08] bg-zinc-950/90"
+                >
+                  <input
+                    ref={commFileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                    onChange={handleCommFilesSelected}
+                    className="hidden"
+                  />
 
-                    <button
-                      type="submit"
-                      disabled={isSendingComm || !commText.trim()}
-                      className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-xl bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
-                    >
-                      {isSendingComm ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Send className="w-3.5 h-3.5" />
-                      )}
-                      <span>
-                        {isSendingComm ? t('comm.sendingBtn') : isEn ? 'Send' : 'Отправить'}
-                      </span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={isProcessingCommAttachment || isSendingComm}
+                    onClick={() => commFileInputRef.current?.click()}
+                    title={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
+                    aria-label={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
+                    className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-white/[0.08] bg-[#16161A] text-zinc-400 hover:text-white hover:border-white/20 transition-colors shrink-0"
+                  >
+                    {isProcessingCommAttachment ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Paperclip className="w-4 h-4" />
+                    )}
+                  </button>
+
+                  <input
+                    type="text"
+                    value={commText}
+                    onChange={(e) => setCommText(e.target.value)}
+                    placeholder={isEn ? 'Message...' : 'Сообщение...'}
+                    className="flex-1 min-w-0 h-10 rounded-xl border border-white/[0.08] bg-[#16161A] px-3.5 text-sm text-white placeholder:text-zinc-500 focus:border-white/30 focus:outline-none"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setCommUrgent((prev) => !prev)}
+                    aria-label={isEn ? 'Urgent Telegram Push' : 'Срочный Push в Telegram'}
+                    title={
+                      commUrgent
+                        ? isEn
+                          ? 'Urgent push enabled (click to make normal)'
+                          : 'Срочный Push-статус включен (отметить как обычное)'
+                        : isEn
+                        ? 'Mark message as Urgent'
+                        : 'Отметить сообщение как «Срочно»'
+                    }
+                    className={`inline-flex items-center justify-center w-9 h-9 rounded-xl border transition-colors shrink-0 ${
+                      commUrgent
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+                        : 'bg-[#16161A] border-white/[0.08] text-zinc-400 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    <Zap className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={
+                      isSendingComm || (!commText.trim() && commAttachments.length === 0)
+                    }
+                    aria-label={isEn ? 'Send message' : 'Отправить сообщение'}
+                    className="inline-flex items-center justify-center gap-1.5 h-9 w-9 sm:w-auto sm:px-3.5 rounded-xl bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-40 text-xs font-semibold transition-colors shrink-0"
+                  >
+                    {isSendingComm ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {isSendingComm ? t('comm.sendingBtn') : isEn ? 'Send' : 'Отправить'}
+                    </span>
+                  </button>
                 </form>
               </section>
             </div>
@@ -3848,123 +3918,206 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
-                            <th className="py-3 px-5">{t('team.colEmployee')}</th>
-                            <th className="py-3 px-5">{t('team.colJobTitle')}</th>
-                            <th className="py-3 px-5">{t('team.colAccess')}</th>
-                            <th className="py-3 px-5">{t('team.colInviteCode')}</th>
-                            <th className="py-3 px-5">{t('team.colTelegram')}</th>
-                            <th className="py-3 px-5 text-right">{t('team.colActions')}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/[0.05] text-xs">
-                          {filteredNodes.map((node) => {
-                            const { access_level, permissions } = normalizeEmployeePermissions(
-                              node.access_level,
-                              node.permissions,
-                              node.role_type
-                            );
-                            const activeFlagsCount = PERMISSION_KEYS.filter(
-                              (k) => permissions[k]
-                            ).length;
+                    <>
+                      {/* Мобильный список кликабельных карточек сотрудников (< 768px) */}
+                      <div className="md:hidden divide-y divide-white/[0.06]">
+                        {filteredNodes.map((node) => {
+                          const { access_level, permissions } = normalizeEmployeePermissions(
+                            node.access_level,
+                            node.permissions,
+                            node.role_type
+                          );
+                          const activeFlagsCount = PERMISSION_KEYS.filter(
+                            (k) => permissions[k]
+                          ).length;
 
-                            return (
-                              <tr key={node.id} className="hover:bg-[#16161A] transition-colors">
-                                <td className="py-4 px-5">
-                                  <div className="flex items-center gap-3">
-                                    <UserAvatar
-                                      name={node.name}
-                                      avatarUrl={node.avatar_url}
-                                      size="md"
-                                    />
-                                    <div className="min-w-0">
-                                      <div className="font-semibold text-white truncate">
-                                        {node.name}
-                                      </div>
-                                      {node.email && (
-                                        <div className="text-[11px] text-[#71717A] mt-0.5 truncate">
-                                          {node.email}
-                                        </div>
-                                      )}
-                                    </div>
+                          return (
+                            <div
+                              key={node.id}
+                              onClick={() => setPermissionsModalNode(node)}
+                              className="p-4 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/[0.04] transition-colors group"
+                            >
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <UserAvatar
+                                  name={node.name}
+                                  avatarUrl={node.avatar_url}
+                                  size="md"
+                                />
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-white truncate">
+                                      {node.name}
+                                    </span>
+                                    {node.telegram_chat_id && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-semibold text-emerald-400 shrink-0">
+                                        TG
+                                      </span>
+                                    )}
                                   </div>
-                                </td>
-
-                                <td className="py-4 px-5">
-                                  <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] text-white border border-white/[0.08] font-medium whitespace-nowrap">
+                                  <div className="text-[11px] text-[#8E8E93] truncate">
                                     {formatRole(node.role_type)}
-                                  </div>
-                                  <div className="text-[11px] text-[#8E8E93] mt-1">
                                     {node.department
-                                      ? formatRole(node.department)
-                                      : t('team.noDepartment')}
+                                      ? ` · ${formatRole(node.department)}`
+                                      : ''}
                                   </div>
-                                </td>
-
-                                <td className="py-4 px-5">
-                                  <div className="flex flex-col items-start gap-1.5">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[#E4E4E7] font-medium whitespace-nowrap tabular-nums">
+                                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[10px] text-[#E4E4E7] font-medium tabular-nums">
                                       {t(`accessShort.${access_level}`)} ({activeFlagsCount}/7)
                                     </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setPermissionsModalNode(node)}
-                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/[0.08] bg-[#16161A] hover:bg-white/[0.08] text-[11px] font-medium text-white transition-colors whitespace-nowrap"
-                                    >
-                                      <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
-                                      <span>{t('permModal.btnLabel')}</span>
-                                    </button>
-                                  </div>
-                                </td>
-
-                                <td className="py-4 px-5">
-                                  <div className="flex flex-col items-start gap-1.5">
-                                    <span className="text-xs px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-white font-semibold whitespace-nowrap tabular-nums">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[10px] text-zinc-300 font-semibold tabular-nums">
                                       {node.invite_code || 'TC-0000'}
                                     </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setInspectInviteNode(node)}
-                                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#A1A1AA] hover:text-white bg-white/[0.04] hover:bg-white/[0.08] transition-colors whitespace-nowrap"
-                                    >
-                                      <KeyRound className="w-3 h-3" />
-                                      <span>{t('team.inviteLinkBtn')}</span>
-                                    </button>
                                   </div>
-                                </td>
+                                </div>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-[#71717A] group-hover:text-white shrink-0 transition-colors" />
+                            </div>
+                          );
+                        })}
+                      </div>
 
-                                <td className="py-4 px-5">
-                                  {node.telegram_chat_id ? (
-                                    <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium whitespace-nowrap tabular-nums">
-                                      <Send className="w-3 h-3" />
-                                      {t('team.connected')} ({node.telegram_chat_id})
-                                    </span>
-                                  ) : (
-                                    <span className="text-[#71717A] whitespace-nowrap">
-                                      {t('team.pendingInvite')}
-                                    </span>
-                                  )}
-                                </td>
+                      {/* Десктопная таблица со 100% кликабельными строками сотрудников */}
+                      <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
+                              <th className="py-3 px-5">{t('team.colEmployee')}</th>
+                              <th className="py-3 px-5">{t('team.colJobTitle')}</th>
+                              <th className="py-3 px-5">{t('team.colAccess')}</th>
+                              <th className="py-3 px-5">{t('team.colInviteCode')}</th>
+                              <th className="py-3 px-5">{t('team.colTelegram')}</th>
+                              <th className="py-3 px-5 text-right">{t('team.colActions')}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/[0.05] text-xs">
+                            {filteredNodes.map((node) => {
+                              const { access_level, permissions } = normalizeEmployeePermissions(
+                                node.access_level,
+                                node.permissions,
+                                node.role_type
+                              );
+                              const activeFlagsCount = PERMISSION_KEYS.filter(
+                                (k) => permissions[k]
+                              ).length;
 
-                                <td className="py-4 px-5 text-right">
-                                  <button
-                                    onClick={() =>
-                                      requestDeleteRecord('organization_nodes', node.id, node.name)
-                                    }
-                                    className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              return (
+                                <tr
+                                  key={node.id}
+                                  onClick={() => setPermissionsModalNode(node)}
+                                  className="cursor-pointer hover:bg-white/[0.04] transition-colors group"
+                                >
+                                  <td className="py-4 px-5">
+                                    <div className="flex items-center gap-3">
+                                      <UserAvatar
+                                        name={node.name}
+                                        avatarUrl={node.avatar_url}
+                                        size="md"
+                                      />
+                                      <div className="min-w-0">
+                                        <div className="font-semibold text-white truncate">
+                                          {node.name}
+                                        </div>
+                                        {node.email && (
+                                          <div className="text-[11px] text-[#71717A] mt-0.5 truncate">
+                                            {node.email}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  <td className="py-4 px-5">
+                                    <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] text-white border border-white/[0.08] font-medium whitespace-nowrap">
+                                      {formatRole(node.role_type)}
+                                    </div>
+                                    <div className="text-[11px] text-[#8E8E93] mt-1">
+                                      {node.department
+                                        ? formatRole(node.department)
+                                        : t('team.noDepartment')}
+                                    </div>
+                                  </td>
+
+                                  <td className="py-4 px-5">
+                                    <div className="flex flex-col items-start gap-1.5">
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[#E4E4E7] font-medium whitespace-nowrap tabular-nums">
+                                        {t(`accessShort.${access_level}`)} ({activeFlagsCount}/7)
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setPermissionsModalNode(node);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/[0.08] bg-[#16161A] hover:bg-white/[0.08] text-[11px] font-medium text-white transition-colors whitespace-nowrap"
+                                      >
+                                        <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
+                                        <span>{t('permModal.btnLabel')}</span>
+                                      </button>
+                                    </div>
+                                  </td>
+
+                                  <td
+                                    className="py-4 px-5"
+                                    onClick={(e) => e.stopPropagation()}
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                    <div className="flex flex-col items-start gap-1.5">
+                                      <span className="text-xs px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-white font-semibold whitespace-nowrap tabular-nums">
+                                        {node.invite_code || 'TC-0000'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setInspectInviteNode(node)}
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#A1A1AA] hover:text-white bg-white/[0.04] hover:bg-white/[0.08] transition-colors whitespace-nowrap"
+                                      >
+                                        <KeyRound className="w-3 h-3" />
+                                        <span>{t('team.inviteLinkBtn')}</span>
+                                      </button>
+                                    </div>
+                                  </td>
+
+                                  <td className="py-4 px-5">
+                                    {node.telegram_chat_id ? (
+                                      <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium whitespace-nowrap tabular-nums">
+                                        <Send className="w-3 h-3" />
+                                        {t('team.connected')} ({node.telegram_chat_id})
+                                      </span>
+                                    ) : (
+                                      <span className="text-[#71717A] whitespace-nowrap">
+                                        {t('team.pendingInvite')}
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  <td
+                                    className="py-4 px-5 text-right"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="inline-flex items-center justify-end gap-2">
+                                      <button
+                                        onClick={() =>
+                                          requestDeleteRecord('organization_nodes', node.id, node.name)
+                                        }
+                                        className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPermissionsModalNode(node)}
+                                        aria-label={isEn ? 'Open employee card' : 'Открыть карточку сотрудника'}
+                                        className="p-1.5 rounded-md text-[#71717A] group-hover:text-white hover:bg-white/[0.06] transition-colors"
+                                      >
+                                        <ChevronRight className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   )}
                 </section>
               )}
@@ -4180,43 +4333,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     )}
 
-                    {/* Компактная информационная панель системных идентификаторов */}
-                    <div className="rounded-lg border border-white/[0.07] bg-[#141418] p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2.5">
-                        <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <div>
-                          <div className="text-[11px] text-[#8E8E93]">
-                            {isEn ? 'Personal Login Code' : 'Персональный код входа'}
-                          </div>
-                          <div className="font-semibold text-white mt-0.5 tabular-nums">
-                            {currentProfile.invite_code || 'TC-0000'}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(
-                            currentProfile.invite_code || 'TC-0000',
-                            'profile-invite-code'
-                          )
-                        }
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
-                      >
-                        {copiedToken === 'profile-invite-code' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>{t('invite.copied')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                            <span>{t('invite.copyCode')}</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
                     <div className="pt-1 flex justify-end">
                       <button
                         type="submit"
@@ -4236,17 +4352,94 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </form>
                 </div>
 
-                {/* Правая колонка: Синхронизация с Telegram-ботом + Активный рабочий контур */}
+                {/* Правая колонка: БЛОК 4 — 1. Веб-пропуск для входа с браузера + 2. Синхронизация с Telegram + 3. Активный рабочий контур */}
                 <div className="space-y-6">
-                  {/* Карточка синхронизации с Telegram-ботом */}
+                  {/* Карточка 1: «Веб-пропуск для входа с браузера» */}
+                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <KeyRound className="w-4 h-4 text-indigo-400" />
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                          {isEn
+                            ? 'Browser Web Pass'
+                            : 'Веб-пропуск для входа с браузера'}
+                        </h3>
+                      </div>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-semibold text-white tabular-nums">
+                        {currentProfile.invite_code || 'TC-0000'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-[#8E8E93] leading-relaxed">
+                      {isEn
+                        ? 'Use your personal access code or 1-click web link to sign in to this workspace from any desktop or mobile browser.'
+                        : 'Используйте персональный код доступа или прямую веб-ссылку для мгновенного входа в рабочее пространство с любого компьютера или смартфона.'}
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(
+                            `${window.location.origin}/?invite=${
+                              currentProfile.invite_code || 'TC-0000'
+                            }`,
+                            'profile-web-pass-link'
+                          )
+                        }
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                      >
+                        {copiedToken === 'profile-web-pass-link' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{t('invite.copied')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Link2 className="w-3.5 h-3.5" />
+                            <span>
+                              {isEn
+                                ? 'Copy Quick Web Login Link'
+                                : 'Скопировать веб-ссылку быстрого входа'}
+                            </span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(
+                            currentProfile.invite_code || 'TC-0000',
+                            'profile-invite-code'
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
+                      >
+                        {copiedToken === 'profile-invite-code' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{t('invite.copied')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                            <span>{t('invite.copyCode')}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Карточка 2: «Синхронизация с Telegram» */}
                   <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <Send className="w-4 h-4 text-emerald-400" />
                         <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
                           {isEn
-                            ? 'Telegram Bot Synchronization'
-                            : 'Синхронизация с Telegram-ботом'}
+                            ? 'Telegram Synchronization'
+                            : 'Синхронизация с Telegram'}
                         </h3>
                       </div>
                       <span
@@ -4264,8 +4457,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <span>
                           {currentProfile.telegram_chat_id
                             ? isEn
-                              ? 'Connected'
-                              : 'Подключено'
+                              ? `Account Linked (ID: ${currentProfile.telegram_chat_id})`
+                              : `Аккаунт привязан (ID: ${currentProfile.telegram_chat_id})`
                             : isEn
                             ? 'Pending link'
                             : 'Ожидает привязки'}
@@ -4274,50 +4467,130 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
 
                     <p className="text-xs text-[#8E8E93] leading-relaxed">
-                      {isEn
+                      {currentProfile.telegram_chat_id
+                        ? isEn
+                          ? `Your profile is actively synchronized with Telegram (Chat ID: ${currentProfile.telegram_chat_id}). Instant notifications for tasks and direct messages are enabled.`
+                          : `Аккаунт привязан (ID: ${currentProfile.telegram_chat_id}). Вы получаете мгновенные уведомления о новых задачах и личных сообщениях в Telegram.`
+                        : isEn
                         ? 'Link your personal Telegram account to receive instant push notifications for new tasks and direct messages from colleagues.'
                         : 'Подключите личный аккаунт Telegram для мгновенного получения уведомлений о новых задачах и прямых сообщений от коллег.'}
                     </p>
 
                     <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                      <a
-                        href={`https://t.me/${
-                          botUsername || 'TedCloudEnterpriseBot'
-                        }?start=${currentProfile.invite_code || 'TC-0000'}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{isEn ? 'Open Telegram Bot' : 'Открыть Telegram-бот'}</span>
-                      </a>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(
-                            `https://t.me/${
-                              botUsername || 'TedCloudEnterpriseBot'
-                            }?start=${currentProfile.invite_code || 'TC-0000'}`,
-                            'profile-link'
-                          )
-                        }
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
-                      >
-                        {copiedToken === 'profile-link' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>{t('invite.copied')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                      {currentProfile.telegram_chat_id ? (
+                        botUsername ? (
+                          <a
+                            href={`https://t.me/${botUsername}?start=${
+                              currentProfile.invite_code || 'TC-0000'
+                            }`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
+                          >
+                            <Send className="w-3.5 h-3.5 text-emerald-400" />
                             <span>
-                              {isEn ? 'Copy Activation Link' : 'Скопировать ссылку привязки'}
+                              {isEn ? 'Change / Re-link Telegram' : 'Изменить / Перепривязать'}
                             </span>
-                          </>
-                        )}
-                      </button>
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyToClipboard(
+                                `/start ${currentProfile.invite_code || 'TC-0000'}`,
+                                'profile-relink-cmd'
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
+                          >
+                            {copiedToken === 'profile-relink-cmd' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>{t('invite.copied')}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                                <span>
+                                  {isEn ? 'Change / Re-link Telegram' : 'Изменить / Перепривязать'}
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        )
+                      ) : botUsername ? (
+                        <>
+                          <a
+                            href={`https://t.me/${botUsername}?start=${
+                              currentProfile.invite_code || 'TC-0000'
+                            }`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>
+                              {isEn
+                                ? 'Connect Telegram Notifications'
+                                : 'Подключить уведомления в Telegram'}
+                            </span>
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyToClipboard(
+                                `https://t.me/${botUsername}?start=${
+                                  currentProfile.invite_code || 'TC-0000'
+                                }`,
+                                'profile-link'
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
+                          >
+                            {copiedToken === 'profile-link' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>{t('invite.copied')}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                                <span>
+                                  {isEn ? 'Copy Activation Link' : 'Скопировать ссылку привязки'}
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyToClipboard(
+                              `/start ${currentProfile.invite_code || 'TC-0000'}`,
+                              'profile-start-cmd'
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
+                        >
+                          {copiedToken === 'profile-start-cmd' ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>{t('invite.copied')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                              <span>
+                                {isEn
+                                  ? `Copy Bot Activation Command (/start ${currentProfile.invite_code || 'TC-0000'})`
+                                  : `Скопировать команду привязки (/start ${currentProfile.invite_code || 'TC-0000'})`}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -5376,11 +5649,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }}
       />
 
-      {/* Employee Granular Permissions Matrix Modal (БЛОК 1) */}
+      {/* Employee Inspector & Granular Permissions Matrix Modal (БЛОК 3) */}
       <PermissionsMatrixModal
         node={permissionsModalNode}
+        tasks={safeTasks}
+        departments={companyDepartments}
+        botUsername={botUsername}
+        canManageTeam={perms.team_manage}
+        onAddCompanyDepartment={handleAddDepartment}
         onClose={() => setPermissionsModalNode(null)}
         onSave={handleSaveNodePermissionsMatrix}
+        onDeleteNode={(nodeToDelete) => {
+          requestDeleteRecord('organization_nodes', nodeToDelete.id, nodeToDelete.name);
+        }}
       />
 
       {/* Slide-over Detail Drawer for Tasks & Deals */}
@@ -5412,7 +5693,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       />
 
-      {/* TedCloud Intelligence Drawer (БЛОК 1) */}
+      {/* TedCloud Intelligence Drawer (БЛОК 2) */}
       <TedCloudAiDrawer
         isOpen={isAiDrawerOpen}
         onClose={() => setIsAiDrawerOpen(false)}
@@ -5422,6 +5703,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         tasks={visibleTasks}
         leads={visibleLeads}
         messages={visibleMessages}
+        onRefreshWorkspace={onRefresh}
         onCreateFollowUpTask={(suggestedTitle) => {
           setInitialTaskDraft({
             title:
@@ -5541,13 +5823,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider mb-1.5">
-                    {t('invite.deepLinkLabel')}
+                    {isEn ? '1-Click Browser Web Login Link' : 'Веб-ссылка для быстрого входа (1 клик)'}
                   </label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       readOnly
-                      value={`https://t.me/${botUsername || 'TedCloudEnterpriseBot'}?start=${
+                      value={`${window.location.origin}/?invite=${
                         inspectInviteNode.invite_code || 'TC-0000'
                       }`}
                       className="w-full rounded-lg border border-[#2A2A2A] bg-[#0D0D0D] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
@@ -5556,15 +5838,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       type="button"
                       onClick={() =>
                         copyToClipboard(
-                          `https://t.me/${botUsername || 'TedCloudEnterpriseBot'}?start=${
+                          `${window.location.origin}/?invite=${
                             inspectInviteNode.invite_code || 'TC-0000'
                           }`,
-                          'modal-deep-link'
+                          'modal-web-link'
                         )
                       }
                       className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white text-black hover:bg-[#E4E4E7] transition-colors whitespace-nowrap"
                     >
-                      {copiedToken === 'modal-deep-link' ? (
+                      {copiedToken === 'modal-web-link' ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-emerald-600" />
                           <span>{t('invite.copied')}</span>
@@ -5578,6 +5860,47 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </button>
                   </div>
                 </div>
+                {botUsername && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider mb-1.5">
+                      {t('invite.deepLinkLabel')}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`https://t.me/${botUsername}?start=${
+                          inspectInviteNode.invite_code || 'TC-0000'
+                        }`}
+                        className="w-full rounded-lg border border-[#2A2A2A] bg-[#0D0D0D] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(
+                            `https://t.me/${botUsername}?start=${
+                              inspectInviteNode.invite_code || 'TC-0000'
+                            }`,
+                            'modal-deep-link'
+                          )
+                        }
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-[#333333] bg-[#222222] text-white hover:bg-[#2C2C2C] transition-colors whitespace-nowrap"
+                      >
+                        {copiedToken === 'modal-deep-link' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{t('invite.copied')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>{t('invite.copyLink')}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end">
                 <button

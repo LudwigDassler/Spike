@@ -1,5 +1,6 @@
 import {
   AiAssistantMode,
+  AttachmentItem,
   BillingCycle,
   CrmLeadRecord,
   CurrencyCode,
@@ -995,3 +996,45 @@ export function searchWorkspaceEntities(
     messages: matchedMessages.slice(0, 5),
   };
 }
+
+export function normalizeAttachments(raw: any): AttachmentItem[] {
+  if (!raw) return [];
+  let arr: any[] = [];
+  if (Array.isArray(raw)) {
+    arr = raw;
+  } else if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      arr = [];
+    }
+  }
+  return arr
+    .filter((item) => item && typeof item === 'object' && item.url)
+    .map((item, idx) => ({
+      id: String(item.id || `att_${idx + 1}`),
+      name: String(item.name || `file_${idx + 1}`),
+      mimeType: String(item.mimeType || item.type || 'application/octet-stream'),
+      size: Number(item.size || 0),
+      url: String(item.url),
+    }));
+}
+
+export function isImageAttachment(att?: Partial<AttachmentItem> | null): boolean {
+  if (!att) return false;
+  const mime = String(att.mimeType || '').toLowerCase();
+  if (mime.startsWith('image/')) return true;
+  const name = String(att.name || '').toLowerCase();
+  return /\.(png|jpe?g|webp|gif|svg)$/.test(name);
+}
+
+export function formatAttachmentSize(bytes?: number | null): string {
+  const b = Number(bytes || 0);
+  if (!Number.isFinite(b) || b <= 0) return '1 KB';
+  if (b >= 1024 * 1024) {
+    return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${Math.max(1, Math.round(b / 1024))} KB`;
+}
+

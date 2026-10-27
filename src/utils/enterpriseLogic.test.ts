@@ -9,6 +9,9 @@ import {
   searchWorkspaceEntities,
   formatError,
   formatRoleOrDept,
+  normalizeAttachments,
+  isImageAttachment,
+  formatAttachmentSize,
 } from './enterpriseLogic';
 
 test('parseTelegramUrgentMessage: sets isUrgent=false for standard messages', () => {
@@ -182,3 +185,16 @@ test('formatError: never returns [object Object] for PostgREST/Vercel error obje
   assert.equal(formatError({ code: '500', status: 500 }), '{"code":"500","status":500}');
   assert.equal(formatError(new Error('[object Object]')), 'Unknown error');
 });
+
+test('normalizeAttachments, isImageAttachment, formatAttachmentSize: handles JSON arrays and formats sizes', () => {
+  const raw = JSON.stringify([
+    { id: 'a1', name: 'contract.pdf', mimeType: 'application/pdf', size: 245760, url: 'data:application/pdf;base64,AAA' },
+    { id: 'a2', name: 'photo.webp', mimeType: 'image/webp', size: 81920, url: 'data:image/webp;base64,BBB' },
+  ]);
+  const list = normalizeAttachments(raw);
+  assert.equal(list.length, 2);
+  assert.equal(isImageAttachment(list[0]), false);
+  assert.equal(isImageAttachment(list[1]), true);
+  assert.equal(formatAttachmentSize(list[0].size), '240 KB');
+});
+

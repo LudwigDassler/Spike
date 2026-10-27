@@ -97,6 +97,14 @@ export interface TaskChecklistItem {
   done: boolean;
 }
 
+export interface AttachmentItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url: string;
+}
+
 export interface TaskRecord {
   id: string;
   company_id: string;
@@ -111,6 +119,7 @@ export interface TaskRecord {
   description?: string | null;
   notes?: string | null;
   checklist?: TaskChecklistItem[] | null;
+  attachments?: AttachmentItem[] | null;
   ai_summary?: string | null;
   due_date?: string | null;
   created_at?: string;
@@ -173,6 +182,7 @@ export interface WorkspaceMessageRecord {
   entity_type?: 'task' | 'lead' | 'direct' | 'department' | 'broadcast' | null;
   entity_id?: string | null;
   entity_title?: string | null;
+  attachments?: AttachmentItem[] | null;
   is_urgent?: boolean;
   is_read?: boolean;
   created_at?: string;

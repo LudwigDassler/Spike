@@ -744,6 +744,7 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'company_id',
     'created_by',
     'checklist',
+    'attachments',
     'ai_summary',
     'due_date',
   ],
@@ -794,6 +795,7 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'target_label',
     'message_text',
     'text',
+    'attachments',
     'is_urgent',
     'is_read',
     'created_at',
@@ -1673,6 +1675,73 @@ function normalizeCompanyRow(row: any) {
   };
 }
 
+function normalizeAttachmentsServer(raw: any): any[] {
+  if (!raw) return [];
+  let arr: any[] = [];
+  if (Array.isArray(raw)) {
+    arr = raw;
+  } else if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      arr = [];
+    }
+  }
+  return arr
+    .filter((item) => item && typeof item === 'object' && item.url)
+    .map((item, idx) => ({
+      id: String(item.id || `att_${idx + 1}`),
+      name: String(item.name || `file_${idx + 1}`),
+      mimeType: String(item.mimeType || item.type || 'application/octet-stream'),
+      size: Number(item.size || 0),
+      url: String(item.url),
+    }));
+}
+
+let cachedTelegramBotUsername: string | null | undefined = undefined;
+let cachedTelegramBotFetchedAt = 0;
+
+async function resolveTelegramBotUsername(): Promise<string | null> {
+  const envBot =
+    process.env.VITE_TELEGRAM_BOT_USERNAME || process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  if (envBot && String(envBot).trim() && String(envBot).trim() !== 'TedCloudEnterpriseBot') {
+    return String(envBot).trim().replace(/^@/, '');
+  }
+
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken || !String(botToken).trim()) {
+    return null;
+  }
+
+  const now = Date.now();
+  if (cachedTelegramBotUsername !== undefined && now - cachedTelegramBotFetchedAt < 5 * 60 * 1000) {
+    return cachedTelegramBotUsername;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const tgRes = await fetch(`https://api.telegram.org/bot${String(botToken).trim()}/getMe`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (tgRes.ok) {
+      const json: any = await tgRes.json();
+      const uname = json?.result?.username ? String(json.result.username).trim() : null;
+      cachedTelegramBotUsername = uname || null;
+      cachedTelegramBotFetchedAt = now;
+      return cachedTelegramBotUsername;
+    }
+  } catch {
+    // Ignore transient network errors
+  }
+
+  cachedTelegramBotUsername = null;
+  cachedTelegramBotFetchedAt = now;
+  return null;
+}
+
 function normalizeTaskRow(row: any) {
   const overlay = row.id ? recordNotesOverlay.get(`tasks:${row.id}`) : undefined;
   const extras = row.id ? recordExtrasOverlay.get(`tasks:${row.id}`) : undefined;
@@ -1695,6 +1764,8 @@ function normalizeTaskRow(row: any) {
       }))
     : [];
 
+  const attachments = normalizeAttachmentsServer(row.attachments ?? extras?.attachments);
+
   return {
     ...row,
     ...(extras || {}),
@@ -1705,6 +1776,7 @@ function normalizeTaskRow(row: any) {
     status: row.status || 'Todo',
     department: row.department ?? extras?.department ?? null,
     checklist,
+    attachments,
     ai_summary: row.ai_summary ?? extras?.ai_summary ?? null,
     due_date: row.due_date ?? extras?.due_date ?? null,
     assigned_to:
@@ -1852,11 +1924,14 @@ function normalizeMessageRow(row: any) {
       ? 'Всем сотрудникам'
       : null);
 
+  const attachments = normalizeAttachmentsServer(row.attachments ?? extras?.attachments);
+
   return {
     ...merged,
     message_text: msgBody,
     text: msgBody,
     content: msgBody,
+    attachments,
     target_type: targetType,
     target_id: targetId,
     target_label: targetLabel,
@@ -1987,6 +2062,8 @@ export default async function handler(req: any, res: any) {
           ? String(req.query.company_id || req.query.companyId).trim()
           : null;
 
+      const botUsername = await resolveTelegramBotUsername();
+
       if (!supabase) {
         const allNodes = localStore.organization_nodes.map(normalizeNodeRow);
         let currentProfile = null;
@@ -2012,6 +2089,7 @@ export default async function handler(req: any, res: any) {
           return res.status(200).json({
             ok: true,
             mode: 'local_empty',
+            botUsername,
             company: null,
             currentProfile: null,
             nodes: allNodes,
@@ -2052,6 +2130,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({
           ok: true,
           mode: 'local_empty',
+          botUsername,
           company: normalizeCompanyRow(matchedCompany),
           currentProfile,
           nodes: companyNodes,
@@ -2109,6 +2188,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({
           ok: true,
           mode: 'supabase',
+          botUsername,
           company: null,
           currentProfile: null,
           nodes: rawNodes,
@@ -2190,6 +2270,7 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({
         ok: true,
         mode: 'supabase',
+        botUsername,
         company: activeCompany,
         currentProfile,
         nodes: companyNodes,
@@ -2729,6 +2810,7 @@ ${builtInResult.reply}
           null;
 
         const checklist = Array.isArray(payload.checklist) ? payload.checklist : [];
+        const attachments = normalizeAttachmentsServer(payload.attachments);
         const dueDate = payload.due_date ? String(payload.due_date).trim() : null;
 
         const rawInsertPayload: Record<string, any> = {
@@ -2744,6 +2826,7 @@ ${builtInResult.reply}
           owner_node_id: resolvedOwnerNodeId,
           created_by: payload.created_by || resolvedOwnerNodeId || null,
           checklist,
+          attachments,
           ai_summary: payload.ai_summary || null,
           due_date: dueDate,
         };
@@ -2763,7 +2846,12 @@ ${builtInResult.reply}
             console.error('[API /api/db] Supabase INSERT error in tasks:', error);
             return res.status(400).json({ error: formatError(error) });
           }
-          savedTask = { ...rawInsertPayload, ...data, assigned_to: explicitAssignee || null };
+          savedTask = {
+            ...rawInsertPayload,
+            ...data,
+            assigned_to: explicitAssignee || null,
+            attachments,
+          };
         }
 
         if (savedTask?.id) {
@@ -2777,6 +2865,7 @@ ${builtInResult.reply}
             department: taskDept,
             assigned_to: explicitAssignee || null,
             checklist,
+            attachments,
             ai_summary: payload.ai_summary || null,
             due_date: dueDate,
           });
@@ -3129,10 +3218,16 @@ ${builtInResult.reply}
 
       // Единое инфополе и мгновенная связь между сотрудниками (workspace_messages)
       if (table === 'workspace_messages') {
-        const msgBody = String(
+        const attachments = normalizeAttachmentsServer(payload.attachments);
+        const rawMsgBody = String(
           payload.message_text || payload.text || payload.content || payload.message || ''
         ).trim();
-        if (!msgBody) {
+        const msgBody =
+          rawMsgBody ||
+          (attachments.length > 0
+            ? attachments.map((a) => `[Вложение: ${a.name}]`).join(' ')
+            : '');
+        if (!msgBody && attachments.length === 0) {
           return res.status(400).json({ error: 'Текст сообщения не может быть пустым.' });
         }
 
@@ -3202,6 +3297,7 @@ ${builtInResult.reply}
           target_label: resolvedTargetLabel,
           message_text: msgBody,
           text: msgBody,
+          attachments,
           is_urgent: Boolean(payload.is_urgent),
           is_read: Boolean(payload.is_read ?? false),
         };
@@ -3209,6 +3305,7 @@ ${builtInResult.reply}
         const fullRecordExtras: Record<string, any> = {
           ...rawMsgPayload,
           content: msgBody,
+          attachments,
           scope_type: resolvedTargetType === 'general' ? 'broadcast' : resolvedTargetType,
           recipient_id:
             resolvedTargetType === 'direct'
@@ -3256,6 +3353,7 @@ ${builtInResult.reply}
               message_text: msgBody,
               text: msgBody,
               content: msgBody,
+              attachments,
             };
           }
         }
@@ -3265,6 +3363,7 @@ ${builtInResult.reply}
             ...fullRecordExtras,
             message_text: msgBody,
             text: msgBody,
+            attachments,
             target_type: resolvedTargetType,
             target_id: resolvedTargetId,
             target_label: resolvedTargetLabel,
@@ -3428,6 +3527,9 @@ ${builtInResult.reply}
         if (updates.checklist !== undefined) {
           rawUpdates.checklist = Array.isArray(updates.checklist) ? updates.checklist : [];
         }
+        if (updates.attachments !== undefined) {
+          rawUpdates.attachments = normalizeAttachmentsServer(updates.attachments);
+        }
         if (updates.ai_summary !== undefined) {
           rawUpdates.ai_summary = updates.ai_summary;
         }
@@ -3448,6 +3550,7 @@ ${builtInResult.reply}
           ...(rawUpdates.department !== undefined ? { department: rawUpdates.department } : {}),
           ...(rawUpdates.assigned_to !== undefined ? { assigned_to: rawUpdates.assigned_to } : {}),
           ...(rawUpdates.checklist !== undefined ? { checklist: rawUpdates.checklist } : {}),
+          ...(rawUpdates.attachments !== undefined ? { attachments: rawUpdates.attachments } : {}),
           ...(rawUpdates.ai_summary !== undefined ? { ai_summary: rawUpdates.ai_summary } : {}),
           ...(rawUpdates.due_date !== undefined ? { due_date: rawUpdates.due_date } : {}),
         });

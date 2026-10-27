@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Loader2,
@@ -13,9 +13,11 @@ import {
   Shield,
   Building2,
   Globe,
+  Paperclip,
 } from 'lucide-react';
 import {
   AccessLevel,
+  AttachmentItem,
   CounterpartyJurisdiction,
   CrmLeadStatus,
   EmployeePermissions,
@@ -28,6 +30,11 @@ import {
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 import { formatError } from '../utils/enterpriseLogic';
+import {
+  ACCEPTED_ATTACHMENT_TYPES,
+  PendingAttachmentsStrip,
+  processFilesToAttachments,
+} from './AttachmentSystem';
 
 export type ModalRecordType = 'tasks' | 'organization_nodes' | 'crm_leads' | null;
 
@@ -37,6 +44,7 @@ export interface InitialTaskDraft {
   assigned_to?: string | null;
   department?: string | null;
   priority?: TaskPriority;
+  attachments?: AttachmentItem[];
 }
 
 interface AddRecordModalProps {
@@ -46,7 +54,7 @@ interface AddRecordModalProps {
   canAssignTasks?: boolean;
   nodes: OrganizationNode[];
   departments?: string[];
-  botUsername?: string;
+  botUsername?: string | null;
   initialTaskDraft?: InitialTaskDraft | null;
   onAddCompanyDepartment?: (deptName: string) => Promise<void> | void;
   onClose: () => void;
@@ -60,7 +68,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   canAssignTasks = false,
   nodes,
   departments = [],
-  botUsername = 'TedCloudEnterpriseBot',
+  botUsername = null,
   initialTaskDraft,
   onAddCompanyDepartment,
   onClose,
@@ -97,6 +105,8 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const [taskCustomDept, setTaskCustomDept] = useState<string>('');
   const [isTaskCustomDept, setIsTaskCustomDept] = useState<boolean>(false);
   const [taskDueDate, setTaskDueDate] = useState<string>('');
+  const [taskAttachments, setTaskAttachments] = useState<AttachmentItem[]>([]);
+  const taskFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (type === 'tasks' && initialTaskDraft) {
@@ -112,6 +122,9 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       }
       if (initialTaskDraft.department !== undefined) {
         setTaskDepartment(initialTaskDraft.department || '');
+      }
+      if (Array.isArray(initialTaskDraft.attachments)) {
+        setTaskAttachments(initialTaskDraft.attachments);
       }
       return;
     }
@@ -139,7 +152,8 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     name: string;
     roleTitle: string;
     inviteCode: string;
-    deepLink: string;
+    deepLink: string | null;
+    tgStartCmd: string;
     webLoginLink: string;
   } | null>(null);
   const [copiedField, setCopiedField] = useState<'code' | 'link' | 'weblink' | null>(null);
@@ -177,6 +191,19 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     }));
   };
 
+  const handleTaskFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const { attachments, error } = await processFilesToAttachments(files, language);
+    if (error) {
+      setErrorMessage(error);
+    }
+    if (attachments.length > 0) {
+      setTaskAttachments((prev) => [...prev, ...attachments]);
+    }
+    e.target.value = '';
+  };
+
   const copyText = async (val: string, field: 'code' | 'link' | 'weblink') => {
     try {
       await navigator.clipboard.writeText(val);
@@ -206,8 +233,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           newlyCreatedDept = resolvedTaskDept;
         }
 
-        // Если выбран отдел и исполнитель явно оставлен пустым ("Оповестить весь отдел"),
-        // передаем assigned_to = null, чтобы сервер /api/db разослал пуш всем сотрудникам отдела.
         let enforcedAssignee: string | null = null;
         if (!canAssignTasks) {
           enforcedAssignee = currentProfileId || safeNodes[0]?.id || null;
@@ -231,6 +256,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
           owner_node_id: enforcedAssignee || currentProfileId || safeNodes[0]?.id || null,
           created_by: currentProfileId || enforcedAssignee || null,
           due_date: taskDueDate.trim() || null,
+          attachments: taskAttachments,
         };
       } else if (type === 'organization_nodes') {
         if (!empName.trim() || !empRoleTitle.trim()) {
@@ -317,13 +343,19 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
       if (type === 'organization_nodes') {
         const finalCode = result.data?.invite_code || payload.invite_code;
-        const cleanBot = botUsername.replace(/^@/, '').trim() || 'TedCloudEnterpriseBot';
-        const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tedcloud.vercel.app';
+        const cleanBot = String(botUsername || '')
+          .replace(/^@/, '')
+          .trim();
+        const validBot =
+          cleanBot && cleanBot !== 'TedCloudEnterpriseBot' ? cleanBot : null;
+        const origin =
+          typeof window !== 'undefined' ? window.location.origin : 'https://tedcloud.vercel.app';
         setCreatedEmployeeInvite({
           name: payload.name,
           roleTitle: payload.role_type,
           inviteCode: finalCode,
-          deepLink: `https://t.me/${cleanBot}?start=${finalCode}`,
+          deepLink: validBot ? `https://t.me/${validBot}?start=${finalCode}` : null,
+          tgStartCmd: `/start ${finalCode}`,
           webLoginLink: `${origin}/?invite=${encodeURIComponent(finalCode)}`,
         });
         return;
@@ -397,23 +429,63 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
                   {isEn
                     ? '1-Click Web Portal Sign-In Link'
-                    : 'Ссылка быстрого входа в веб-панель (1 клик)'}
+                    : 'Прямая веб-ссылка для входа сотрудника (1 клик)'}
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     readOnly
                     value={createdEmployeeInvite.webLoginLink}
-                    className="w-full rounded-lg border border-[#2A2A2E] bg-[#0D0D0F] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
+                    className="w-full h-10 rounded-xl border border-[#2A2A2E] bg-[#0D0D0F] px-3 text-xs text-[#E4E4E7] focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => copyText(createdEmployeeInvite.webLoginLink, 'weblink')}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white text-black hover:bg-[#E4E4E7] transition-colors whitespace-nowrap"
+                    className="shrink-0 h-10 inline-flex items-center gap-1.5 px-3.5 rounded-xl text-xs font-semibold bg-white text-black hover:bg-[#E4E4E7] transition-colors whitespace-nowrap"
                   >
                     {copiedField === 'weblink' ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{t('invite.copied')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Copy Web Link' : 'Скопировать'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
+                  {createdEmployeeInvite.deepLink
+                    ? t('invite.deepLinkLabel')
+                    : isEn
+                    ? 'Telegram Bot Activation Command'
+                    : 'Команда активации в Telegram-боте'}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={createdEmployeeInvite.deepLink || createdEmployeeInvite.tgStartCmd}
+                    className="w-full h-10 rounded-xl border border-[#2A2A2E] bg-[#0D0D0F] px-3 text-xs text-[#E4E4E7] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyText(
+                        createdEmployeeInvite.deepLink || createdEmployeeInvite.tgStartCmd,
+                        'link'
+                      )
+                    }
+                    className="shrink-0 h-10 inline-flex items-center gap-1.5 px-3.5 rounded-xl text-xs font-medium border border-[#2E2E34] bg-[#1F1F24] text-white hover:bg-[#2A2A32] transition-colors whitespace-nowrap"
+                  >
+                    {copiedField === 'link' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
                         <span>{t('invite.copied')}</span>
                       </>
                     ) : (
@@ -425,59 +497,26 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   </button>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
-                  {t('invite.deepLinkLabel')}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={createdEmployeeInvite.deepLink}
-                    className="w-full rounded-lg border border-[#2A2A2E] bg-[#0D0D0F] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => copyText(createdEmployeeInvite.deepLink, 'link')}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-[#2E2E34] bg-[#1F1F24] text-white hover:bg-[#2A2A32] transition-colors whitespace-nowrap"
-                  >
-                    {copiedField === 'link' ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{t('invite.copied')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>{t('invite.copyLink')}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-[#262626] bg-[#141414] p-3.5 space-y-1.5 text-xs text-[#A1A1AA]">
-              <p>{t('invite.step1')}</p>
-              <p>{t('invite.step2')}</p>
-              <p className="text-[#E4E4E7] font-medium">{t('invite.step3')}</p>
             </div>
 
             <div className="flex items-center justify-between pt-2">
-              <a
-                href={createdEmployeeInvite.deepLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA] hover:text-white transition-colors"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Telegram</span>
-              </a>
+              {createdEmployeeInvite.deepLink ? (
+                <a
+                  href={createdEmployeeInvite.deepLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA] hover:text-white transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Telegram</span>
+                </a>
+              ) : (
+                <span />
+              )}
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg text-xs font-semibold bg-white text-black hover:bg-[#E4E4E7] transition-colors"
+                className="h-10 px-4 rounded-xl text-xs font-semibold bg-white text-black hover:bg-[#E4E4E7] transition-colors"
               >
                 {t('invite.close')}
               </button>
@@ -530,7 +569,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   value={taskTitle}
                   onChange={(e) => setTaskTitle(e.target.value)}
                   placeholder={t('modal.taskTitlePlaceholder')}
-                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
                 />
               </div>
 
@@ -543,19 +582,19 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                   value={taskDescription}
                   onChange={(e) => setTaskDescription(e.target.value)}
                   placeholder={t('modal.taskDescPlaceholder')}
-                  className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                  className="w-full rounded-xl border border-white/10 bg-zinc-900 px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5 truncate">
                     {t('modal.taskTypeLabel')}
                   </label>
                   <select
                     value={taskType}
                     onChange={(e) => setTaskType(e.target.value)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                    className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
                   >
                     <option value="Task">{t('type.Task')}</option>
                     <option value="Bug">{t('type.Bug')}</option>
@@ -564,13 +603,13 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5 truncate">
                     {t('modal.taskPriorityLabel')}
                   </label>
                   <select
                     value={taskPriority}
                     onChange={(e) => setTaskPriority(e.target.value as TaskPriority)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                    className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
                   >
                     <option value="Low">{t('priority.Low')}</option>
                     <option value="Medium">{t('priority.Medium')}</option>
@@ -579,13 +618,13 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5 truncate">
                     {t('modal.taskStatusLabel')}
                   </label>
                   <select
                     value={taskStatus}
                     onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                    className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
                   >
                     <option value="Todo">{t('status.Todo')}</option>
                     <option value="In Progress">{t('status.In Progress')}</option>
@@ -594,14 +633,14 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                    {isEn ? 'Due Date (Deadline)' : 'Срок исполнения (Дедлайн)'}
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5 truncate">
+                    {isEn ? 'Due Date' : 'Дедлайн (Срок)'}
                   </label>
                   <input
                     type="date"
                     value={taskDueDate}
                     onChange={(e) => setTaskDueDate(e.target.value)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white tabular-nums focus:border-[#52525B] focus:outline-none"
+                    className="w-full min-w-0 h-10 px-3 rounded-xl bg-zinc-900 border border-white/10 text-sm text-zinc-100 appearance-none tabular-nums focus:border-zinc-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -622,7 +661,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                           setTaskDepartment(e.target.value);
                         }
                       }}
-                      className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white focus:border-[#52525B] focus:outline-none"
+                      className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
                     >
                       <option value="">{t('dept.noneOption')}</option>
                       {safeDepartments.map((d) => (
@@ -639,7 +678,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                         value={taskCustomDept}
                         onChange={(e) => setTaskCustomDept(e.target.value)}
                         placeholder={t('dept.customInputPlaceholder')}
-                        className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
+                        className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
                       />
                       <button
                         type="button"
@@ -663,7 +702,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     disabled={!canAssignTasks}
                     value={canAssignTasks ? taskAssignedTo : currentProfileId || ''}
                     onChange={(e) => setTaskAssignedTo(e.target.value)}
-                    className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-2 text-xs text-white disabled:opacity-60 disabled:cursor-not-allowed focus:border-[#52525B] focus:outline-none"
+                    className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 disabled:opacity-60 disabled:cursor-not-allowed focus:border-zinc-500 focus:outline-none"
                   >
                     {canAssignTasks && (
                       <option value="">{t('modal.unassignedDeptBroadcast')}</option>
@@ -683,6 +722,49 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     </p>
                   )}
                 </div>
+              </div>
+
+              {/* Вложения к задаче (Фото, PDF, Документы) */}
+              <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-medium text-zinc-200">
+                      {isEn ? 'Task Attachments' : 'Вложения к задаче'}
+                    </div>
+                    <div className="text-[11px] text-zinc-500">
+                      {isEn
+                        ? 'Photos (PNG, JPG, WEBP) or documents (PDF, DOCX, XLSX, ZIP up to 2 MB)'
+                        : 'Фото (PNG, JPG, WEBP) или документы (PDF, DOCX, XLSX, ZIP до 2 МБ)'}
+                    </div>
+                  </div>
+                  <input
+                    ref={taskFileInputRef}
+                    type="file"
+                    multiple
+                    accept={ACCEPTED_ATTACHMENT_TYPES}
+                    onChange={handleTaskFilesSelected}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => taskFileInputRef.current?.click()}
+                    className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-medium text-zinc-100 inline-flex items-center gap-1.5 transition shrink-0"
+                  >
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span>{isEn ? 'Attach file' : 'Прикрепить'}</span>
+                  </button>
+                </div>
+                {taskAttachments.length > 0 && (
+                  <div className="mt-2.5">
+                    <PendingAttachmentsStrip
+                      attachments={taskAttachments}
+                      onRemove={(id) =>
+                        setTaskAttachments((prev) => prev.filter((item) => item.id !== id))
+                      }
+                      className="rounded-xl border border-white/[0.08]"
+                    />
+                  </div>
+                )}
               </div>
             </>
           )}
