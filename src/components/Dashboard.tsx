@@ -94,6 +94,15 @@ import { CommandBarModal } from './CommandBarModal';
 import { TeamworkGraphView } from './TeamworkGraphView';
 import { SubscriptionCheckoutModal, PrintableInvoiceModal } from './BillingModals';
 import {
+  MyPermissionsModal,
+  MyAccessKeysModal,
+  LegalRequisitesModal,
+  SecurityAuditLogModal,
+  RichEmptyState,
+  PRIMARY_BTN_CLASS,
+  SECONDARY_BTN_CLASS,
+} from './ProgressiveModals';
+import {
   buildBuiltInChecklistForTask,
   normalizeAttachments,
 } from '../utils/enterpriseLogic';
@@ -251,6 +260,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [expandedChecklistTaskIds, setExpandedChecklistTaskIds] = useState<Record<string, boolean>>(
     {}
   );
+
+  // Progressive Disclosure Modals (Profile & Workspace)
+  const [isMyPermissionsModalOpen, setIsMyPermissionsModalOpen] = useState(false);
+  const [isMyAccessKeysModalOpen, setIsMyAccessKeysModalOpen] = useState(false);
+  const [isLegalRequisitesModalOpen, setIsLegalRequisitesModalOpen] = useState(false);
+  const [isSecurityAuditModalOpen, setIsSecurityAuditModalOpen] = useState(false);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -1492,9 +1507,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <button
             type="submit"
             disabled={!newDeptName.trim()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
+            className={SECONDARY_BTN_CLASS}
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5 text-indigo-400" />
             <span>{t('dept.addBtn')}</span>
           </button>
         </form>
@@ -1598,17 +1613,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     <div
       className={`min-h-screen flex font-sans antialiased overflow-x-hidden ${
         theme === 'light'
-          ? 'theme-light bg-[#f8fafc] text-[#0f172a]'
-          : 'theme-dark bg-[#09090B] text-[#EDEDED]'
+          ? 'theme-light bg-slate-100/80 text-[#0f172a]'
+          : 'theme-dark bg-[#070709] text-[#EDEDED]'
       }`}
-      style={
-        theme === 'dark'
-          ? {
-              backgroundImage:
-                'radial-gradient(ellipse 80% 40% at 50% -15%, rgba(99,102,241,0.10), transparent)',
-            }
-          : undefined
-      }
     >
       <Sidebar
         activeSection={activeSection}
@@ -1623,7 +1630,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onRequestSignOut={onResetSession ? requestSignOut : undefined}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden">
+      {/* БЛОК 2: Архитектура «Вложенного холста» (Inset Canvas) + Ambient Glow */}
+      <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden lg:m-2.5 lg:rounded-2xl bg-[#0c0c10] border border-white/[0.07] shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-64 before:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(99,102,241,0.09),transparent)]">
         <TopBar
           companyName={companyName}
           activeSection={activeSection}
@@ -1754,7 +1762,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 canCreateOrEditTasks && (
                   <button
                     onClick={() => setModalType('tasks')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                    className={PRIMARY_BTN_CLASS}
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>{t('actions.newTask').replace(/^\+\s*/, '')}</span>
@@ -1764,7 +1772,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {activeSection === 'crm' && perms.crm_edit && (
                 <button
                   onClick={() => setModalType('crm_leads')}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                  className={PRIMARY_BTN_CLASS}
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{t('actions.newDeal').replace(/^\+\s*/, '')}</span>
@@ -1774,7 +1782,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {activeSection === 'team' && perms.team_manage && (
                 <button
                   onClick={() => setModalType('organization_nodes')}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors whitespace-nowrap"
+                  className={PRIMARY_BTN_CLASS}
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{t('actions.newEmployee').replace(/^\+\s*/, '')}</span>
@@ -2156,23 +2164,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       )}
 
                       {visibleTasks.length === 0 ? (
-                        <div className="p-10 text-center space-y-3">
-                          <div className="text-sm font-medium text-white">
-                            {t('tasks.emptyTitle')}
-                          </div>
-                          <p className="text-xs text-[#71717A] max-w-md mx-auto">
-                            {t('tasks.empty')}
-                          </p>
-                          {canCreateOrEditTasks && (
-                            <button
-                              onClick={() => setModalType('tasks')}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>{t('tasks.addBtn')}</span>
-                            </button>
-                          )}
-                        </div>
+                        <RichEmptyState
+                          variant="tasks"
+                          compact
+                          title={t('tasks.emptyTitle')}
+                          description={t('tasks.empty')}
+                          quickCards={[
+                            {
+                              step: isEn ? 'Step 1' : 'Шаг 1',
+                              title: isEn
+                                ? 'Create First Assignment'
+                                : '1. Создать первое поручение',
+                              subtitle: isEn
+                                ? 'Set priority, SLA deadline & assignee'
+                                : 'Назначьте ответственного и срок SLA',
+                              icon: 'plus',
+                              onClick: () => setModalType('tasks'),
+                            },
+                            {
+                              step: isEn ? 'Step 2' : 'Шаг 2',
+                              title: isEn
+                                ? 'Generate Plan via TedCloud Intelligence'
+                                : '2. Сгенерировать план через TedCloud Intelligence',
+                              subtitle: isEn
+                                ? 'Decompose goals into actionable steps'
+                                : 'ИИ-декомпозиция целей на подзадачи',
+                              icon: 'ai',
+                              onClick: () => setIsAiDrawerOpen(true),
+                            },
+                            {
+                              step: isEn ? 'Step 3' : 'Шаг 3',
+                              title: isEn
+                                ? 'Switch to Kanban Board'
+                                : '3. Переключить на Канбан-доску',
+                              subtitle: isEn
+                                ? 'Visual workflow across stages'
+                                : 'Визуальный контроль статусов выполнения',
+                              icon: 'kanban',
+                              onClick: () => {
+                                setActiveSection('tasks');
+                                setTaskViewMode('board');
+                              },
+                            },
+                          ]}
+                        />
                       ) : (
                         <div className="divide-y divide-white/[0.06]">
                           {visibleTasks.slice(0, 8).map((task) => {
@@ -2602,19 +2637,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
 
                 {filteredTasks.length === 0 ? (
-                  <div className="p-12 text-center space-y-3">
-                    <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
-                    <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
-                    {canCreateOrEditTasks && (
-                      <button
-                        onClick={() => setModalType('tasks')}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{t('tasks.addBtn')}</span>
-                      </button>
-                    )}
-                  </div>
+                  <RichEmptyState
+                    variant="tasks"
+                    title={t('tasks.emptyTitle')}
+                    description={t('tasks.empty')}
+                    quickCards={[
+                      {
+                        step: isEn ? 'Step 1' : 'Шаг 1',
+                        title: isEn
+                          ? '1. Create First Assignment'
+                          : '1. Создать первое поручение',
+                        subtitle: isEn
+                          ? 'Assign owner, department & SLA deadline'
+                          : 'Укажите исполнителя, подразделение и дедлайн',
+                        icon: 'plus',
+                        onClick: () => setModalType('tasks'),
+                      },
+                      {
+                        step: isEn ? 'Step 2' : 'Шаг 2',
+                        title: isEn
+                          ? '2. Generate Plan via TedCloud Intelligence'
+                          : '2. Сгенерировать план через TedCloud Intelligence',
+                        subtitle: isEn
+                          ? 'Automated AI breakdown & executive summary'
+                          : 'Автоматическая декомпозиция и сводка по задачам',
+                        icon: 'ai',
+                        onClick: () => setIsAiDrawerOpen(true),
+                      },
+                      {
+                        step: isEn ? 'Step 3' : 'Шаг 3',
+                        title: isEn
+                          ? '3. Switch to Kanban Board'
+                          : '3. Переключить на Канбан-доску',
+                        subtitle: isEn
+                          ? 'Track tasks across Todo, In Progress & Done'
+                          : 'Управляйте потоком поручений по колонкам стадий',
+                        icon: 'kanban',
+                        onClick: () => setTaskViewMode('board'),
+                      },
+                    ]}
+                  />
                 ) : taskViewMode === 'list' ? (
                   <div className="divide-y divide-[#1A1A1C]">
                     {filteredTasks.map((task) => {
@@ -3024,19 +3086,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
 
               {filteredLeads.length === 0 ? (
-                <div className="p-12 text-center space-y-3">
-                  <div className="text-sm font-medium text-white">{t('crm.emptyTitle')}</div>
-                  <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('crm.empty')}</p>
-                  {perms.crm_edit && (
-                    <button
-                      onClick={() => setModalType('crm_leads')}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{t('crm.addBtn')}</span>
-                    </button>
-                  )}
-                </div>
+                <RichEmptyState
+                  variant="crm"
+                  title={t('crm.emptyTitle')}
+                  description={t('crm.empty')}
+                  quickCards={[
+                    {
+                      step: isEn ? 'Step 1' : 'Шаг 1',
+                      title: isEn
+                        ? '1. Register B2B Contract'
+                        : '1. Зарегистрировать B2B-контракт',
+                      subtitle: isEn
+                        ? 'Add counterparty INN/VAT, contract # & deal value'
+                        : 'Укажите контрагента, ИНН/VAT, договор и сумму сделки',
+                      icon: 'plus',
+                      onClick: () => setModalType('crm_leads'),
+                    },
+                    {
+                      step: isEn ? 'Step 2' : 'Шаг 2',
+                      title: isEn
+                        ? '2. Run AI Pipeline Audit'
+                        : '2. Запустить ИИ-аудит воронки',
+                      subtitle: isEn
+                        ? 'Analyze conversion bottlenecks & revenue forecast'
+                        : 'Оценка конверсии, рисков и прогноз выручки',
+                      icon: 'ai',
+                      onClick: () => setIsAiDrawerOpen(true),
+                    },
+                    {
+                      step: isEn ? 'Step 3' : 'Шаг 3',
+                      title: isEn
+                        ? '3. Import / Export CSV Template'
+                        : '3. Импорт / Выгрузка шаблона CSV',
+                      subtitle: isEn
+                        ? 'Download structured B2B deal registry'
+                        : 'Выгрузите структурированный реестр сделок в CSV',
+                      icon: 'csv',
+                      onClick: handleExportDealsCsv,
+                    },
+                  ]}
+                />
               ) : crmViewMode === 'board' ? (
                 /* 4 колонки стадий воронки CRM с автоподсчетом суммы в шапке каждой колонки */
                 <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -3596,15 +3685,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {/* Поток сообщений (Компактные баблы по тексту w-fit max-w-[85%] sm:max-w-[75%]) */}
                 <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-5 space-y-3 max-h-[520px]">
                   {activeThreadMessages.length === 0 ? (
-                    <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center p-6 space-y-2">
-                      <MessageSquare className="w-6 h-6 text-[#52525B]" />
-                      <div className="text-sm font-medium text-white">
-                        {isEn
+                    <RichEmptyState
+                      variant="chat"
+                      compact
+                      title={
+                        isEn
                           ? 'No messages in this thread yet'
-                          : 'В выбранном потоке пока нет сообщений'}
-                      </div>
-                      <p className="text-xs text-[#71717A] max-w-md">
-                        {activeCommThread.type === 'direct'
+                          : 'В выбранном потоке пока нет сообщений'
+                      }
+                      description={
+                        activeCommThread.type === 'direct'
                           ? isEn
                             ? 'Send a direct message to this colleague. It is visible only to you and the recipient and delivered directly to Telegram.'
                             : 'Отправьте личное сообщение сотруднику. Оно будет видно исключительно вам и получателю, а также мгновенно доставлено в Telegram.'
@@ -3614,9 +3704,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             : `Напишите сообщение в подразделение «${activeCommThread.label}». Все сотрудники отдела получат уведомление.`
                           : isEn
                           ? 'Post a company-wide broadcast or operational update for the entire team.'
-                          : 'Опубликуйте циркуляр или оперативное сообщение для всей команды компании.'}
-                      </p>
-                    </div>
+                          : 'Опубликуйте циркуляр или оперативное сообщение для всей команды компании.'
+                      }
+                    />
                   ) : (
                     activeThreadMessages.map((msg) => {
                       const isOutgoing =
@@ -4125,13 +4215,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 6: ЛИЧНЫЙ КАБИНЕТ / MY PROFILE (БЛОК 3: Obsidian & Titanium standard)
+              TAB 6: ЛИЧНЫЙ КАБИНЕТ / MY PROFILE (БЛОК 1: Progressive Disclosure — Чистая единая центральная композиция без перегруза)
           ================================================================== */}
           {activeSection === 'profile' && currentProfile && (
-            <div className="space-y-6">
-              {/* Верхняя карточка-баннер: Клик прямо по кружку аватара открывает выбор файла */}
-              <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="max-w-4xl mx-auto space-y-6">
+              {/* Верхний презентабельный блок (Header): Крупный градиентный аватар, ФИО, бейджи, статус Telegram и 2 вторичные кнопки-триггеры модалок */}
+              <div className="rounded-2xl border border-white/[0.08] bg-[#111115] shadow-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">
                   <div className="relative group shrink-0">
                     <button
                       type="button"
@@ -4174,25 +4264,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <h2 className="text-lg font-semibold text-white tracking-tight truncate">
                         {currentProfile.name}
                       </h2>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-medium text-white whitespace-nowrap">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.08] text-xs font-medium text-white whitespace-nowrap">
                         {formatRole(currentProfile.role_type)}
                       </span>
                       {currentProfile.department && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.07] text-xs text-[#A1A1AA] whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.07] text-xs text-[#A1A1AA] whitespace-nowrap">
                           {formatRole(currentProfile.department)}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2.5 text-xs">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[#D4D4D8] font-medium">
-                        <Shield className="w-3 h-3 text-emerald-400" />
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/25 text-indigo-200 font-medium">
+                        <Shield className="w-3 h-3 text-indigo-400" />
                         <span>{t(`access.${currentAccessLevel}`)}</span>
                       </span>
 
                       {currentProfile.telegram_chat_id ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium tabular-nums">
-                          <Send className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium tabular-nums">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                           <span>
                             {isEn
                               ? `Telegram Synchronized (${currentProfile.telegram_chat_id})`
@@ -4200,7 +4290,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[#8E8E93]">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.07] text-[#8E8E93]">
                           <span>{isEn ? 'Telegram not linked' : 'Telegram не привязан'}</span>
                         </span>
                       )}
@@ -4208,465 +4298,180 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                {currentProfile.avatar_url && (
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {/* Чистая панель из 2 вторичных кнопок-триггеров (Progressive Disclosure) */}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsMyPermissionsModalOpen(true)}
+                    className={SECONDARY_BTN_CLASS}
+                  >
+                    <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>
+                      {isEn
+                        ? 'My Permissions (Access Scope)'
+                        : 'Мои полномочия (Контур доступа)'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMyAccessKeysModalOpen(true)}
+                    className={SECONDARY_BTN_CLASS}
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      {isEn ? 'Login Keys & Telegram' : 'Ключи входа и Telegram'}
+                    </span>
+                  </button>
+
+                  {currentProfile.avatar_url && (
                     <button
                       type="button"
                       disabled={isUploadingAvatar}
                       onClick={() => void handleRemoveAvatar()}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-[#17171B] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
+                      title={isEn ? 'Remove Photo' : 'Удалить фото'}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Remove Photo' : 'Удалить фото'}</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
-              {/* Компактная сетка из 2 колонок */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                {/* Левая колонка: Редактируемый профиль + чистая карточка учетных идентификаторов */}
-                <div className="space-y-6">
-                  <form
-                    onSubmit={handleSaveMyProfile}
-                    className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-6 space-y-5"
-                  >
-                    <div className="flex items-center justify-between border-b border-white/[0.07] pb-4">
-                      <div>
-                        <h3 className="text-sm font-semibold text-white">
-                          {isEn
-                            ? 'Personal Details & Contact Information'
-                            : 'Личные реквизиты и контакты'}
-                        </h3>
-                        <p className="text-xs text-[#8E8E93] mt-0.5">
-                          {isEn
-                            ? `Employee profile record in the ${companyName} corporate directory`
-                            : `Учетная карточка сотрудника в корпоративном реестре ${companyName}`}
-                        </p>
-                      </div>
-                    </div>
+              {/* Нижний основной блок: Чистая просторная форма реквизитов сотрудника с ОДНОЙ кнопкой сохранения */}
+              <form
+                onSubmit={handleSaveMyProfile}
+                className="rounded-2xl border border-white/[0.08] bg-[#111115] shadow-2xl p-6 space-y-5"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.07] pb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      {isEn
+                        ? 'Personal Details & Contact Information'
+                        : 'Личные реквизиты и контакты'}
+                    </h3>
+                    <p className="text-xs text-[#8E8E93] mt-0.5">
+                      {isEn
+                        ? `Employee profile record in the ${companyName} corporate directory`
+                        : `Учетная карточка сотрудника в корпоративном реестре ${companyName}`}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/[0.07] text-xs font-medium text-zinc-300 tabular-nums self-start sm:self-auto">
+                    ID: {currentProfile.invite_code || 'TC-0000'}
+                  </span>
+                </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                      {t('profile.fullName')}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
+                      className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                      {t('profile.email')}
+                    </label>
+                    <input
+                      type="email"
+                      value={profileEmail}
+                      onChange={(e) => setProfileEmail(e.target.value)}
+                      placeholder="name@company.com"
+                      className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
+                    />
+                  </div>
+
+                  {perms.team_manage ? (
+                    <>
                       <div>
                         <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                          {t('profile.fullName')}
+                          {t('profile.jobTitle')}
                         </label>
                         <input
                           type="text"
                           required
-                          value={profileName}
-                          onChange={(e) => setProfileName(e.target.value)}
+                          value={profileRoleTitle}
+                          onChange={(e) => setProfileRoleTitle(e.target.value)}
                           className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
                       <div>
                         <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                          {t('profile.email')}
+                          {t('profile.department')}
                         </label>
                         <input
-                          type="email"
-                          value={profileEmail}
-                          onChange={(e) => setProfileEmail(e.target.value)}
-                          placeholder="name@company.com"
+                          type="text"
+                          value={profileDepartment}
+                          onChange={(e) => setProfileDepartment(e.target.value)}
+                          placeholder={
+                            isEn ? 'e.g., Executive Management' : 'Например: Дирекция'
+                          }
                           className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
-
-                      {perms.team_manage && (
-                        <>
-                          <div>
-                            <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                              {t('profile.jobTitle')}
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={profileRoleTitle}
-                              onChange={(e) => setProfileRoleTitle(e.target.value)}
-                              className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                              {t('profile.department')}
-                            </label>
-                            <input
-                              type="text"
-                              value={profileDepartment}
-                              onChange={(e) => setProfileDepartment(e.target.value)}
-                              placeholder={
-                                isEn ? 'e.g., Executive Management' : 'Например: Дирекция'
-                              }
-                              className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {!perms.team_manage && (
-                      <div className="rounded-lg border border-white/[0.07] bg-[#141418] p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div>
-                          <div className="text-[11px] text-[#71717A] flex items-center gap-1">
-                            <Lock className="w-3 h-3" />
-                            <span>{t('profile.jobTitle')}</span>
-                          </div>
-                          <div className="font-semibold text-white mt-1">
-                            {formatRole(currentProfile.role_type)}
-                          </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="rounded-lg border border-white/[0.07] bg-[#15151A] p-3.5 text-xs">
+                        <div className="text-[11px] text-[#71717A] flex items-center gap-1">
+                          <Lock className="w-3 h-3" />
+                          <span>{t('profile.jobTitle')}</span>
                         </div>
-                        <div>
-                          <div className="text-[11px] text-[#71717A] flex items-center gap-1">
-                            <Lock className="w-3 h-3" />
-                            <span>{t('profile.department')}</span>
-                          </div>
-                          <div className="font-semibold text-white mt-1">
-                            {currentProfile.department
-                              ? formatRole(currentProfile.department)
-                              : isEn
-                              ? 'Unassigned'
-                              : 'Не назначено'}
-                          </div>
+                        <div className="font-semibold text-white mt-1">
+                          {formatRole(currentProfile.role_type)}
                         </div>
                       </div>
-                    )}
-
-                    <div className="pt-1 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={isSavingProfile}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
-                      >
-                        {isSavingProfile ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Save className="w-3.5 h-3.5" />
-                        )}
-                        <span>
-                          {isSavingProfile ? t('profile.savingBtn') : t('profile.saveBtn')}
-                        </span>
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
-                {/* Правая колонка: БЛОК 4 — 1. Веб-пропуск для входа с браузера + 2. Синхронизация с Telegram + 3. Активный рабочий контур */}
-                <div className="space-y-6">
-                  {/* Карточка 1: «Веб-пропуск для входа с браузера» */}
-                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <KeyRound className="w-4 h-4 text-indigo-400" />
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                          {isEn
-                            ? 'Browser Web Pass'
-                            : 'Веб-пропуск для входа с браузера'}
-                        </h3>
-                      </div>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-semibold text-white tabular-nums">
-                        {currentProfile.invite_code || 'TC-0000'}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-[#8E8E93] leading-relaxed">
-                      {isEn
-                        ? 'Use your personal access code or 1-click web link to sign in to this workspace from any desktop or mobile browser.'
-                        : 'Используйте персональный код доступа или прямую веб-ссылку для мгновенного входа в рабочее пространство с любого компьютера или смартфона.'}
-                    </p>
-
-                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(
-                            `${window.location.origin}/?invite=${
-                              currentProfile.invite_code || 'TC-0000'
-                            }`,
-                            'profile-web-pass-link'
-                          )
-                        }
-                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                      >
-                        {copiedToken === 'profile-web-pass-link' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>{t('invite.copied')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Link2 className="w-3.5 h-3.5" />
-                            <span>
-                              {isEn
-                                ? 'Copy Quick Web Login Link'
-                                : 'Скопировать веб-ссылку быстрого входа'}
-                            </span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(
-                            currentProfile.invite_code || 'TC-0000',
-                            'profile-invite-code'
-                          )
-                        }
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
-                      >
-                        {copiedToken === 'profile-invite-code' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>{t('invite.copied')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                            <span>{t('invite.copyCode')}</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Карточка 2: «Синхронизация с Telegram» */}
-                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <Send className="w-4 h-4 text-emerald-400" />
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                          {isEn
-                            ? 'Telegram Synchronization'
-                            : 'Синхронизация с Telegram'}
-                        </h3>
-                      </div>
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-medium border ${
-                          currentProfile.telegram_chat_id
-                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                            : 'bg-white/[0.04] border-white/[0.08] text-[#A1A1AA]'
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            currentProfile.telegram_chat_id ? 'bg-emerald-400' : 'bg-zinc-500'
-                          }`}
-                        />
-                        <span>
-                          {currentProfile.telegram_chat_id
-                            ? isEn
-                              ? `Account Linked (ID: ${currentProfile.telegram_chat_id})`
-                              : `Аккаунт привязан (ID: ${currentProfile.telegram_chat_id})`
+                      <div className="rounded-lg border border-white/[0.07] bg-[#15151A] p-3.5 text-xs">
+                        <div className="text-[11px] text-[#71717A] flex items-center gap-1">
+                          <Lock className="w-3 h-3" />
+                          <span>{t('profile.department')}</span>
+                        </div>
+                        <div className="font-semibold text-white mt-1">
+                          {currentProfile.department
+                            ? formatRole(currentProfile.department)
                             : isEn
-                            ? 'Pending link'
-                            : 'Ожидает привязки'}
-                        </span>
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-[#8E8E93] leading-relaxed">
-                      {currentProfile.telegram_chat_id
-                        ? isEn
-                          ? `Your profile is actively synchronized with Telegram (Chat ID: ${currentProfile.telegram_chat_id}). Instant notifications for tasks and direct messages are enabled.`
-                          : `Аккаунт привязан (ID: ${currentProfile.telegram_chat_id}). Вы получаете мгновенные уведомления о новых задачах и личных сообщениях в Telegram.`
-                        : isEn
-                        ? 'Link your personal Telegram account to receive instant push notifications for new tasks and direct messages from colleagues.'
-                        : 'Подключите личный аккаунт Telegram для мгновенного получения уведомлений о новых задачах и прямых сообщений от коллег.'}
-                    </p>
-
-                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                      {currentProfile.telegram_chat_id ? (
-                        botUsername ? (
-                          <a
-                            href={`https://t.me/${botUsername}?start=${
-                              currentProfile.invite_code || 'TC-0000'
-                            }`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
-                          >
-                            <Send className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>
-                              {isEn ? 'Change / Re-link Telegram' : 'Изменить / Перепривязать'}
-                            </span>
-                          </a>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyToClipboard(
-                                `/start ${currentProfile.invite_code || 'TC-0000'}`,
-                                'profile-relink-cmd'
-                              )
-                            }
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
-                          >
-                            {copiedToken === 'profile-relink-cmd' ? (
-                              <>
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>{t('invite.copied')}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                                <span>
-                                  {isEn ? 'Change / Re-link Telegram' : 'Изменить / Перепривязать'}
-                                </span>
-                              </>
-                            )}
-                          </button>
-                        )
-                      ) : botUsername ? (
-                        <>
-                          <a
-                            href={`https://t.me/${botUsername}?start=${
-                              currentProfile.invite_code || 'TC-0000'
-                            }`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>
-                              {isEn
-                                ? 'Connect Telegram Notifications'
-                                : 'Подключить уведомления в Telegram'}
-                            </span>
-                          </a>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyToClipboard(
-                                `https://t.me/${botUsername}?start=${
-                                  currentProfile.invite_code || 'TC-0000'
-                                }`,
-                                'profile-link'
-                              )
-                            }
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
-                          >
-                            {copiedToken === 'profile-link' ? (
-                              <>
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>{t('invite.copied')}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                                <span>
-                                  {isEn ? 'Copy Activation Link' : 'Скопировать ссылку привязки'}
-                                </span>
-                              </>
-                            )}
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            copyToClipboard(
-                              `/start ${currentProfile.invite_code || 'TC-0000'}`,
-                              'profile-start-cmd'
-                            )
-                          }
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
-                        >
-                          {copiedToken === 'profile-start-cmd' ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>{t('invite.copied')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                              <span>
-                                {isEn
-                                  ? `Copy Bot Activation Command (/start ${currentProfile.invite_code || 'TC-0000'})`
-                                  : `Скопировать команду привязки (/start ${currentProfile.invite_code || 'TC-0000'})`}
-                              </span>
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Компактная карточка «Активный рабочий контур» с полным спектром управленческих прав */}
-                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <Shield className="w-4 h-4 text-emerald-400" />
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                          {isEn
-                            ? 'Active Workspace Scope & Permissions'
-                            : 'Активный рабочий контур'}
-                        </h3>
-                      </div>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-medium text-emerald-300 whitespace-nowrap">
-                        {t(`access.${currentAccessLevel}`)}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-[#8E8E93] leading-relaxed">
-                      {isEn
-                        ? 'Workspace modules and granular permissions enabled for your account:'
-                        : 'Доступные вам рабочие модули и полномочия в пространстве компании:'}
-                    </p>
-
-                    <div className="space-y-2">
-                      {Array.from(
-                        new Set([
-                          ...(currentAccessLevel === 'root' || currentAccessLevel === 'manager'
-                            ? isEn
-                              ? [
-                                  'Commercial CRM Pipeline Management',
-                                  'Staff Directory & Access Matrix Control',
-                                  'International Billing & Security Audit',
-                                ]
-                              : [
-                                  'Управление коммерческой воронкой CRM',
-                                  'Управление штатом и матрицей доступа',
-                                  'Международный биллинг и аудит безопасности',
-                                ]
-                            : []),
-                          ...(isEn
-                            ? [
-                                'Operational Tasks & SLA Execution',
-                                'Corporate Messenger & Department Channels',
-                                'Direct Telegram Bot Synchronization',
-                              ]
-                            : [
-                                'Управление операционными задачами и SLA',
-                                'Корпоративный мессенджер и каналы отделов',
-                                'Прямая синхронизация с Telegram-ботом',
-                              ]),
-                          ...PERMISSION_KEYS.filter((k) => Boolean(perms[k])).map((k) =>
-                            t(`perm.${k}`)
-                          ),
-                        ])
-                      ).map((capabilityLabel) => (
-                        <div
-                          key={capabilityLabel}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.07] bg-[#141418] px-3 py-2 text-xs"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                            <span className="text-white font-medium truncate">
-                              {capabilityLabel}
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            {isEn ? 'Active' : 'Активно'}
-                          </span>
+                            ? 'Unassigned'
+                            : 'Не назначено'}
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-              </div>
+
+                <div className="pt-2 border-t border-white/[0.07] flex items-center justify-between gap-3">
+                  <span className="text-[11px] text-[#8E8E93]">
+                    {isEn
+                      ? 'Changes are immediately synchronized across corporate tasks & Telegram'
+                      : 'Изменения мгновенно синхронизируются во всех поручениях и Telegram'}
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile}
+                    className={PRIMARY_BTN_CLASS}
+                  >
+                    {isSavingProfile ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {isSavingProfile
+                        ? t('profile.savingBtn')
+                        : isEn
+                        ? 'Save Profile Changes'
+                        : 'Сохранить изменения профиля'}
+                    </span>
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
@@ -4852,10 +4657,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 setCheckoutModalPlan(planItem.tier);
                               }
                             }}
-                            className={`mt-4 w-full py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                            className={`mt-4 w-full py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap border ${
                               isCurrent
-                                ? 'bg-white text-black hover:bg-[#E4E4E7]'
-                                : 'bg-white/[0.06] text-[#D4D4D8] hover:bg-white hover:text-black'
+                                ? 'bg-indigo-500/15 text-indigo-200 border-indigo-400/30 hover:bg-indigo-500/25'
+                                : 'bg-white/[0.04] text-[#D4D4D8] border-white/[0.08] hover:bg-white/[0.09] hover:text-white'
                             }`}
                           >
                             {planItem.tier === 'Trial'
@@ -4877,246 +4682,126 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
 
-              {/* 3. Платежный шлюз и Форма «Реквизиты плательщика» */}
+              {/* 3. Платежный шлюз, Локализация и Модальные триггеры (Реквизиты юрлица + Журнал безопасности) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                <div className="space-y-4">
-                  <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
-                    <div className="flex items-center gap-2.5">
-                      <CreditCard className="w-4 h-4 text-[#A1A1AA]" />
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                        {t('workspace.billingSection')}
-                      </h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleRegionChange('RU')}
-                        className={`text-left rounded-lg border p-3.5 transition-colors ${
-                          paymentRegion === 'RU'
-                            ? 'border-white/80 bg-white/[0.04]'
-                            : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
-                        }`}
-                      >
-                        <div className="text-xs font-semibold text-white mb-1">
-                          {t('workspace.gatewayRu')}
-                        </div>
-                        <p className="text-[11px] text-[#8E8E93] leading-relaxed">
-                          {t('workspace.gatewayRuDesc')}
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRegionChange('GLOBAL')}
-                        className={`text-left rounded-lg border p-3.5 transition-colors ${
-                          paymentRegion === 'GLOBAL'
-                            ? 'border-white/80 bg-white/[0.04]'
-                            : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
-                        }`}
-                      >
-                        <div className="text-xs font-semibold text-white mb-1">
-                          {t('workspace.gatewayGlobal')}
-                        </div>
-                        <p className="text-[11px] text-[#8E8E93] leading-relaxed">
-                          {t('workspace.gatewayGlobalDesc')}
-                        </p>
-                      </button>
-                    </div>
+                <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2.5">
+                    <CreditCard className="w-4 h-4 text-[#A1A1AA]" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                      {t('workspace.billingSection')}
+                    </h3>
                   </div>
 
-                  {renderLocalizationCard()}
-                </div>
-
-                {/* Форма «Реквизиты плательщика» */}
-                <form
-                  onSubmit={handleSaveBillingDetails}
-                  className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4"
-                >
-                  <div className="flex items-center justify-between border-b border-white/[0.07] pb-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <Receipt className="w-4 h-4 text-emerald-400" />
-                      <div>
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                          {isEn
-                            ? `Payer Billing Details (${
-                                paymentRegion === 'RU' ? 'RU & CIS' : 'Global'
-                              })`
-                            : `Реквизиты плательщика (${
-                                paymentRegion === 'RU' ? 'РФ и СНГ' : 'Global'
-                              })`}
-                        </h3>
-                        <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                          {isEn
-                            ? 'Legal details are automatically populated into closing documents and B2B invoices'
-                            : 'Юридические данные автоматически подставляются в закрывающие документы и B2B-счета'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {paymentRegion === 'RU' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          {isEn
-                            ? 'Legal Entity Name (LLC / JSC / Sole Proprietor)'
-                            : 'Наименование юрлица (ООО / АО / ИП)'}
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={payerLegalName}
-                          onChange={(e) => setPayerLegalName(e.target.value)}
-                          placeholder={
-                            isEn ? 'Sigma Technologies LLC' : 'ООО «Сигма Технологии»'
-                          }
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          {isEn ? 'Tax ID (INN)' : 'ИНН'}
-                        </label>
-                        <input
-                          type="text"
-                          value={payerTaxId}
-                          onChange={(e) => setPayerTaxId(e.target.value)}
-                          placeholder="7701234567"
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          {isEn ? 'Registration Code (KPP)' : 'КПП'}
-                        </label>
-                        <input
-                          type="text"
-                          value={payerRegNumber}
-                          onChange={(e) => setPayerRegNumber(e.target.value)}
-                          placeholder="770101001"
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          {isEn ? 'Registered Legal Address' : 'Юридический адрес'}
-                        </label>
-                        <input
-                          type="text"
-                          value={payerLegalAddress}
-                          onChange={(e) => setPayerLegalAddress(e.target.value)}
-                          placeholder={
-                            isEn
-                              ? 'Moscow, Presnenskaya Emb., 12'
-                              : 'г. Москва, Пресненская наб., д. 12'
-                          }
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          {isEn ? 'Billing & Invoicing Email' : 'Email для счетов и ЭДО'}
-                        </label>
-                        <input
-                          type="email"
-                          value={payerBillingEmail}
-                          onChange={(e) => setPayerBillingEmail(e.target.value)}
-                          placeholder="finance@company.ru"
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          Company Legal Name
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={payerLegalName}
-                          onChange={(e) => setPayerLegalName(e.target.value)}
-                          placeholder="Sigma Enterprise Holdings Inc."
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          VAT / Tax ID
-                        </label>
-                        <input
-                          type="text"
-                          value={payerTaxId}
-                          onChange={(e) => setPayerTaxId(e.target.value)}
-                          placeholder="EU-992018412"
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white tabular-nums placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          Country / Jurisdiction
-                        </label>
-                        <input
-                          type="text"
-                          value={payerCountry}
-                          onChange={(e) => setPayerCountry(e.target.value)}
-                          placeholder="United Kingdom / Germany / UAE"
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          Billing Email
-                        </label>
-                        <input
-                          type="email"
-                          value={payerBillingEmail}
-                          onChange={(e) => setPayerBillingEmail(e.target.value)}
-                          placeholder="billing@company.com"
-                          className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() =>
-                        setCheckoutModalPlan(selectedPlan === 'Trial' ? 'Business' : selectedPlan)
-                      }
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
+                      onClick={() => handleRegionChange('RU')}
+                      className={`text-left rounded-lg border p-3.5 transition-colors ${
+                        paymentRegion === 'RU'
+                          ? 'border-white/80 bg-white/[0.04]'
+                          : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
+                      }`}
                     >
-                      <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{isEn ? 'Generate B2B Invoice' : 'Сформировать B2B-счет'}</span>
+                      <div className="text-xs font-semibold text-white mb-1">
+                        {t('workspace.gatewayRu')}
+                      </div>
+                      <p className="text-[11px] text-[#8E8E93] leading-relaxed">
+                        {t('workspace.gatewayRuDesc')}
+                      </p>
                     </button>
 
                     <button
-                      type="submit"
-                      disabled={isSavingBillingDetails}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors"
+                      type="button"
+                      onClick={() => handleRegionChange('GLOBAL')}
+                      className={`text-left rounded-lg border p-3.5 transition-colors ${
+                        paymentRegion === 'GLOBAL'
+                          ? 'border-white/80 bg-white/[0.04]'
+                          : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
+                      }`}
                     >
-                      {isSavingBillingDetails ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Save className="w-3.5 h-3.5" />
-                      )}
-                      <span>{isEn ? 'Save Details' : 'Сохранить реквизиты'}</span>
+                      <div className="text-xs font-semibold text-white mb-1">
+                        {t('workspace.gatewayGlobal')}
+                      </div>
+                      <p className="text-[11px] text-[#8E8E93] leading-relaxed">
+                        {t('workspace.gatewayGlobalDesc')}
+                      </p>
                     </button>
                   </div>
-                </form>
+                </div>
+
+                {renderLocalizationCard()}
               </div>
 
-              {/* 4. Таблица «История счетов и платежей» (billing_invoices) */}
+              {/* Компактная панель корпоративных реквизитов, экспорта и аудита безопасности (Progressive Disclosure) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Receipt className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white truncate">
+                        {isEn
+                          ? 'Legal Entity & Payer Details'
+                          : 'Юридические реквизиты плательщика'}
+                      </h3>
+                    </div>
+                    <p className="text-xs text-[#8E8E93] truncate">
+                      {payerLegalName || companyName}
+                      {payerTaxId ? ` · ${paymentRegion === 'RU' ? 'ИНН' : 'VAT'} ${payerTaxId}` : ''}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsLegalRequisitesModalOpen(true)}
+                    className={SECONDARY_BTN_CLASS}
+                  >
+                    <Receipt className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      {isEn
+                        ? 'Configure Legal Entity Details'
+                        : 'Настроить реквизиты юрлица'}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <History className="w-4 h-4 text-indigo-400 shrink-0" />
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white truncate">
+                        {isEn
+                          ? 'Security Audit Log'
+                          : 'Журнал аудита безопасности'}
+                      </h3>
+                      {safeAuditLogs.length > 0 && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/[0.05] text-zinc-300 tabular-nums">
+                          {safeAuditLogs.length}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[#8E8E93] truncate">
+                      {isEn
+                        ? 'Immutable ledger of access & billing mutations'
+                        : 'Неизменяемый реестр событий безопасности и биллинга'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSecurityAuditModalOpen(true)}
+                    className={SECONDARY_BTN_CLASS}
+                  >
+                    <History className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>
+                      {isEn
+                        ? 'Open Security Audit Log'
+                        : 'Открыть журнал безопасности'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Таблица «История счетов и платежей» (billing_invoices) — с ЕДИНСТВЕННОЙ Primary CTA на экране биллинга */}
               <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
                 <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
@@ -5126,20 +4811,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ? 'Billing & Payment History (B2B Invoices)'
                         : 'История счетов и платежей (B2B Invoices)'}
                     </h3>
-                    <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded tabular-nums">
-                      {safeInvoices.length}
-                    </span>
+                    {safeInvoices.length > 0 && (
+                      <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded tabular-nums">
+                        {safeInvoices.length}
+                      </span>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCheckoutModalPlan(selectedPlan === 'Trial' ? 'Business' : selectedPlan)
-                    }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{isEn ? 'Issue New Invoice' : 'Выставить новый счет'}</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {perms.data_export && (
+                      <button
+                        type="button"
+                        onClick={handleExportDealsCsv}
+                        className={SECONDARY_BTN_CLASS}
+                      >
+                        <Download className="w-3.5 h-3.5 text-[#A1A1AA]" />
+                        <span>{isEn ? 'Export CSV' : 'Выгрузить CSV'}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCheckoutModalPlan(selectedPlan === 'Trial' ? 'Business' : selectedPlan)
+                      }
+                      className={PRIMARY_BTN_CLASS}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isEn ? 'Issue New Invoice' : 'Выставить новый счет'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {safeInvoices.length === 0 ? (
@@ -5222,7 +4921,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setPrintableInvoice(inv)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white hover:text-black text-xs font-medium text-white transition-colors whitespace-nowrap"
+                                  className={SECONDARY_BTN_CLASS}
                                 >
                                   <Printer className="w-3.5 h-3.5" />
                                   <span>
@@ -5230,136 +4929,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </span>
                                 </button>
                               </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Экспорт реестров CSV */}
-              {perms.data_export && (
-                <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
-                  <div className="flex items-center gap-2.5">
-                    <Download className="w-4 h-4 text-[#A1A1AA]" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                      {t('workspace.exportSection')}
-                    </h3>
-                  </div>
-                  <p className="text-xs text-[#8E8E93] leading-relaxed">
-                    {t('workspace.exportDesc')}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleExportDealsCsv}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors whitespace-nowrap"
-                    >
-                      <Download className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                      <span>{t('workspace.exportDealsCsv')}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleExportTasksCsv}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors whitespace-nowrap"
-                    >
-                      <Download className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                      <span>{t('workspace.exportTasksCsv')}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleExportTeamCsv}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors whitespace-nowrap"
-                    >
-                      <Download className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                      <span>{t('workspace.exportTeamCsv')}</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* 5. БЛОК 5: ЖУРНАЛ БЕЗОПАСНОСТИ И АУДИТА ДЕЙСТВИЙ (AUDIT LOG) */}
-              <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <History className="w-4 h-4 text-emerald-400" />
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                        {isEn
-                          ? 'Security & Action Audit Log'
-                          : 'Журнал безопасности и аудита действий (Audit Log)'}
-                      </h3>
-                      <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                        {isEn
-                          ? `Immutable ledger of security events and record mutations in ${companyName}`
-                          : `Неизменяемый реестр критически важных событий безопасности и изменений в ${companyName}`}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-[11px] tabular-nums text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded">
-                    {safeAuditLogs.length} {isEn ? 'events' : 'событий'}
-                  </span>
-                </div>
-
-                {safeAuditLogs.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-[#71717A]">
-                    {isEn
-                      ? 'Audit log initialized. All subsequent creations, updates, permission changes, and billing events are recorded automatically.'
-                      : 'Журнал аудита инициализирован. Все последующие операции создания/удаления задач, сделок, изменения прав и счетов фиксируются автоматически.'}
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto max-h-[360px] overflow-y-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
-                          <th className="py-3 px-5">{isEn ? 'Time' : 'Время'}</th>
-                          <th className="py-3 px-5">
-                            {isEn ? 'Actor (Employee)' : 'Сотрудник (Инициатор)'}
-                          </th>
-                          <th className="py-3 px-5">{isEn ? 'Action' : 'Действие'}</th>
-                          <th className="py-3 px-5">{isEn ? 'Entity' : 'Объект'}</th>
-                          <th className="py-3 px-5">{isEn ? 'Details' : 'Детали'}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/[0.05] text-xs">
-                        {safeAuditLogs.slice(0, 40).map((log) => {
-                          const timeFormatted = log.created_at
-                            ? new Date(log.created_at).toLocaleString(
-                                isEn ? 'en-US' : 'ru-RU',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                }
-                              )
-                            : '—';
-                          return (
-                            <tr key={log.id} className="hover:bg-[#16161A] transition-colors">
-                              <td className="py-3 px-5 tabular-nums text-[11px] text-[#8E8E93] whitespace-nowrap">
-                                {timeFormatted}
-                              </td>
-                              <td className="py-3 px-5">
-                                <div className="font-medium text-white">{log.actor_name}</div>
-                                {log.actor_role && (
-                                  <div className="text-[10px] text-[#71717A]">
-                                    {formatRole(log.actor_role)}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="py-3 px-5">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[11px] font-medium text-emerald-300">
-                                  {log.action_type || (log as any).action}
-                                </span>
-                              </td>
-                              <td className="py-3 px-5 text-[#A1A1AA] text-[11px]">
-                                {log.entity_type}
-                              </td>
-                              <td className="py-3 px-5 text-[#D4D4D8]">{log.details}</td>
                             </tr>
                           );
                         })}
@@ -5915,6 +5484,60 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Progressive Disclosure Modals (БЛОК 1: Полномочия, Ключи входа, Реквизиты плательщика, Аудит безопасности) */}
+      {currentProfile && (
+        <>
+          <MyPermissionsModal
+            isOpen={isMyPermissionsModalOpen}
+            onClose={() => setIsMyPermissionsModalOpen(false)}
+            accessLevel={currentAccessLevel}
+            permissions={perms}
+            employeeName={currentProfile.name}
+          />
+          <MyAccessKeysModal
+            isOpen={isMyAccessKeysModalOpen}
+            onClose={() => setIsMyAccessKeysModalOpen(false)}
+            profile={currentProfile}
+            botUsername={botUsername}
+            copiedToken={copiedToken}
+            onCopy={copyToClipboard}
+          />
+        </>
+      )}
+
+      <LegalRequisitesModal
+        isOpen={isLegalRequisitesModalOpen}
+        onClose={() => setIsLegalRequisitesModalOpen(false)}
+        paymentRegion={paymentRegion}
+        payerLegalName={payerLegalName}
+        setPayerLegalName={setPayerLegalName}
+        payerTaxId={payerTaxId}
+        setPayerTaxId={setPayerTaxId}
+        payerRegNumber={payerRegNumber}
+        setPayerRegNumber={setPayerRegNumber}
+        payerLegalAddress={payerLegalAddress}
+        setPayerLegalAddress={setPayerLegalAddress}
+        payerBillingEmail={payerBillingEmail}
+        setPayerBillingEmail={setPayerBillingEmail}
+        payerCountry={payerCountry}
+        setPayerCountry={setPayerCountry}
+        isSaving={isSavingBillingDetails}
+        onSubmit={async (e) => {
+          await handleSaveBillingDetails(e);
+          setIsLegalRequisitesModalOpen(false);
+        }}
+        onGenerateInvoice={() =>
+          setCheckoutModalPlan(selectedPlan === 'Trial' ? 'Business' : selectedPlan)
+        }
+      />
+
+      <SecurityAuditLogModal
+        isOpen={isSecurityAuditModalOpen}
+        onClose={() => setIsSecurityAuditModalOpen(false)}
+        companyName={companyName}
+        auditLogs={safeAuditLogs}
+      />
 
       {/* Custom Enterprise Confirmation Dialog */}
       <ConfirmDialog

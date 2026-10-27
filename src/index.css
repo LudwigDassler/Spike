@@ -100,11 +100,45 @@
    ============================================================================ */
 
 /* Page & Root Backgrounds */
+.theme-light.bg-\[\#070709\],
+.theme-light .bg-\[\#070709\],
 .theme-light.bg-\[\#09090B\],
 .theme-light .bg-\[\#09090B\],
 .theme-light .bg-zinc-950 {
-  background-color: #f8fafc !important;
+  background-color: #f1f5f9 !important;
   color: #0f172a !important;
+}
+
+.theme-light .bg-\[\#0c0c10\],
+.theme-light .bg-\[\#101014\],
+.theme-light .bg-\[\#141419\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.theme-light .tc-btn-primary {
+  background-image: none !important;
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #0f172a !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18) !important;
+}
+
+.theme-light .tc-btn-primary:hover {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.theme-light .tc-btn-secondary {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.theme-light .tc-btn-secondary:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
 }
 
 /* Header & Sidebar Surfaces */
