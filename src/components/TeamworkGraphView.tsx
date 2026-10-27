@@ -35,7 +35,8 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
   onSelectTask,
   onSelectLead,
 }) => {
-  const { formatMoney, t } = useLocale();
+  const { formatMoney, t, language, formatRole } = useLocale();
+  const isEn = language === 'en';
 
   const openTasks = tasks.filter((t) => t.status !== 'Done');
   const activeLeads = canViewCrm
@@ -46,7 +47,11 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
   const effectiveDepts = Array.from(
     new Set([
       ...departments,
-      ...nodes.map((n) => (n.department && n.department.trim() ? n.department.trim() : 'Дирекция / Общий штат')),
+      ...nodes.map((n) =>
+        n.department && n.department.trim()
+          ? n.department.trim()
+          : 'Дирекция / Общий штат'
+      ),
     ])
   );
 
@@ -55,19 +60,23 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
   }
 
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-6 space-y-6">
+    <div className="rounded-2xl border border-white/[0.08] bg-[#111114] shadow-2xl p-4 sm:p-6 space-y-6">
       {/* Header & Legend */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.07] pb-4">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
             <Network className="w-4 h-4 text-emerald-400" />
           </div>
           <div>
             <h2 className="text-sm font-semibold text-white tracking-tight">
-              Карта связей организации (Teamwork Graph)
+              {isEn
+                ? 'Organization Teamwork Graph'
+                : 'Карта связей организации (Teamwork Graph)'}
             </h2>
             <p className="text-xs text-[#8E8E93]">
-              Интерактивная топология: Организация ➔ Подразделения ➔ Сотрудники ➔ Активные задачи и сделки
+              {isEn
+                ? 'Interactive topology: Organization ➔ Departments ➔ Team Members ➔ Active Tasks & Deals'
+                : 'Интерактивная топология: Организация ➔ Подразделения ➔ Сотрудники ➔ Активные задачи и сделки'}
             </p>
           </div>
         </div>
@@ -76,15 +85,15 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#A1A1AA]">
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>Оптимальная нагрузка (0–2 задачи)</span>
+            <span>{isEn ? 'Optimal (0–2 tasks)' : 'Оптимальная нагрузка (0–2 задачи)'}</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400" />
-            <span>Повышенная (3–4 задачи)</span>
+            <span>{isEn ? 'Elevated (3–4 tasks)' : 'Повышенная (3–4 задачи)'}</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-red-400" />
-            <span>Перегрузка (5+ задач)</span>
+            <span>{isEn ? 'Overloaded (5+ tasks)' : 'Перегрузка (5+ задач)'}</span>
           </span>
         </div>
       </div>
@@ -92,13 +101,15 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
       {/* Level 1: Organization Root Node */}
       <div className="flex flex-col items-center">
         <div className="rounded-xl border border-emerald-500/40 bg-[#15151A] px-5 py-3 shadow-lg flex items-center gap-3">
-          <Building2 className="w-4 h-4 text-emerald-400" />
+          <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <div>
             <div className="text-xs font-semibold text-white uppercase tracking-wider">
               {companyName}
             </div>
             <div className="text-[11px] text-[#8E8E93] tabular-nums">
-              Подразделений: {effectiveDepts.length} · Штат: {nodes.length} · Активных задач: {openTasks.length}
+              {isEn
+                ? `Departments: ${effectiveDepts.length} · Team: ${nodes.length} · Open Tasks: ${openTasks.length}`
+                : `Подразделений: ${effectiveDepts.length} · Штат: ${nodes.length} · Активных задач: ${openTasks.length}`}
             </div>
           </div>
         </div>
@@ -131,21 +142,23 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
             >
               {/* Department Header Node */}
               <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                    Подразделение: {deptName}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 shrink-0" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-white truncate">
+                    {isEn ? 'Department:' : 'Подразделение:'} {formatRole(deptName)}
                   </h3>
                 </div>
-                <span className="text-[11px] tabular-nums text-[#8E8E93] bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.08]">
-                  {deptEmployees.length} сотр.
+                <span className="text-[11px] tabular-nums text-[#8E8E93] bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.08] shrink-0">
+                  {deptEmployees.length} {isEn ? 'members' : 'сотр.'}
                 </span>
               </div>
 
               {/* Employees inside Department */}
               {deptEmployees.length === 0 ? (
                 <div className="text-xs text-[#71717A] py-2">
-                  В подразделении пока нет привязанных сотрудников.
+                  {isEn
+                    ? 'No team members assigned to this department yet.'
+                    : 'В подразделении пока нет привязанных сотрудников.'}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -182,7 +195,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                                 {emp.name}
                               </div>
                               <div className="text-[11px] text-[#8E8E93] truncate">
-                                {emp.role_type}
+                                {formatRole(emp.role_type)}
                               </div>
                             </div>
                           </div>
@@ -190,7 +203,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                           <span
                             className={`text-[10px] font-semibold px-2 py-0.5 rounded border whitespace-nowrap tabular-nums ${loadBadgeClass}`}
                           >
-                            Задач: {loadCount}
+                            {isEn ? `Tasks: ${loadCount}` : `Задач: ${loadCount}`}
                           </span>
                         </div>
 
@@ -247,7 +260,9 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
               {deptUnassignedTasks.length > 0 && (
                 <div className="pt-2 border-t border-white/[0.07] space-y-1.5">
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-[#8E8E93] tabular-nums">
-                    Общие поручения на отдел ({deptUnassignedTasks.length})
+                    {isEn
+                      ? `Department Broadcast Tasks (${deptUnassignedTasks.length})`
+                      : `Общие поручения на отдел (${deptUnassignedTasks.length})`}
                   </div>
                   {deptUnassignedTasks.map((tItem) => (
                     <button
@@ -258,7 +273,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                     >
                       <span className="truncate">{tItem.title}</span>
                       <span className="text-[10px] text-[#8E8E93]">
-                        {t(`priority.${tItem.priority}` as any)}
+                        {t(`priority.${tItem.priority}`)}
                       </span>
                     </button>
                   ))}

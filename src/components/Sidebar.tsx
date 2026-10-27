@@ -8,6 +8,8 @@ import {
   UserCircle,
   LogOut,
   MessageSquare,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import {
   DashboardSection,
@@ -38,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   counts,
   onRequestSignOut,
 }) => {
-  const { language, setLanguage, t } = useLocale();
+  const { language, setLanguage, theme, toggleTheme, t, formatRole } = useLocale();
 
   const { access_level, permissions: perms } = normalizeEmployeePermissions(
     currentProfile?.access_level,
@@ -88,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const visibleNavItems = allNavItems.filter((item) => item.visible);
 
   return (
-    <aside className="w-64 shrink-0 border-r border-white/[0.07] bg-[#0B0B0E] h-screen sticky top-0 flex flex-col justify-between overflow-hidden pb-4 select-none font-sans">
+    <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:shrink-0 border-r border-white/[0.07] bg-[#0B0B0E] h-screen sticky top-0 justify-between overflow-hidden pb-4 select-none font-sans">
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         <div className="h-14 px-5 shrink-0 flex items-center justify-between border-b border-white/[0.07]">
           <div className="flex items-center gap-2.5">
@@ -102,7 +104,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </span>
         </div>
 
-        <nav className="p-3 space-y-1 overflow-y-auto flex-1" aria-label="Main Navigation">
+        <nav className="p-3 space-y-1 overflow-y-auto no-scrollbar flex-1" aria-label="Main Navigation">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
@@ -159,13 +161,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-zinc-400 truncate">
-                  {currentProfile.role_type}
-                  {currentProfile.department ? ` · ${currentProfile.department}` : ''}
+                  {formatRole(currentProfile.role_type)}
+                  {currentProfile.department ? ` · ${formatRole(currentProfile.department)}` : ''}
                 </div>
               </div>
             </button>
 
-            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/[0.06]">
+            <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-white/[0.06]">
               <div
                 className="inline-flex items-center rounded-md border border-white/[0.08] bg-zinc-900 p-0.5 shrink-0"
                 aria-label="Language switcher"
@@ -186,11 +188,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ))}
               </div>
 
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title={theme === 'light' ? t('theme.dark') : t('theme.light')}
+                aria-label={theme === 'light' ? t('theme.dark') : t('theme.light')}
+                className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-white/[0.08] bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-colors shrink-0"
+              >
+                {theme === 'light' ? (
+                  <Moon className="w-3.5 h-3.5" />
+                ) : (
+                  <Sun className="w-3.5 h-3.5" />
+                )}
+              </button>
+
               {onRequestSignOut && (
                 <button
                   type="button"
                   onClick={onRequestSignOut}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-md border border-white/[0.08] bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-300 hover:text-white transition-colors whitespace-nowrap"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md border border-white/[0.08] bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-300 hover:text-white transition-colors whitespace-nowrap"
                 >
                   <LogOut className="w-3 h-3" />
                   <span>{t('profile.signOutBtn')}</span>

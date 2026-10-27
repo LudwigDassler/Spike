@@ -25,6 +25,7 @@ import {
   calculateSubscriptionPricing,
   generateInvoiceNumber,
 } from '../utils/enterpriseLogic';
+import { useLocale } from '../i18n/LocaleContext';
 
 interface SubscriptionCheckoutModalProps {
   isOpen: boolean;
@@ -54,11 +55,15 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
   onClose,
   onConfirmSubscription,
 }) => {
+  const { language } = useLocale();
+  const isEn = language === 'en';
   const [plan, setPlan] = useState<SubscriptionPlanTier>(
     initialPlan === 'Trial' ? 'Business' : initialPlan
   );
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('yearly');
-  const [selectedRegion, setSelectedRegion] = useState<PaymentGatewayRegion>(paymentRegion || 'GLOBAL');
+  const [selectedRegion, setSelectedRegion] = useState<PaymentGatewayRegion>(
+    paymentRegion || 'GLOBAL'
+  );
   const [globalCurrency, setGlobalCurrency] = useState<CurrencyCode>('USD');
   const [paymentMethod, setPaymentMethod] = useState<BillingPaymentMethod>(
     (paymentRegion || 'GLOBAL') === 'GLOBAL' ? 'stripe_card' : 'card_sbp'
@@ -139,34 +144,45 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 font-sans overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3 sm:p-4 font-sans overflow-y-auto no-scrollbar"
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#111114] shadow-2xl overflow-hidden my-auto">
-        <div className="px-6 py-4 border-b border-white/[0.07] flex items-center justify-between bg-[#141418]">
-          <div className="flex items-center gap-2.5">
-            <CreditCard className="w-4 h-4 text-zinc-200" />
-            <h3 className="text-sm font-semibold text-white tracking-tight">
-              Оформление корпоративной подписки и международного счета
+      <div className="w-[calc(100vw-24px)] max-w-2xl rounded-2xl border border-white/10 bg-[#111114] shadow-2xl overflow-hidden my-auto">
+        <div className="px-5 sm:px-6 py-4 border-b border-white/[0.07] flex items-center justify-between bg-[#141418]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <CreditCard className="w-4 h-4 text-zinc-200 shrink-0" />
+            <h3 className="text-sm font-semibold text-white tracking-tight truncate">
+              {isEn
+                ? 'Enterprise Subscription & Commercial Invoice Checkout'
+                : 'Оформление корпоративной подписки и международного счета'}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06]"
+            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleConfirm} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+        <form
+          onSubmit={handleConfirm}
+          className="p-5 sm:p-6 space-y-5 max-h-[82vh] overflow-y-auto no-scrollbar"
+        >
           {/* Payer Region Switcher inside the Checkout Modal */}
           <div className="rounded-xl border border-white/[0.07] bg-[#151519] p-3.5 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold text-white">Регион плательщика и шлюз расчетов</div>
+              <div className="text-xs font-semibold text-white">
+                {isEn
+                  ? 'Payer Jurisdiction & Settlement Gateway'
+                  : 'Регион плательщика и шлюз расчетов'}
+              </div>
               <div className="text-[11px] text-zinc-400">
-                Выберите юрисдикцию для настройки доступных платежных инструментов
+                {isEn
+                  ? 'Select your jurisdiction to configure available payment rails'
+                  : 'Выберите юрисдикцию для настройки доступных платежных инструментов'}
               </div>
             </div>
             <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#0C0C0E] p-0.5">
@@ -192,7 +208,7 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                 }`}
               >
                 <Building2 className="w-3.5 h-3.5" />
-                <span>Россия и СНГ (RUB)</span>
+                <span>{isEn ? 'RU & CIS (RUB)' : 'Россия и СНГ (RUB)'}</span>
               </button>
             </div>
           </div>
@@ -201,7 +217,9 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-zinc-300">
-                Тарифный план организации «{companyName}»
+                {isEn
+                  ? `Subscription Plan for "${companyName}"`
+                  : `Тарифный план организации «${companyName}»`}
               </label>
               {selectedRegion === 'GLOBAL' && (
                 <div className="inline-flex items-center rounded-md border border-white/10 bg-[#151519] p-0.5">
@@ -245,12 +263,17 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-white">{tier}</span>
                       <span className="text-xs font-bold text-white tabular-nums">
-                        {formatCheckoutPrice(tierPrice.monthlyPrice, activeCurrency)} / мес.
+                        {formatCheckoutPrice(tierPrice.monthlyPrice, activeCurrency)}{' '}
+                        {isEn ? '/ mo' : '/ мес.'}
                       </span>
                     </div>
                     <div className="text-[11px] text-zinc-400 mt-1">
                       {tier === 'Business'
-                        ? 'До 50 сотрудников · Полный CRM, Канбан и Telegram-контур'
+                        ? isEn
+                          ? 'Up to 50 members · Full CRM, Kanban & Telegram Sync'
+                          : 'До 50 сотрудников · Полный CRM, Канбан и Telegram-контур'
+                        : isEn
+                        ? 'Unlimited members · Dedicated SLA, RBAC & Security Audit'
                         : 'Безлимит сотрудников · Выделенный SLA, RBAC и аудит безопасности'}
                     </div>
                   </button>
@@ -262,7 +285,7 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
           {/* Billing Cycle Toggle */}
           <div>
             <label className="block text-xs font-medium text-zinc-300 mb-2">
-              Расчетный период подписки
+              {isEn ? 'Billing Cycle' : 'Расчетный период подписки'}
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
@@ -274,9 +297,11 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                     : 'border-white/[0.07] bg-[#141418] hover:border-white/25'
                 }`}
               >
-                <div className="text-xs font-semibold text-white">Ежемесячно</div>
+                <div className="text-xs font-semibold text-white">
+                  {isEn ? 'Monthly' : 'Ежемесячно'}
+                </div>
                 <div className="text-[11px] text-zinc-400 mt-0.5">
-                  Гибкий помесячный биллинг
+                  {isEn ? 'Flexible month-to-month billing' : 'Гибкий помесячный биллинг'}
                 </div>
               </button>
 
@@ -290,13 +315,17 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-white">На 1 год (-20% выгода)</span>
+                  <span className="text-xs font-semibold text-white">
+                    {isEn ? 'Annual Contract (Save 20%)' : 'На 1 год (-20% выгода)'}
+                  </span>
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white text-black tabular-nums">
                     -20%
                   </span>
                 </div>
                 <div className="text-[11px] text-zinc-400 mt-0.5">
-                  Годовой корпоративный контракт с фиксацией цены
+                  {isEn
+                    ? 'Annual enterprise commitment with locked pricing'
+                    : 'Годовой корпоративный контракт с фиксацией цены'}
                 </div>
               </button>
             </div>
@@ -305,7 +334,17 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
           {/* Payment Method Selector */}
           <div>
             <label className="block text-xs font-medium text-zinc-300 mb-2">
-              Способ оплаты ({selectedRegion === 'GLOBAL' ? `International · ${activeCurrency}` : 'Россия и СНГ · RUB'})
+              {isEn
+                ? `Payment Method (${
+                    selectedRegion === 'GLOBAL'
+                      ? `International · ${activeCurrency}`
+                      : 'RU & CIS · RUB'
+                  })`
+                : `Способ оплаты (${
+                    selectedRegion === 'GLOBAL'
+                      ? `International · ${activeCurrency}`
+                      : 'Россия и СНГ · RUB'
+                  })`}
             </label>
 
             {selectedRegion === 'GLOBAL' ? (
@@ -327,7 +366,9 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                         Global Corporate Card / Apple Pay (Stripe / Paddle)
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        Мгновенная оплата картами Visa, Mastercard, Amex в {activeCurrency} с автопродлением
+                        {isEn
+                          ? `Instant settlement via Visa, Mastercard, or Amex in ${activeCurrency}`
+                          : `Мгновенная оплата картами Visa, Mastercard, Amex в ${activeCurrency} с автопродлением`}
                       </div>
                     </div>
                   </div>
@@ -353,7 +394,9 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                         International Wire Transfer (SWIFT / SEPA / ACH Invoice)
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        Генерация международного Commercial Invoice для юрлиц ЕС, США, ОАЭ и MENA
+                        {isEn
+                          ? 'Generate an official Commercial Invoice for EU, US, UK, and MENA entities'
+                          : 'Генерация международного Commercial Invoice для юрлиц ЕС, США, ОАЭ и MENA'}
                       </div>
                     </div>
                   </div>
@@ -379,7 +422,9 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                         Corporate Digital Assets (USDT / USDC — ERC-20 / TRC-20)
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        Оплата в стейблкоинах для международных распределенных команд и холдингов
+                        {isEn
+                          ? 'Stablecoin treasury settlement for distributed international teams'
+                          : 'Оплата в стейблкоинах для международных распределенных команд и холдингов'}
                       </div>
                     </div>
                   </div>
@@ -404,10 +449,14 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                     <CreditCard className="w-4 h-4 text-zinc-200 shrink-0" />
                     <div>
                       <div className="text-xs font-semibold text-white">
-                        Банковская карта / СБП (ЮKassa / CloudPayments)
+                        {isEn
+                          ? 'Corporate Card / SBP (YooKassa / CloudPayments)'
+                          : 'Банковская карта / СБП (ЮKassa / CloudPayments)'}
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        Мгновенное проведение платежа в рублях (RUB) и электронный чек
+                        {isEn
+                          ? 'Instant settlement in RUB with automated receipt'
+                          : 'Мгновенное проведение платежа в рублях (RUB) и электронный чек'}
                       </div>
                     </div>
                   </div>
@@ -430,10 +479,14 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                     <FileText className="w-4 h-4 text-zinc-200 shrink-0" />
                     <div>
                       <div className="text-xs font-semibold text-white">
-                        Безналичный счет по реквизитам юрлица (ИНН / КПП + ЭДО Диадок)
+                        {isEn
+                          ? 'B2B Wire Invoice (INN / KPP + Diadoc EDO)'
+                          : 'Безналичный счет по реквизитам юрлица (ИНН / КПП + ЭДО Диадок)'}
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        Формирование официального счета на оплату и закрывающих актов УПД
+                        {isEn
+                          ? 'Official corporate wire invoice and closing accounting acts'
+                          : 'Формирование официального счета на оплату и закрывающих актов УПД'}
                       </div>
                     </div>
                   </div>
@@ -450,13 +503,19 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
             <div className="rounded-xl border border-white/[0.07] bg-[#15151A] p-4 space-y-3">
               <div className="text-xs font-semibold text-white">
                 {selectedRegion === 'GLOBAL'
-                  ? 'Реквизиты плательщика для Commercial Invoice (SWIFT / SEPA)'
+                  ? isEn
+                    ? 'Payer Requisites for Commercial Invoice (SWIFT / SEPA)'
+                    : 'Реквизиты плательщика для Commercial Invoice (SWIFT / SEPA)'
+                  : isEn
+                  ? 'Legal Entity Requisites for B2B Invoice (RU / CIS)'
                   : 'Реквизиты юридического лица для выставления счета (РФ / СНГ)'}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] text-zinc-400 mb-1">
-                    {selectedRegion === 'GLOBAL' ? 'Company Legal Name' : 'Наименование юрлица'}
+                    {selectedRegion === 'GLOBAL' || isEn
+                      ? 'Company Legal Name'
+                      : 'Наименование юрлица'}
                   </label>
                   <input
                     type="text"
@@ -468,13 +527,19 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                 </div>
                 <div>
                   <label className="block text-[11px] text-zinc-400 mb-1">
-                    {selectedRegion === 'GLOBAL' ? 'VAT / Tax ID / EIN' : 'ИНН / КПП'}
+                    {selectedRegion === 'GLOBAL' || isEn
+                      ? 'VAT / Tax ID / EIN'
+                      : 'ИНН / КПП'}
                   </label>
                   <input
                     type="text"
                     value={payerTaxId}
                     onChange={(e) => setPayerTaxId(e.target.value)}
-                    placeholder={selectedRegion === 'GLOBAL' ? 'EU372019482 / EIN 94-31209' : '7701234567 / 770101001'}
+                    placeholder={
+                      selectedRegion === 'GLOBAL'
+                        ? 'EU372019482 / EIN 94-31209'
+                        : '7701234567 / 770101001'
+                    }
                     className="w-full rounded-lg border border-white/10 bg-[#101014] px-3 py-1.5 text-xs text-white tabular-nums focus:border-white/30 focus:outline-none"
                   />
                 </div>
@@ -482,13 +547,19 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] text-zinc-400 mb-1">
-                    {selectedRegion === 'GLOBAL' ? 'Billing Address & Country' : 'Юридический адрес'}
+                    {selectedRegion === 'GLOBAL' || isEn
+                      ? 'Billing Address & Country'
+                      : 'Юридический адрес'}
                   </label>
                   <input
                     type="text"
                     value={payerAddress}
                     onChange={(e) => setPayerAddress(e.target.value)}
-                    placeholder={selectedRegion === 'GLOBAL' ? 'Delaware, US / Limassol, CY / Dubai, UAE' : 'г. Москва, Пресненская наб., д. 12'}
+                    placeholder={
+                      selectedRegion === 'GLOBAL'
+                        ? 'Delaware, US / Limassol, CY / Dubai, UAE'
+                        : 'г. Москва, Пресненская наб., д. 12'
+                    }
                     className="w-full rounded-lg border border-white/10 bg-[#101014] px-3 py-1.5 text-xs text-white focus:border-white/30 focus:outline-none"
                   />
                 </div>
@@ -514,7 +585,7 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
             <div className="rounded-xl border border-white/[0.07] bg-[#15151A] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-white">
-                  Расчетная сеть стейблкоина
+                  {isEn ? 'Stablecoin Settlement Network' : 'Расчетная сеть стейблкоина'}
                 </span>
                 <div className="inline-flex rounded-lg border border-white/10 bg-[#101014] p-0.5">
                   <button
@@ -542,7 +613,9 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                 </div>
               </div>
               <p className="text-[11px] text-zinc-400 leading-relaxed">
-                Корпоративный платежный ордер и верифицированный адрес казначейства TedCloud Treasury будут включены в формируемый Commercial Invoice.
+                {isEn
+                  ? 'A corporate payment order and verified TedCloud Treasury wallet address will be included in the generated Commercial Invoice.'
+                  : 'Корпоративный платежный ордер и верифицированный адрес казначейства TedCloud Treasury будут включены в формируемый Commercial Invoice.'}
               </p>
             </div>
           )}
@@ -550,9 +623,11 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
           {/* Summary Box */}
           <div className="rounded-xl border border-white/10 bg-[#16161C] p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-zinc-400">{pricing.periodLabelRu}</div>
+              <div className="text-xs text-zinc-400">
+                {isEn ? pricing.periodLabelEn : pricing.periodLabelRu}
+              </div>
               <div className="text-sm font-semibold text-white mt-0.5">
-                Итого к оплате ({plan}):
+                {isEn ? `Total Due (${plan}):` : `Итого к оплате (${plan}):`}
               </div>
             </div>
             <div className="text-right">
@@ -561,7 +636,8 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
               </div>
               {billingCycle === 'yearly' && (
                 <div className="text-[11px] text-zinc-400 tabular-nums">
-                  ({formatCheckoutPrice(pricing.monthlyPrice, activeCurrency)} / мес.)
+                  ({formatCheckoutPrice(pricing.monthlyPrice, activeCurrency)}{' '}
+                  {isEn ? '/ mo' : '/ мес.'})
                 </div>
               )}
             </div>
@@ -573,7 +649,7 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
               onClick={onClose}
               className="px-4 py-2 rounded-lg border border-white/10 bg-zinc-900 text-xs font-medium text-zinc-300 hover:text-white"
             >
-              Отмена
+              {isEn ? 'Cancel' : 'Отмена'}
             </button>
             <button
               type="submit"
@@ -587,7 +663,11 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
               )}
               <span>
                 {paymentMethod === 'card_sbp' || paymentMethod === 'stripe_card'
-                  ? 'Оплатить и активировать тариф'
+                  ? isEn
+                    ? 'Pay & Activate Plan'
+                    : 'Оплатить и активировать тариф'
+                  : isEn
+                  ? 'Generate Commercial Invoice'
                   : 'Сформировать коммерческий счет'}
               </span>
             </button>
@@ -615,6 +695,8 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
   onClose,
   onMarkPaid,
 }) => {
+  const { language } = useLocale();
+  const isEn = language === 'en';
   if (!invoice) return null;
 
   const details: CompanyBillingDetails = {
@@ -631,8 +713,8 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
     invoice.payment_method === 'crypto_usdt';
 
   const createdDate = invoice.created_at
-    ? new Date(invoice.created_at).toLocaleDateString('ru-RU')
-    : new Date().toLocaleDateString('ru-RU');
+    ? new Date(invoice.created_at).toLocaleDateString(isEn ? 'en-US' : 'ru-RU')
+    : new Date().toLocaleDateString(isEn ? 'en-US' : 'ru-RU');
 
   const payerLegalName = details.legal_name || companyName;
   const payerTaxId = details.tax_id || (isGlobal ? 'EU37209184' : '7701234567');
@@ -661,17 +743,18 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 font-sans overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-3 sm:p-4 font-sans overflow-y-auto no-scrollbar"
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-[#121216] shadow-2xl overflow-hidden my-8">
+      <div className="w-[calc(100vw-24px)] max-w-3xl rounded-2xl border border-white/10 bg-[#121216] shadow-2xl overflow-hidden my-8">
         {/* Top Action Bar */}
-        <div className="px-6 py-4 border-b border-white/[0.07] bg-[#16161C] flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <div className="px-5 sm:px-6 py-4 border-b border-white/[0.07] bg-[#16161C] flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="flex items-center gap-2.5">
             <Building2 className="w-4 h-4 text-zinc-200" />
             <span className="text-xs font-semibold text-white tabular-nums">
-              Официальный платежный документ · {invoice.invoice_number}
+              {isEn ? 'Official Billing Document' : 'Официальный платежный документ'} ·{' '}
+              {invoice.invoice_number}
             </span>
             <span
               className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
@@ -680,7 +763,13 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
                   : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
               }`}
             >
-              {invoice.status === 'Paid' ? 'Оплачен (Paid)' : 'Выставлен (Issued)'}
+              {invoice.status === 'Paid'
+                ? isEn
+                  ? 'Paid'
+                  : 'Оплачен (Paid)'
+                : isEn
+                ? 'Issued'
+                : 'Выставлен (Issued)'}
             </span>
           </div>
 
@@ -692,7 +781,7 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white transition-colors"
               >
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Отметить оплаченным</span>
+                <span>{isEn ? 'Mark as Paid' : 'Отметить оплаченным'}</span>
               </button>
             )}
             <button
@@ -701,7 +790,7 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 text-xs font-semibold transition-colors"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Печать / Сохранить PDF</span>
+              <span>{isEn ? 'Print / Save PDF' : 'Печать / Сохранить PDF'}</span>
             </button>
             <button
               type="button"
@@ -714,7 +803,7 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
         </div>
 
         {/* Printable Document Sheet */}
-        <div className="p-8 bg-white text-black space-y-6 text-xs">
+        <div className="p-5 sm:p-8 bg-white text-black space-y-6 text-xs overflow-x-auto">
           {!isGlobal ? (
             <>
               {/* РФ Счет на оплату */}
@@ -850,11 +939,13 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
                 <div className="text-right">
                   <div className="font-bold text-sm">TEDCLOUD ENTERPRISE INC.</div>
                   <div className="text-zinc-600">Global Cloud Billing & SaaS Licensing</div>
-                  <div className="text-[11px] text-zinc-500">Delaware, United States · EU VAT Registered</div>
+                  <div className="text-[11px] text-zinc-500">
+                    Delaware, United States · EU VAT Registered
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6 py-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 py-2">
                 <div>
                   <div className="text-[10px] font-bold uppercase text-zinc-500">Billed To</div>
                   <div className="font-bold text-sm mt-1">{payerLegalName}</div>
@@ -864,7 +955,7 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
                     <div className="tabular-nums">Customer IBAN / SWIFT: {details.iban_swift}</div>
                   )}
                 </div>
-                <div className="text-right">
+                <div className="sm:text-right">
                   <div className="text-[10px] font-bold uppercase text-zinc-500">
                     Settlement & Coordinates
                   </div>

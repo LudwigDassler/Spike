@@ -25,7 +25,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
   onClose,
   onSave,
 }) => {
-  const { t } = useLocale();
+  const { t, formatRole } = useLocale();
   const [selectedLevel, setSelectedLevel] = useState<AccessLevel>('member');
   const [permissions, setPermissions] = useState<EmployeePermissions>(() =>
     getDefaultPermissionsForAccessLevel('member')
@@ -78,12 +78,12 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans overflow-y-auto no-scrollbar"
       role="dialog"
       aria-modal="true"
       aria-labelledby="perm-matrix-title"
     >
-      <div className="w-full max-w-lg rounded-xl border border-[#262626] bg-[#121214] shadow-2xl overflow-hidden">
+      <div className="w-[calc(100vw-24px)] max-w-lg rounded-xl border border-[#262626] bg-[#121214] shadow-2xl overflow-hidden my-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#262626]">
           <div className="flex items-center gap-2.5">
             <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -92,7 +92,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                 {t('permModal.title')}
               </h3>
               <p className="text-xs text-[#8E8E93]">
-                {node.name} · {node.role_type}
+                {node.name} · {formatRole(node.role_type)}
               </p>
             </div>
           </div>

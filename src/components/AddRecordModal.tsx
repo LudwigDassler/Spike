@@ -66,7 +66,8 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { t, currency } = useLocale();
+  const { t, currency, language, formatRole } = useLocale();
+  const isEn = language === 'en';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -394,7 +395,9 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
               <div>
                 <label className="block text-[11px] font-medium text-[#8E8E93] mb-1.5">
-                  Ссылка быстрого входа в веб-панель (1 клик)
+                  {isEn
+                    ? '1-Click Web Portal Sign-In Link'
+                    : 'Ссылка быстрого входа в веб-панель (1 клик)'}
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -416,7 +419,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     ) : (
                       <>
                         <Copy className="w-3.5 h-3.5" />
-                        <span>Скопировать</span>
+                        <span>{isEn ? 'Copy' : 'Скопировать'}</span>
                       </>
                     )}
                   </button>
@@ -486,8 +489,8 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 font-sans flex items-center justify-center">
-      <div className="w-full max-w-2xl rounded-xl border border-[#262626] bg-[#121214] shadow-2xl overflow-hidden my-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto no-scrollbar bg-black/75 backdrop-blur-sm p-4 font-sans flex items-center justify-center">
+      <div className="w-[calc(100vw-24px)] max-w-2xl rounded-xl border border-[#262626] bg-[#121214] shadow-2xl overflow-hidden my-auto">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#262626]">
           <div className="flex items-center gap-2.5">
             {type === 'tasks' && <CheckSquare className="w-4 h-4 text-[#EDEDED]" />}
@@ -592,7 +595,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
-                    Срок исполнения (Дедлайн)
+                    {isEn ? 'Due Date (Deadline)' : 'Срок исполнения (Дедлайн)'}
                   </label>
                   <input
                     type="date"
@@ -667,8 +670,8 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     )}
                     {safeNodes.map((node) => (
                       <option key={node.id} value={node.id}>
-                        {node.name} — {node.role_type}
-                        {node.department ? ` (${node.department})` : ''}
+                        {node.name} — {formatRole(node.role_type)}
+                        {node.department ? ` (${formatRole(node.department)})` : ''}
                       </option>
                     ))}
                   </select>
@@ -1080,8 +1083,8 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
                     <option value="">{t('modal.unassignedDeptBroadcast')}</option>
                     {safeNodes.map((node) => (
                       <option key={node.id} value={node.id}>
-                        {node.name} — {node.role_type}
-                        {node.department ? ` (${node.department})` : ''}
+                        {node.name} — {formatRole(node.role_type)}
+                        {node.department ? ` (${formatRole(node.department)})` : ''}
                       </option>
                     ))}
                   </select>

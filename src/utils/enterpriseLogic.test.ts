@@ -8,6 +8,7 @@ import {
   generateInvoiceNumber,
   searchWorkspaceEntities,
   formatError,
+  formatRoleOrDept,
 } from './enterpriseLogic';
 
 test('parseTelegramUrgentMessage: sets isUrgent=false for standard messages', () => {
@@ -26,14 +27,29 @@ test('parseTelegramUrgentMessage: sets isUrgent=true and strips leading ! only w
   assert.equal(midBang.cleanText, 'Отличная работа! Все принято');
 });
 
-test('buildBuiltInChecklistForTask: creates 4-5 actionable subtasks and summary', () => {
-  const legal = buildBuiltInChecklistForTask('Согласование договора поставки по ИНН 7707083893');
-  assert.ok(legal.checklist.length >= 4);
-  assert.equal(legal.checklist.every((i) => i.done === false && i.title.length > 5), true);
-  assert.ok(legal.summary.includes(String(legal.checklist.length)));
+test('formatRoleOrDept: translates default Russian/English DB strings and never outputs raw keys', () => {
+  assert.equal(formatRoleOrDept('Специалист', 'en'), 'Specialist');
+  assert.equal(formatRoleOrDept('Основное подразделение', 'en'), 'Core Department');
+  assert.equal(formatRoleOrDept('Дирекция / Общий штат', 'en'), 'Executive / General Staff');
+  assert.equal(formatRoleOrDept('common.generalScope', 'en'), 'General Workspace');
+  assert.equal(formatRoleOrDept('common.generalScope', 'ru'), 'Общий контур');
+  assert.equal(formatRoleOrDept('', 'en'), 'General Workspace');
+  assert.equal(formatRoleOrDept('Specialist', 'ru'), 'Специалист');
 });
 
-test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_analysis, and custom Q&A', () => {
+test('buildBuiltInChecklistForTask: creates 4-5 actionable subtasks in RU and EN', () => {
+  const legalRu = buildBuiltInChecklistForTask('Согласование договора поставки по ИНН 7707083893', null, 'ru');
+  assert.ok(legalRu.checklist.length >= 4);
+  assert.equal(legalRu.checklist.every((i) => i.done === false && i.title.length > 5), true);
+  assert.ok(legalRu.summary.includes(String(legalRu.checklist.length)));
+
+  const legalEn = buildBuiltInChecklistForTask('Review enterprise contract terms', null, 'en');
+  assert.ok(legalEn.checklist.length >= 4);
+  assert.ok(legalEn.summary.includes('Task decomposed into'));
+  assert.ok(legalEn.checklist[0].title.includes('Verify counterparty'));
+});
+
+test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_analysis, and custom Q&A in RU and EN', () => {
   const sampleNodes = [
     { id: 'u1', name: 'Иванов П.С.', role_type: 'Генеральный директор', department: 'Руководство' },
     { id: 'u2', name: 'Смирнова Е.А.', role_type: 'Финансовый аналитик', department: 'Финансовый отдел' },
@@ -62,6 +78,7 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
 
   const brief = runBuiltInAiAssistant({
     mode: 'daily_brief',
+    lang: 'ru',
     companyName: 'Сигма Групп',
     currentUser: sampleNodes[0],
     nodes: sampleNodes,
@@ -72,9 +89,23 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
   assert.ok(brief.reply.includes('Сигма Групп'));
   assert.ok(brief.reply.includes('Аудит бюджета Q4'));
 
+  const briefEn = runBuiltInAiAssistant({
+    mode: 'daily_brief',
+    lang: 'en',
+    companyName: 'Sigma Group',
+    currentUser: sampleNodes[0],
+    nodes: sampleNodes,
+    tasks: sampleTasks,
+    leads: sampleLeads,
+    messages: [],
+  });
+  assert.ok(briefEn.reply.includes('Daily Executive Brief'));
+  assert.ok(briefEn.metrics?.[0]?.label === 'Open Tasks');
+
   const decompose = runBuiltInAiAssistant({
     mode: 'decompose_task',
-    taskTitle: 'Подготовка финансового отчета',
+    lang: 'en',
+    taskTitle: 'Q4 Financial Audit',
     nodes: sampleNodes,
     tasks: sampleTasks,
     leads: sampleLeads,
@@ -82,9 +113,11 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
   });
   assert.ok(Array.isArray(decompose.checklist));
   assert.ok((decompose.checklist?.length || 0) >= 4);
+  assert.ok(decompose.headline?.includes('Task Decomposition'));
 
   const workload = runBuiltInAiAssistant({
     mode: 'workload_analysis',
+    lang: 'ru',
     companyName: 'Сигма Групп',
     nodes: sampleNodes,
     tasks: sampleTasks,
@@ -95,6 +128,7 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
 
   const custom = runBuiltInAiAssistant({
     mode: 'custom',
+    lang: 'ru',
     prompt: '3528000597',
     companyName: 'Сигма Групп',
     nodes: sampleNodes,
@@ -148,4 +182,3 @@ test('formatError: never returns [object Object] for PostgREST/Vercel error obje
   assert.equal(formatError({ code: '500', status: 500 }), '{"code":"500","status":500}');
   assert.equal(formatError(new Error('[object Object]')), 'Unknown error');
 });
-

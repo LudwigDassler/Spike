@@ -12,6 +12,47 @@ import {
 } from '../types/database';
 
 /**
+ * Автоматическая двусторонняя локализация дефолтных должностей, подразделений и системных значений из БД
+ */
+export function formatRoleOrDept(val?: string | null, lang: 'ru' | 'en' = 'ru'): string {
+  const raw = String(val || '').trim();
+  if (!raw || raw === 'common.generalScope') {
+    return lang === 'en' ? 'General Workspace' : 'Общий контур';
+  }
+
+  const lower = raw.toLowerCase();
+
+  if (lang === 'en') {
+    if (lower === 'специалист' || lower === 'штатный специалист') return 'Specialist';
+    if (lower === 'основное подразделение') return 'Core Department';
+    if (lower === 'дирекция / общий штат') return 'Executive / General Staff';
+    if (lower === 'генеральный директор') return 'Chief Executive Officer';
+    if (lower === 'исполнительная дирекция' || lower === 'руководство') return 'Executive Management';
+    if (lower === 'не назначено' || lower === 'не назначен') return 'Unassigned';
+    if (lower === 'общий контур' || lower === 'common.generalscope') return 'General Workspace';
+    if (lower === 'отдел не указан' || lower === 'без привязки к отделу') return 'General Workspace';
+    if (lower === 'руководитель' || lower === 'руководитель организации') return 'Executive Lead';
+    if (lower === 'сотрудник' || lower === 'штатный сотрудник') return 'Staff Member';
+    if (lower === 'всем сотрудникам') return 'All Company Members';
+    if (lower === 'финансовый отдел') return 'Finance Department';
+    if (lower === 'юридический отдел') return 'Legal Department';
+    if (lower === 'коммерческий блок' || lower === 'отдел продаж') return 'Commercial & Sales';
+    return raw;
+  } else {
+    if (lower === 'specialist') return 'Специалист';
+    if (lower === 'core department') return 'Основное подразделение';
+    if (lower === 'executive / general staff') return 'Дирекция / Общий штат';
+    if (lower === 'chief executive officer' || lower === 'ceo') return 'Генеральный директор';
+    if (lower === 'executive management') return 'Исполнительная дирекция';
+    if (lower === 'unassigned') return 'Не назначен';
+    if (lower === 'general workspace' || lower === 'common.generalscope') return 'Общий контур';
+    if (lower === 'no department specified' || lower === 'no specific department') return 'Общий контур';
+    if (lower === 'all company members') return 'Всем сотрудникам';
+    return raw;
+  }
+}
+
+/**
  * Нормализация любой ошибки (PostgREST, Error, объект, строка) в гарантированную чистую строку без [object Object]
  */
 export function formatError(err: any): string {
@@ -58,67 +99,130 @@ export function parseTelegramUrgentMessage(rawText: string): {
 }
 
 /**
- * Генерация детерминированного чек-листа из 4-5 подзадач для задачи (TedCloud Intelligence)
+ * Генерация детерминированного чек-листа из 4-5 подзадач для задачи (TedCloud Intelligence) с поддержкой RU / EN
  */
 export function buildBuiltInChecklistForTask(
   taskTitle: string,
-  taskDescription?: string | null
+  taskDescription?: string | null,
+  lang: 'ru' | 'en' = 'ru'
 ): { checklist: TaskChecklistItem[]; summary: string } {
-  const titleClean = String(taskTitle || 'Корпоративное поручение').trim();
+  const defaultTitle = lang === 'en' ? 'Corporate Initiative' : 'Корпоративное поручение';
+  const titleClean = String(taskTitle || defaultTitle).trim();
   const lower = `${titleClean} ${taskDescription || ''}`.toLowerCase();
 
   let steps: string[] = [];
 
-  if (
-    lower.includes('договор') ||
-    lower.includes('контракт') ||
-    lower.includes('юрид') ||
-    lower.includes('сделк') ||
-    lower.includes('инн') ||
-    lower.includes('кп') ||
-    lower.includes('коммерческ')
-  ) {
-    steps = [
-      `Проверить юридические реквизиты контрагента (ИНН/КПП или VAT) по задаче «${titleClean}»`,
-      'Согласовать финансовые условия, спецификацию и график расчетов',
-      'Провести правовую экспертизу проекта документа с профильным отделом',
-      'Направить финальную редакцию на подписание и зафиксировать номер в CRM',
-      'Обновить статус поручения и уведомить ответственного руководителя',
-    ];
-  } else if (
-    lower.includes('отчет') ||
-    lower.includes('финанс') ||
-    lower.includes('бюджет') ||
-    lower.includes('аудит') ||
-    lower.includes('сверк') ||
-    lower.includes('экономи')
-  ) {
-    steps = [
-      `Собрать первичные данные и выгрузки по задаче «${titleClean}»`,
-      'Выполнить сверку показателей с реестром сделок CRM и счетами биллинга',
-      'Сформировать аналитическую сводку с отклонениями и выводами',
-      'Согласовать итоговый расчет с руководителем подразделения',
-    ];
-  } else if (
-    lower.includes('клиент') ||
-    lower.includes('продаж') ||
-    lower.includes('презентац') ||
-    lower.includes('встреч') ||
-    lower.includes('звонок')
-  ) {
-    steps = [
-      `Подготовить повестку и материалы по клиенту для «${titleClean}»`,
-      'Провести квалификацию потребностей и зафиксировать ключевые возражения',
-      'Сформировать персональное коммерческое предложение со сметой',
-      'Зафиксировать итоги переговоров и следующий шаг в карточке сделки CRM',
-    ];
+  if (lang === 'en') {
+    if (
+      lower.includes('contract') ||
+      lower.includes('legal') ||
+      lower.includes('agreement') ||
+      lower.includes('deal') ||
+      lower.includes('tax') ||
+      lower.includes('vat') ||
+      lower.includes('договор') ||
+      lower.includes('контракт') ||
+      lower.includes('сделк') ||
+      lower.includes('инн')
+    ) {
+      steps = [
+        `Verify counterparty legal & tax requisites (VAT / Tax ID) for "${titleClean}"`,
+        'Align commercial terms, pricing schedule, and settlement milestones',
+        'Complete legal compliance review with the responsible department',
+        'Route final agreement for signature and log the contract number in CRM',
+        'Update task status and notify the executive stakeholder',
+      ];
+    } else if (
+      lower.includes('report') ||
+      lower.includes('financ') ||
+      lower.includes('budget') ||
+      lower.includes('audit') ||
+      lower.includes('отчет') ||
+      lower.includes('финанс') ||
+      lower.includes('бюджет') ||
+      lower.includes('аудит')
+    ) {
+      steps = [
+        `Aggregate primary datasets and operational exports for "${titleClean}"`,
+        'Reconcile figures against the CRM deal registry and billing invoices',
+        'Compile executive variance summary and key analytical findings',
+        'Review and approve final report with the department lead',
+      ];
+    } else if (
+      lower.includes('client') ||
+      lower.includes('sales') ||
+      lower.includes('pitch') ||
+      lower.includes('meeting') ||
+      lower.includes('клиент') ||
+      lower.includes('продаж') ||
+      lower.includes('встреч')
+    ) {
+      steps = [
+        `Prepare executive agenda and client briefing materials for "${titleClean}"`,
+        'Conduct discovery review and document technical & commercial requirements',
+        'Draft tailored commercial proposal with financial specification',
+        'Log negotiation outcome and next steps in the CRM deal card',
+      ];
+    } else {
+      steps = [
+        `Clarify input requirements and acceptance criteria for "${titleClean}"`,
+        'Assign ownership and align resources within the responsible department',
+        'Execute core deliverable milestone and internal quality check',
+        'Finalize output and mark completion in the TedCloud workspace',
+      ];
+    }
   } else {
-    steps = [
-      `Уточнить входные требования и критерии готовности по задаче «${titleClean}»`,
-      'Распределить зону ответственности и согласовать ресурсы внутри отдела',
-      'Выполнить основной этап работ и промежуточную проверку качества',
-      'Подготовить итоговый результат и зафиксировать выполнение в TedCloud',
-    ];
+    if (
+      lower.includes('договор') ||
+      lower.includes('контракт') ||
+      lower.includes('юрид') ||
+      lower.includes('сделк') ||
+      lower.includes('инн') ||
+      lower.includes('кп') ||
+      lower.includes('коммерческ')
+    ) {
+      steps = [
+        `Проверить юридические реквизиты контрагента (ИНН/КПП или VAT) по задаче «${titleClean}»`,
+        'Согласовать финансовые условия, спецификацию и график расчетов',
+        'Провести правовую экспертизу проекта документа с профильным отделом',
+        'Направить финальную редакцию на подписание и зафиксировать номер в CRM',
+        'Обновить статус поручения и уведомить ответственного руководителя',
+      ];
+    } else if (
+      lower.includes('отчет') ||
+      lower.includes('финанс') ||
+      lower.includes('бюджет') ||
+      lower.includes('аудит') ||
+      lower.includes('сверк') ||
+      lower.includes('экономи')
+    ) {
+      steps = [
+        `Собрать первичные данные и выгрузки по задаче «${titleClean}»`,
+        'Выполнить сверку показателей с реестром сделок CRM и счетами биллинга',
+        'Сформировать аналитическую сводку с отклонениями и выводами',
+        'Согласовать итоговый расчет с руководителем подразделения',
+      ];
+    } else if (
+      lower.includes('клиент') ||
+      lower.includes('продаж') ||
+      lower.includes('презентац') ||
+      lower.includes('встреч') ||
+      lower.includes('звонок')
+    ) {
+      steps = [
+        `Подготовить повестку и материалы по клиенту для «${titleClean}»`,
+        'Провести квалификацию потребностей и зафиксировать ключевые возражения',
+        'Сформировать персональное коммерческое предложение со сметой',
+        'Зафиксировать итоги переговоров и следующий шаг в карточке сделки CRM',
+      ];
+    } else {
+      steps = [
+        `Уточнить входные требования и критерии готовности по задаче «${titleClean}»`,
+        'Распределить зону ответственности и согласовать ресурсы внутри отдела',
+        'Выполнить основной этап работ и промежуточную проверку качества',
+        'Подготовить итоговый результат и зафиксировать выполнение в TedCloud',
+      ];
+    }
   }
 
   const checklist: TaskChecklistItem[] = steps.map((stepTitle, idx) => ({
@@ -127,7 +231,10 @@ export function buildBuiltInChecklistForTask(
     done: false,
   }));
 
-  const summary = `Задача декомпозирована на ${checklist.length} последовательных этапа с контролем исполнения в рабочем контуре TedCloud.`;
+  const summary =
+    lang === 'en'
+      ? `Task decomposed into ${checklist.length} sequential execution steps tracked in your TedCloud workspace.`
+      : `Задача декомпозирована на ${checklist.length} последовательных этапа с контролем исполнения в рабочем контуре TedCloud.`;
 
   return { checklist, summary };
 }
@@ -145,6 +252,7 @@ export interface AiAssistantSection {
 
 export interface AiAssistantInput {
   mode: AiAssistantMode;
+  lang?: 'ru' | 'en';
   prompt?: string;
   taskTitle?: string;
   taskDescription?: string;
@@ -167,24 +275,35 @@ export interface AiAssistantOutput {
   provider: 'gemini' | 'tedcloud-engine';
 }
 
-function formatPriorityLabelRu(prio?: string | null): string {
+function formatPriorityLabel(prio?: string | null, lang: 'ru' | 'en' = 'ru'): string {
+  if (lang === 'en') {
+    if (prio === 'High') return 'High priority';
+    if (prio === 'Low') return 'Low priority';
+    return 'Medium priority';
+  }
   if (prio === 'High') return 'Высокий приоритет';
   if (prio === 'Low') return 'Низкий приоритет';
   return 'Средний приоритет';
 }
 
-function formatStatusLabelRu(st?: string | null): string {
+function formatStatusLabel(st?: string | null, lang: 'ru' | 'en' = 'ru'): string {
+  if (lang === 'en') {
+    if (st === 'Done') return 'Completed';
+    if (st === 'In Progress') return 'In Progress';
+    return 'To Do';
+  }
   if (st === 'Done') return 'Завершено';
   if (st === 'In Progress') return 'В работе';
   return 'К выполнению';
 }
 
 /**
- * Интеллектуальный аналитический движок TedCloud Intelligence по реальным данным компании
+ * Интеллектуальный аналитический движок TedCloud Intelligence по реальным данным компании (RU / EN)
  */
 export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutput {
   const {
     mode,
+    lang = 'ru',
     prompt = '',
     taskTitle = '',
     taskDescription = '',
@@ -196,6 +315,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
     messages = [],
   } = input;
 
+  const isEn = lang === 'en';
   const openTasks = tasks.filter((t) => t.status !== 'Done');
   const highPriorityTasks = openTasks.filter((t) => t.priority === 'High');
   const doneTasks = tasks.filter((t) => t.status === 'Done');
@@ -225,46 +345,83 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   const conversionRate =
     leads.length > 0 ? Math.round((wonLeads.length / leads.length) * 100) : 0;
 
-  const baseMetrics: AiAssistantMetric[] = [
-    {
-      label: 'Активные задачи',
-      value: String(openTasks.length),
-      sublabel: `Выполнено: ${doneTasks.length}`,
-    },
-    {
-      label: 'Срочные поручения',
-      value: String(highPriorityTasks.length),
-      sublabel: urgentMessages.length > 0 ? `Срочных сообщений: ${urgentMessages.length}` : 'Критичный контур',
-    },
-    {
-      label: 'Сумма воронки',
-      value: `${Math.round(activePipelineSum).toLocaleString('ru-RU')} ₽`,
-      sublabel: `Сделок: ${activeLeads.length} · Конверсия ${conversionRate}%`,
-    },
-  ];
+  const baseMetrics: AiAssistantMetric[] = isEn
+    ? [
+        {
+          label: 'Open Tasks',
+          value: String(openTasks.length),
+          sublabel: `Completed: ${doneTasks.length}`,
+        },
+        {
+          label: 'High Priority',
+          value: String(highPriorityTasks.length),
+          sublabel:
+            urgentMessages.length > 0
+              ? `Urgent alerts: ${urgentMessages.length}`
+              : 'Critical contour',
+        },
+        {
+          label: 'Active Pipeline',
+          value: `${Math.round(activePipelineSum).toLocaleString('en-US')} RUB`,
+          sublabel: `Deals: ${activeLeads.length} · Conversion ${conversionRate}%`,
+        },
+      ]
+    : [
+        {
+          label: 'Активные задачи',
+          value: String(openTasks.length),
+          sublabel: `Выполнено: ${doneTasks.length}`,
+        },
+        {
+          label: 'Срочные поручения',
+          value: String(highPriorityTasks.length),
+          sublabel:
+            urgentMessages.length > 0
+              ? `Срочных сообщений: ${urgentMessages.length}`
+              : 'Критичный контур',
+        },
+        {
+          label: 'Сумма воронки',
+          value: `${Math.round(activePipelineSum).toLocaleString('ru-RU')} ₽`,
+          sublabel: `Сделок: ${activeLeads.length} · Конверсия ${conversionRate}%`,
+        },
+      ];
 
   if (mode === 'decompose_task') {
-    const targetTitle = taskTitle || prompt || 'Поручение';
+    const targetTitle = taskTitle || prompt || (isEn ? 'Task' : 'Поручение');
     const { checklist, summary } = buildBuiltInChecklistForTask(
       targetTitle,
-      taskDescription
+      taskDescription,
+      lang
     );
     const sections: AiAssistantSection[] = [
       {
-        title: `Этапы выполнения поручения «${targetTitle}»`,
+        title: isEn
+          ? `Execution Milestones for "${targetTitle}"`
+          : `Этапы выполнения поручения «${targetTitle}»`,
         items: checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
       },
     ];
-    const replyLines = [
-      `Декомпозиция задачи «${targetTitle}» (${checklist.length} этапа):`,
-      '',
-      ...checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
-      '',
-      summary,
-    ];
+    const replyLines = isEn
+      ? [
+          `Task Decomposition for "${targetTitle}" (${checklist.length} steps):`,
+          '',
+          ...checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
+          '',
+          summary,
+        ]
+      : [
+          `Декомпозиция задачи «${targetTitle}» (${checklist.length} этапа):`,
+          '',
+          ...checklist.map((item, idx) => `${idx + 1}. ${item.title}`),
+          '',
+          summary,
+        ];
     return {
       mode: 'decompose_task',
-      headline: `Декомпозиция поручения «${targetTitle}»`,
+      headline: isEn
+        ? `Task Decomposition: "${targetTitle}"`
+        : `Декомпозиция поручения «${targetTitle}»`,
       metrics: baseMetrics,
       sections,
       reply: replyLines.join('\n'),
@@ -275,9 +432,72 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   }
 
   if (mode === 'daily_brief') {
-    const userName = currentUser?.name || 'Сотрудник';
-    const userRole = currentUser?.role_type || 'Специалист';
+    const userName = currentUser?.name || (isEn ? 'Team Member' : 'Сотрудник');
+    const userRole = formatRoleOrDept(currentUser?.role_type, lang);
     const topUserTasks = userTasks.slice(0, 4);
+
+    if (isEn) {
+      const taskItems: string[] = [
+        `Open tasks in your scope: ${userTasks.length} (workspace total open: ${openTasks.length}, completed: ${doneTasks.length}).`,
+        `High-priority assignments: ${userTasks.filter((t) => t.priority === 'High').length}.`,
+      ];
+
+      if (topUserTasks.length > 0) {
+        topUserTasks.forEach((t) => {
+          const duePart = t.due_date ? ` · Due: ${t.due_date}` : '';
+          const deptLabel = t.department ? ` (${formatRoleOrDept(t.department, 'en')})` : '';
+          taskItems.push(
+            `${t.title} — ${formatPriorityLabel(t.priority, 'en')}, ${formatStatusLabel(
+              t.status,
+              'en'
+            )}${deptLabel}${duePart}`
+          );
+        });
+      } else {
+        taskItems.push('All current assignments are completed or awaiting new delegation.');
+      }
+
+      const commItems: string[] = [
+        `Workspace messages: ${messages.length} (urgent notifications: ${urgentMessages.length}).`,
+      ];
+
+      const crmItems: string[] = [
+        `Active deals in pipeline: ${activeLeads.length} totaling ${Math.round(
+          activePipelineSum
+        ).toLocaleString('en-US')} RUB.`,
+        `Closed Won contracts: ${wonLeads.length} totaling ${Math.round(
+          wonPipelineSum
+        ).toLocaleString('en-US')} RUB (${conversionRate}% conversion).`,
+      ];
+
+      const sections: AiAssistantSection[] = [
+        { title: 'Operational Task Contour', items: taskItems },
+        { title: 'Workspace Communications', items: commItems },
+        { title: 'Commercial CRM Pipeline', items: crmItems },
+      ];
+
+      const lines: string[] = [
+        `Daily Executive Brief — ${userName} (${userRole}), ${companyName}`,
+        '',
+        'Operational Task Contour:',
+        ...taskItems.map((i) => `• ${i}`),
+        '',
+        'Workspace Communications:',
+        ...commItems.map((i) => `• ${i}`),
+        '',
+        'Commercial CRM Pipeline:',
+        ...crmItems.map((i) => `• ${i}`),
+      ];
+
+      return {
+        mode: 'daily_brief',
+        headline: `Daily Executive Brief — ${userName} (${userRole})`,
+        metrics: baseMetrics,
+        sections,
+        reply: lines.join('\n'),
+        provider: 'tedcloud-engine',
+      };
+    }
 
     const taskItems: string[] = [
       `Активных задач в вашей зоне ответственности: ${userTasks.length} (всего по организации открыто: ${openTasks.length}, завершено: ${doneTasks.length}).`,
@@ -288,9 +508,10 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       topUserTasks.forEach((t) => {
         const duePart = t.due_date ? ` · Срок: ${t.due_date}` : '';
         taskItems.push(
-          `${t.title} — ${formatPriorityLabelRu(t.priority)}, ${formatStatusLabelRu(t.status)}${
-            t.department ? ` (${t.department})` : ''
-          }${duePart}`
+          `${t.title} — ${formatPriorityLabel(t.priority, 'ru')}, ${formatStatusLabel(
+            t.status,
+            'ru'
+          )}${t.department ? ` (${formatRoleOrDept(t.department, 'ru')})` : ''}${duePart}`
         );
       });
     } else {
@@ -348,9 +569,9 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
         (t) => (t.assigned_to === n.id || t.owner_node_id === n.id) && t.priority === 'High'
       ).length;
       return {
-        name: n.name || 'Сотрудник',
-        role: n.role_type || 'Специалист',
-        dept: n.department || 'Общий контур',
+        name: n.name || (isEn ? 'Team Member' : 'Сотрудник'),
+        role: formatRoleOrDept(n.role_type, lang),
+        dept: formatRoleOrDept(n.department, lang),
         openCount: assignedOpen,
         highCount,
       };
@@ -360,6 +581,82 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
 
     const overloaded = nodeLoad.filter((n) => n.openCount >= 3);
     const underloaded = nodeLoad.filter((n) => n.openCount === 0);
+
+    if (isEn) {
+      const staffItems: string[] =
+        nodeLoad.length === 0
+          ? ['Team directory is empty.']
+          : nodeLoad.slice(0, 6).map((item) => {
+              const statusIndicator =
+                item.openCount >= 3
+                  ? 'High load'
+                  : item.openCount >= 1
+                  ? 'Optimal load'
+                  : 'Available for assignment';
+              return `${item.name} (${item.role}, ${item.dept}) — open tasks: ${item.openCount}, high priority: ${item.highCount} · ${statusIndicator}`;
+            });
+
+      const crmAuditItems: string[] = [
+        `Total deals in registry: ${leads.length} · In negotiation: ${
+          leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
+        } · Closed Won: ${wonLeads.length}.`,
+        `Active pipeline volume: ${Math.round(activePipelineSum).toLocaleString(
+          'en-US'
+        )} RUB · Win conversion rate: ${conversionRate}%.`,
+      ];
+
+      const recommendationItems: string[] = [];
+      if (overloaded.length > 0 && underloaded.length > 0) {
+        recommendationItems.push(
+          `Rebalance assignments from ${overloaded[0].name} (${overloaded[0].openCount} open tasks) to ${underloaded[0].name} (0 active tasks).`
+        );
+      } else if (highPriorityTasks.length > 0) {
+        recommendationItems.push(
+          `There are ${highPriorityTasks.length} high-priority tasks in progress — decompose them into checklists and set target due dates.`
+        );
+      } else {
+        recommendationItems.push(
+          'Task distribution across departments is balanced with zero critical bottlenecks detected.'
+        );
+      }
+
+      const sections: AiAssistantSection[] = [
+        {
+          title: `Team Workload Balance (${nodes.length} members)`,
+          items: staffItems,
+        },
+        {
+          title: 'Commercial CRM Pipeline Audit',
+          items: crmAuditItems,
+        },
+        {
+          title: 'TedCloud Intelligence Recommendations',
+          items: recommendationItems,
+        },
+      ];
+
+      const lines: string[] = [
+        `Team Workload & CRM Pipeline Audit — ${companyName}`,
+        '',
+        'Team Workload Balance:',
+        ...staffItems.map((i) => `• ${i}`),
+        '',
+        'Commercial CRM Pipeline Audit:',
+        ...crmAuditItems.map((i) => `• ${i}`),
+        '',
+        'TedCloud Intelligence Recommendations:',
+        ...recommendationItems.map((i) => `• ${i}`),
+      ];
+
+      return {
+        mode: 'workload_analysis',
+        headline: `Team Workload & CRM Pipeline Audit — ${companyName}`,
+        metrics: baseMetrics,
+        sections,
+        reply: lines.join('\n'),
+        provider: 'tedcloud-engine',
+      };
+    }
 
     const staffItems: string[] =
       nodeLoad.length === 0
@@ -459,68 +756,100 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   );
 
   const sections: AiAssistantSection[] = [];
+  const defaultQueryTitle = isEn ? 'Workspace Overview' : 'Обзор компании';
   const lines: string[] = [
-    `Аналитический отчет TedCloud Intelligence по запросу: «${prompt.trim() || 'Обзор компании'}»`,
+    isEn
+      ? `TedCloud Intelligence Analytical Report for: "${prompt.trim() || defaultQueryTitle}"`
+      : `Аналитический отчет TedCloud Intelligence по запросу: «${prompt.trim() || defaultQueryTitle}»`,
     '',
   ];
 
   if (matchedLeads.length > 0) {
-    const items = matchedLeads.slice(0, 4).map(
-      (l) =>
-        `${l.client_name || l.title} — ${Math.round(
-          Number(l.amount ?? l.deal_value ?? 0)
-        ).toLocaleString('ru-RU')} RUB · Статус: ${l.status || 'New'}${
-          l.tax_id ? ` · ИНН/VAT: ${l.tax_id}` : ''
-        }${l.contract_number ? ` · Договор: ${l.contract_number}` : ''}`
+    const items = matchedLeads.slice(0, 4).map((l) =>
+      isEn
+        ? `${l.client_name || l.title} — ${Math.round(
+            Number(l.amount ?? l.deal_value ?? 0)
+          ).toLocaleString('en-US')} RUB · Stage: ${l.status || 'New'}${
+            l.tax_id ? ` · Tax ID/VAT: ${l.tax_id}` : ''
+          }${l.contract_number ? ` · Contract: ${l.contract_number}` : ''}`
+        : `${l.client_name || l.title} — ${Math.round(
+            Number(l.amount ?? l.deal_value ?? 0)
+          ).toLocaleString('ru-RU')} RUB · Статус: ${l.status || 'New'}${
+            l.tax_id ? ` · ИНН/VAT: ${l.tax_id}` : ''
+          }${l.contract_number ? ` · Договор: ${l.contract_number}` : ''}`
     );
-    sections.push({ title: `Найденные сделки CRM (${matchedLeads.length})`, items });
-    lines.push(`Найденные сделки CRM (${matchedLeads.length}):`, ...items.map((i) => `• ${i}`), '');
+    const title = isEn
+      ? `Matched CRM Deals (${matchedLeads.length})`
+      : `Найденные сделки CRM (${matchedLeads.length})`;
+    sections.push({ title, items });
+    lines.push(`${title}:`, ...items.map((i) => `• ${i}`), '');
   }
 
   if (matchedTasks.length > 0) {
     const items = matchedTasks.slice(0, 4).map(
       (t) =>
-        `${t.title} — ${formatPriorityLabelRu(t.priority)}, ${formatStatusLabelRu(t.status)}${
-          t.department ? ` (${t.department})` : ''
-        }`
+        `${t.title} — ${formatPriorityLabel(t.priority, lang)}, ${formatStatusLabel(
+          t.status,
+          lang
+        )}${t.department ? ` (${formatRoleOrDept(t.department, lang)})` : ''}`
     );
-    sections.push({ title: `Найденные задачи (${matchedTasks.length})`, items });
-    lines.push(`Найденные задачи (${matchedTasks.length}):`, ...items.map((i) => `• ${i}`), '');
+    const title = isEn
+      ? `Matched Tasks (${matchedTasks.length})`
+      : `Найденные задачи (${matchedTasks.length})`;
+    sections.push({ title, items });
+    lines.push(`${title}:`, ...items.map((i) => `• ${i}`), '');
   }
 
   if (matchedNodes.length > 0) {
-    const items = matchedNodes.slice(0, 4).map(
-      (n) =>
-        `${n.name} — ${n.role_type || 'Специалист'}${
-          n.department ? ` · Подразделение: ${n.department}` : ''
-        }`
+    const items = matchedNodes.slice(0, 4).map((n) =>
+      isEn
+        ? `${n.name} — ${formatRoleOrDept(n.role_type, 'en')}${
+            n.department ? ` · Department: ${formatRoleOrDept(n.department, 'en')}` : ''
+          }`
+        : `${n.name} — ${formatRoleOrDept(n.role_type, 'ru')}${
+            n.department ? ` · Подразделение: ${formatRoleOrDept(n.department, 'ru')}` : ''
+          }`
     );
-    sections.push({ title: `Профильные сотрудники (${matchedNodes.length})`, items });
-    lines.push(`Профильные сотрудники (${matchedNodes.length}):`, ...items.map((i) => `• ${i}`), '');
+    const title = isEn
+      ? `Relevant Team Members (${matchedNodes.length})`
+      : `Профильные сотрудники (${matchedNodes.length})`;
+    sections.push({ title, items });
+    lines.push(`${title}:`, ...items.map((i) => `• ${i}`), '');
   }
 
   if (sections.length === 0) {
-    const fallbackItems = [
-      `Сотрудников в штате: ${nodes.length}`,
-      `Открытых задач: ${openTasks.length} (высокого приоритета: ${highPriorityTasks.length})`,
-      `Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${Math.round(
-        activePipelineSum
-      ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
-      'Для точечного поиска укажите название контрагента, ИНН/VAT, фамилию сотрудника или тему поручения.',
-    ];
+    const fallbackItems = isEn
+      ? [
+          `Team members in directory: ${nodes.length}`,
+          `Open tasks: ${openTasks.length} (high priority: ${highPriorityTasks.length})`,
+          `CRM deals: ${leads.length} with active pipeline volume of ${Math.round(
+            activePipelineSum
+          ).toLocaleString('en-US')} RUB (${conversionRate}% conversion).`,
+          'For targeted lookup, enter a client name, Tax ID / VAT, employee name, or task subject.',
+        ]
+      : [
+          `Сотрудников в штате: ${nodes.length}`,
+          `Открытых задач: ${openTasks.length} (высокого приоритета: ${highPriorityTasks.length})`,
+          `Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${Math.round(
+            activePipelineSum
+          ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
+          'Для точечного поиска укажите название контрагента, ИНН/VAT, фамилию сотрудника или тему поручения.',
+        ];
+    const title = isEn
+      ? `Executive Summary for "${companyName}"`
+      : `Сводная статистика пространства «${companyName}»`;
     sections.push({
-      title: `Сводная статистика пространства «${companyName}»`,
+      title,
       items: fallbackItems,
     });
-    lines.push(
-      `Сводная статистика пространства «${companyName}»:`,
-      ...fallbackItems.map((i) => `• ${i}`)
-    );
+    lines.push(`${title}:`, ...fallbackItems.map((i) => `• ${i}`));
   }
 
   return {
     mode: 'custom',
-    headline: `Ответ по запросу «${prompt.trim() || 'Обзор компании'}»`,
+    headline: isEn
+      ? `Analytical Response: "${prompt.trim() || defaultQueryTitle}"`
+      : `Ответ по запросу «${prompt.trim() || defaultQueryTitle}»`,
     metrics: baseMetrics,
     sections,
     reply: lines.join('\n'),

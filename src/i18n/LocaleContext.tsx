@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import { formatRoleOrDept } from '../utils/enterpriseLogic';
 
 export type SupportedLocale = 'ru' | 'en';
 export type SupportedCurrency = 'RUB' | 'USD' | 'EUR';
+export type SupportedTheme = 'dark' | 'light';
 export type AppLanguage = SupportedLocale;
 export type AppCurrency = SupportedCurrency;
 
@@ -421,6 +423,10 @@ const ru: Dictionary = {
   'system.connectionError': 'Ошибка обмена данными с сервером',
   'system.retry': 'Повторить попытку',
   'system.resetCacheBtn': 'Сбросить кэш сессии и перезагрузить',
+  'common.generalScope': 'Общий контур',
+  'common.unassigned': 'Не назначен',
+  'theme.dark': 'Темная тема',
+  'theme.light': 'Светлая тема',
 };
 
 const en: Dictionary = {
@@ -831,6 +837,10 @@ const en: Dictionary = {
   'system.connectionError': 'Server Communication Error',
   'system.retry': 'Retry Connection',
   'system.resetCacheBtn': 'Reset Session Cache & Reload',
+  'common.generalScope': 'General Workspace',
+  'common.unassigned': 'Unassigned',
+  'theme.dark': 'Dark Mode',
+  'theme.light': 'Light Mode',
 };
 
 const dictionaries: Record<SupportedLocale, Dictionary> = { ru, en };
@@ -839,10 +849,14 @@ interface LocaleContextValue {
   locale: SupportedLocale;
   language: SupportedLocale;
   currency: SupportedCurrency;
+  theme: SupportedTheme;
   setLocale: (loc: SupportedLocale) => void;
   setLanguage: (loc: SupportedLocale) => void;
   setCurrency: (cur: SupportedCurrency) => void;
+  setTheme: (next: SupportedTheme) => void;
+  toggleTheme: () => void;
   t: (key: string) => string;
+  formatRole: (val?: string | null) => string;
   formatMoney: (amountInRub: number) => string;
   formatCurrency: (amountInRub: number) => string;
 }
@@ -872,6 +886,35 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   });
 
+  const [theme, setThemeState] = useState<SupportedTheme>(() => {
+    try {
+      const saved = (localStorage.getItem('tedcloud_theme') || '')
+        .toLowerCase()
+        .trim() as SupportedTheme;
+      return saved === 'light' || saved === 'dark' ? saved : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const root = document.documentElement;
+      const body = document.body;
+      if (theme === 'light') {
+        root.classList.add('theme-light');
+        root.classList.remove('theme-dark');
+        body.classList.add('theme-light');
+        body.classList.remove('theme-dark');
+      } else {
+        root.classList.add('theme-dark');
+        root.classList.remove('theme-light');
+        body.classList.add('theme-dark');
+        body.classList.remove('theme-light');
+      }
+    } catch {}
+  }, [theme]);
+
   const setLocale = useCallback((next: SupportedLocale | string) => {
     const normalized: SupportedLocale =
       String(next || '').toLowerCase().trim() === 'en' ? 'en' : 'ru';
@@ -891,9 +934,45 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch {}
   }, []);
 
+  const setTheme = useCallback((next: SupportedTheme | string) => {
+    const normalized: SupportedTheme =
+      String(next || '').toLowerCase().trim() === 'light' ? 'light' : 'dark';
+    setThemeState(normalized);
+    try {
+      localStorage.setItem('tedcloud_theme', normalized);
+    } catch {}
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => {
+      const next: SupportedTheme = prev === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem('tedcloud_theme', next);
+      } catch {}
+      return next;
+    });
+  }, []);
+
   const t = useCallback(
     (key: string): string => {
-      return dictionaries[locale]?.[key] || dictionaries.ru[key] || key;
+      const resolved = dictionaries[locale]?.[key] || dictionaries.ru[key];
+      if (resolved && !resolved.includes('.')) {
+        return resolved;
+      }
+      if (resolved && !key.startsWith('common.')) {
+        return resolved;
+      }
+      if (!resolved || resolved === key || resolved.includes('common.')) {
+        return locale === 'en' ? 'General Workspace' : 'Общий контур';
+      }
+      return resolved;
+    },
+    [locale]
+  );
+
+  const formatRole = useCallback(
+    (val?: string | null): string => {
+      return formatRoleOrDept(val, locale);
     },
     [locale]
   );
@@ -919,14 +998,18 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       locale,
       language: locale,
       currency,
+      theme,
       setLocale,
       setLanguage: setLocale,
       setCurrency,
+      setTheme,
+      toggleTheme,
       t,
+      formatRole,
       formatMoney,
       formatCurrency: formatMoney,
     }),
-    [locale, currency, setLocale, setCurrency, t, formatMoney]
+    [locale, currency, theme, setLocale, setCurrency, setTheme, toggleTheme, t, formatRole, formatMoney]
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;

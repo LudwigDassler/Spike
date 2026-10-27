@@ -52,7 +52,8 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
   onCreateTask,
   onOpenAiCopilot,
 }) => {
-  const { t, formatMoney } = useLocale();
+  const { t, language, formatRole, formatMoney } = useLocale();
+  const isEn = language === 'en';
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -72,13 +73,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 backdrop-blur-xs pt-16 px-4 font-sans"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 backdrop-blur-xs pt-10 sm:pt-16 px-3 sm:px-4 font-sans"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#111115] shadow-2xl overflow-hidden"
+        className="w-[calc(100vw-24px)] max-w-2xl rounded-2xl border border-white/10 bg-[#111115] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Omnisearch Input */}
@@ -89,7 +90,11 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Мгновенный поиск: задачи, сделки, ИНН контрагента, сотрудники, сообщения..."
+            placeholder={
+              isEn
+                ? 'Instant search: tasks, deals, Tax ID, team members, messages...'
+                : 'Мгновенный поиск: задачи, сделки, ИНН контрагента, сотрудники, сообщения...'
+            }
             className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none"
           />
           <div className="flex items-center gap-1.5">
@@ -99,6 +104,7 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              aria-label={isEn ? 'Close search' : 'Закрыть поиск'}
               className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06]"
             >
               <X className="w-4 h-4" />
@@ -106,11 +112,11 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
           </div>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto p-4 space-y-5">
+        <div className="max-h-[70vh] overflow-y-auto no-scrollbar p-4 space-y-5">
           {/* Quick Actions */}
           <div className="space-y-1.5">
             <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Быстрые команды
+              {isEn ? 'QUICK ACTIONS' : 'БЫСТРЫЕ КОМАНДЫ'}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {canCreateTasks && (
@@ -124,7 +130,7 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                 >
                   <span className="inline-flex items-center gap-2">
                     <Plus className="w-3.5 h-3.5 text-zinc-300" />
-                    <span>Создать задачу</span>
+                    <span>{isEn ? 'Create Task' : 'Создать задачу'}</span>
                   </span>
                   <ArrowRight className="w-3 h-3 text-zinc-500" />
                 </button>
@@ -140,7 +146,7 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
               >
                 <span className="inline-flex items-center gap-2">
                   <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Перейти в чат</span>
+                  <span>{isEn ? 'Open Chat' : 'Перейти в чат'}</span>
                 </span>
                 <ArrowRight className="w-3 h-3 text-zinc-500" />
               </button>
@@ -168,7 +174,9 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
               <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
                   <CheckSquare className="w-3 h-3 text-indigo-400" />
-                  <span>Задачи ({results.tasks.length})</span>
+                  <span>
+                    {isEn ? 'TASKS' : 'ЗАДАЧИ'} ({results.tasks.length})
+                  </span>
                 </span>
               </div>
               <div className="space-y-1">
@@ -187,8 +195,10 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                         {taskItem.title}
                       </div>
                       <div className="text-[11px] text-zinc-400 truncate">
-                        {taskItem.department || t('common.generalScope')} ·{' '}
-                        {t(`status.${taskItem.status}`)}
+                        {taskItem.department
+                          ? formatRole(taskItem.department)
+                          : t('common.generalScope')}{' '}
+                        · {t(`status.${taskItem.status}`)}
                       </div>
                     </div>
                     <span
@@ -214,7 +224,9 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
               <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
                   <Briefcase className="w-3 h-3 text-amber-400" />
-                  <span>Сделки и контрагенты CRM ({results.leads.length})</span>
+                  <span>
+                    {isEn ? 'CRM DEALS & CLIENTS' : 'СДЕЛКИ И КОНТРАГЕНТЫ CRM'} ({results.leads.length})
+                  </span>
                 </span>
               </div>
               <div className="space-y-1">
@@ -233,9 +245,19 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                         {leadItem.client_name || leadItem.title}
                       </div>
                       <div className="text-[11px] text-zinc-400 truncate tabular-nums">
-                        {leadItem.tax_id ? `ИНН/VAT: ${leadItem.tax_id}` : 'Без ИНН'}
-                        {leadItem.contract_number ? ` · Договор № ${leadItem.contract_number}` : ''}
-                        {leadItem.department ? ` · ${leadItem.department}` : ''}
+                        {leadItem.tax_id
+                          ? isEn
+                            ? `Tax ID/VAT: ${leadItem.tax_id}`
+                            : `ИНН/VAT: ${leadItem.tax_id}`
+                          : isEn
+                          ? 'No Tax ID'
+                          : 'Без ИНН'}
+                        {leadItem.contract_number
+                          ? isEn
+                            ? ` · Contract #${leadItem.contract_number}`
+                            : ` · Договор № ${leadItem.contract_number}`
+                          : ''}
+                        {leadItem.department ? ` · ${formatRole(leadItem.department)}` : ''}
                       </div>
                     </div>
                     <span className="text-xs font-semibold text-white shrink-0 tabular-nums">
@@ -253,7 +275,9 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
               <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
                   <Users className="w-3 h-3 text-sky-400" />
-                  <span>Сотрудники ({results.nodes.length})</span>
+                  <span>
+                    {isEn ? 'TEAM MEMBERS' : 'СОТРУДНИКИ'} ({results.nodes.length})
+                  </span>
                 </span>
               </div>
               <div className="space-y-1">
@@ -272,7 +296,8 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                         {nodeItem.name}
                       </div>
                       <div className="text-[11px] text-zinc-400 truncate">
-                        {nodeItem.role_type} {nodeItem.department ? `· ${nodeItem.department}` : ''}
+                        {formatRole(nodeItem.role_type)}{' '}
+                        {nodeItem.department ? `· ${formatRole(nodeItem.department)}` : ''}
                       </div>
                     </div>
                     <span className="text-[10px] font-medium tabular-nums text-zinc-300 bg-zinc-800/80 px-2 py-0.5 rounded-md border border-white/10">
@@ -290,7 +315,9 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
               <div className="px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
                   <MessageSquare className="w-3 h-3 text-indigo-400" />
-                  <span>Сообщения чата ({results.messages.length})</span>
+                  <span>
+                    {isEn ? 'CHAT MESSAGES' : 'СООБЩЕНИЯ ЧАТА'} ({results.messages.length})
+                  </span>
                 </span>
               </div>
               <div className="space-y-1">
@@ -309,8 +336,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                         {msgItem.message_text || msgItem.text || msgItem.content}
                       </div>
                       <div className="text-[11px] text-zinc-400 truncate">
-                        От: {msgItem.sender_name || 'Сотрудник'} ·{' '}
-                        {msgItem.target_label || 'Инфополе'}
+                        {isEn ? 'From:' : 'От:'}{' '}
+                        {msgItem.sender_name || (isEn ? 'Member' : 'Сотрудник')} ·{' '}
+                        {msgItem.target_label
+                          ? formatRole(msgItem.target_label)
+                          : isEn
+                          ? 'Workspace Stream'
+                          : 'Инфополе'}
                       </div>
                     </div>
                   </button>
@@ -324,7 +356,9 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
             results.nodes.length === 0 &&
             results.messages.length === 0 && (
               <div className="py-8 text-center text-xs text-zinc-500">
-                По запросу «{query}» совпадений не найдено.
+                {isEn
+                  ? `No matches found for "${query}".`
+                  : `По запросу «${query}» совпадений не найдено.`}
               </div>
             )}
         </div>
@@ -334,7 +368,11 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
             <Command className="w-3 h-3" />
             <span>TedCloud Omnisearch</span>
           </span>
-          <span>Поиск по задачам, ИНН контрагентов, сотрудникам и чату</span>
+          <span className="truncate ml-2">
+            {isEn
+              ? 'Search tasks, Tax IDs, team members & chat'
+              : 'Поиск по задачам, ИНН контрагентов, сотрудникам и чату'}
+          </span>
         </div>
       </div>
     </div>

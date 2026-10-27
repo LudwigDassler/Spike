@@ -69,7 +69,8 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   onPatchRecord,
   onSendMessage,
 }) => {
-  const { t, formatMoney } = useLocale();
+  const { t, language, formatRole, formatMoney } = useLocale();
+  const isEn = language === 'en';
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -141,7 +142,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   });
 
   const createdAtFormatted = record.created_at
-    ? new Date(record.created_at).toLocaleString('ru-RU', {
+    ? new Date(record.created_at).toLocaleString(isEn ? 'en-US' : 'ru-RU', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -166,7 +167,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
 
   const assigneeNode = currentAssigneeId ? nodeMap.get(currentAssigneeId) : null;
 
-  // БЛОК 2: ИИ-декомпозиция задачи (генерирует 4-5 подзадач и сохраняет в tasks.checklist)
+  // ИИ-декомпозиция задачи (генерирует 4-5 подзадач и сохраняет в tasks.checklist)
   const handleAiDecomposeTask = async () => {
     if (!isTask || isDecomposing) return;
     const taskRec = record as TaskRecord;
@@ -178,6 +179,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
         body: JSON.stringify({
           action: 'ai_assistant',
           mode: 'decompose_task',
+          lang: language,
           task_id: taskRec.id,
           company_id: taskRec.company_id,
           taskTitle: taskRec.title,
@@ -198,7 +200,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
       }
       throw new Error('Fallback to built-in decomposition');
     } catch {
-      const builtIn = buildBuiltInChecklistForTask(taskRec.title, notes || taskRec.description);
+      const builtIn = buildBuiltInChecklistForTask(
+        taskRec.title,
+        notes || taskRec.description,
+        language
+      );
       setChecklist(builtIn.checklist);
       setAiSummary(builtIn.summary);
       await onPatchRecord('tasks', taskRec.id, {
@@ -274,7 +280,9 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
       const recipientId = currentAssigneeId || authorNode?.id || null;
       const entityTitle = isTask
         ? (record as TaskRecord).title
-        : (record as CrmLeadRecord).client_name || (record as CrmLeadRecord).title || 'Сделка CRM';
+        : (record as CrmLeadRecord).client_name ||
+          (record as CrmLeadRecord).title ||
+          (isEn ? 'CRM Deal' : 'Сделка CRM');
       const cleanComment = commentText.trim();
       await onSendMessage({
         company_id: record.company_id,
@@ -311,11 +319,15 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
       className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs font-sans"
       role="dialog"
       aria-modal="true"
+      onClick={onClose}
     >
-      <div className="w-full max-w-lg bg-[#111113] border-l border-[#262626] h-full flex flex-col justify-between shadow-2xl overflow-y-auto">
+      <div
+        className="w-full max-w-lg bg-[#111113] border-l border-[#262626] h-full flex flex-col justify-between shadow-2xl overflow-y-auto no-scrollbar"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div>
           {/* Drawer Header */}
-          <div className="px-6 py-4 border-b border-[#222225] flex items-center justify-between sticky top-0 bg-[#111113] z-10">
+          <div className="px-5 sm:px-6 py-4 border-b border-[#222225] flex items-center justify-between sticky top-0 bg-[#111113] z-10">
             <div className="flex items-center gap-2.5">
               {isTask ? (
                 <CheckSquare className="w-4 h-4 text-[#A1A1AA]" />
@@ -336,7 +348,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
             </button>
           </div>
 
-          <div className="p-6 space-y-6">
+          <div className="p-5 sm:p-6 space-y-6">
             {/* Title */}
             <div>
               <h2 className="text-base font-semibold text-white leading-snug">
@@ -367,7 +379,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   {t('drawer.author')}
                 </span>
                 <span className="text-white font-medium truncate">
-                  {authorNode ? `${authorNode.name} (${authorNode.role_type})` : 'Система TedCloud'}
+                  {authorNode
+                    ? `${authorNode.name} (${formatRole(authorNode.role_type)})`
+                    : isEn
+                    ? 'TedCloud System'
+                    : 'Система TedCloud'}
                 </span>
               </div>
 
@@ -385,18 +401,18 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         department: e.target.value || null,
                       })
                     }
-                    className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white focus:outline-none max-w-[220px]"
+                    className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white focus:outline-none max-w-[200px]"
                   >
                     <option value="">{t('dept.noneOption')}</option>
                     {safeDepartments.map((d) => (
                       <option key={d} value={d}>
-                        {d}
+                        {formatRole(d)}
                       </option>
                     ))}
                   </select>
                 ) : (
                   <span className="text-white font-medium">
-                    {record.department || t('dept.noneOption')}
+                    {record.department ? formatRole(record.department) : t('dept.noneOption')}
                   </span>
                 )}
               </div>
@@ -412,19 +428,19 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         assigned_to: e.target.value || null,
                       })
                     }
-                    className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white focus:outline-none max-w-[220px]"
+                    className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white focus:outline-none max-w-[200px]"
                   >
                     <option value="">{t('tasks.unassigned')}</option>
                     {safeNodes.map((n) => (
                       <option key={n.id} value={n.id}>
-                        {n.name} — {n.role_type}
+                        {n.name} — {formatRole(n.role_type)}
                       </option>
                     ))}
                   </select>
                 ) : (
                   <span className="text-white font-medium">
                     {assigneeNode
-                      ? `${assigneeNode.name} (${assigneeNode.role_type})`
+                      ? `${assigneeNode.name} (${formatRole(assigneeNode.role_type)})`
                       : t('tasks.unassigned')}
                   </span>
                 )}
@@ -471,7 +487,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   <div className="px-4 py-3 flex items-center justify-between gap-4">
                     <span className="text-[#8E8E93] flex items-center gap-2">
                       <Clock className="w-3.5 h-3.5 text-[#71717A]" />
-                      <span>Срок исполнения (SLA)</span>
+                      <span>{isEn ? 'Target Due Date (SLA)' : 'Срок исполнения (SLA)'}</span>
                     </span>
                     <input
                       type="date"
@@ -537,14 +553,14 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               )}
             </div>
 
-            {/* БЛОК 2: ИИ-декомпозиция и интерактивный чек-лист подзадач (tasks.checklist) */}
+            {/* ИИ-декомпозиция и интерактивный чек-лист подзадач (tasks.checklist) */}
             {isTask && (
               <div className="rounded-xl border border-[#24242C] bg-[#15151A] p-4 space-y-3.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <CheckSquare className="w-4 h-4 text-emerald-400" />
                     <span className="text-xs font-semibold text-white">
-                      Чек-лист подзадач ({doneCount}/{totalCount})
+                      {isEn ? 'Subtask Checklist' : 'Чек-лист подзадач'} ({doneCount}/{totalCount})
                     </span>
                   </div>
 
@@ -560,7 +576,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       ) : (
                         <Cpu className="w-3 h-3 text-indigo-400" />
                       )}
-                      <span>Декомпозировать</span>
+                      <span>{isEn ? 'AI Decompose' : 'Декомпозировать'}</span>
                     </button>
                   )}
                 </div>
@@ -575,9 +591,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       />
                     </div>
                     <div className="flex justify-between text-[10px] text-[#8E8E93] tabular-nums">
-                      <span>Выполнено: {progressPercent}%</span>
                       <span>
-                        {doneCount} из {totalCount}
+                        {isEn ? `Completed: ${progressPercent}%` : `Выполнено: ${progressPercent}%`}
+                      </span>
+                      <span>
+                        {isEn ? `${doneCount} of ${totalCount}` : `${doneCount} из ${totalCount}`}
                       </span>
                     </div>
                   </div>
@@ -592,7 +610,9 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 {/* Checklist Items */}
                 {checklist.length === 0 ? (
                   <p className="text-xs text-[#71717A]">
-                    Подзадачи еще не сформированы. Нажмите «ИИ-декомпозиция» для автоматической генерации плана работ.
+                    {isEn
+                      ? 'No subtasks generated yet. Click "AI Decompose" for an automated execution plan.'
+                      : 'Подзадачи еще не сформированы. Нажмите «Декомпозировать» для автоматической генерации плана работ.'}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -645,7 +665,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       type="text"
                       value={newSubtaskTitle}
                       onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                      placeholder="Добавить шаг чек-листа вручную..."
+                      placeholder={
+                        isEn
+                          ? 'Add checklist step manually...'
+                          : 'Добавить шаг чек-листа вручную...'
+                      }
                       className="flex-1 rounded-lg border border-[#26262E] bg-[#111115] px-2.5 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
                     />
                     <button
@@ -654,7 +678,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#22222A] hover:bg-white hover:text-black disabled:opacity-40 text-xs font-medium text-white transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Шаг</span>
+                      <span>{isEn ? 'Step' : 'Шаг'}</span>
                     </button>
                   </form>
                 )}
@@ -679,7 +703,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                           : 'text-[#8E8E93] hover:text-white'
                       }`}
                     >
-                      РФ / СНГ
+                      {isEn ? 'RU / CIS' : 'РФ / СНГ'}
                     </button>
                     <button
                       type="button"
@@ -784,17 +808,19 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 </span>
               </div>
 
-              <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-56 overflow-y-auto no-scrollbar pr-1">
                 {entityComments.length === 0 ? (
                   <p className="text-xs text-[#71717A] py-2">{t('drawer.threadEmpty')}</p>
                 ) : (
                   entityComments.map((msg) => {
                     const sender = msg.sender_id ? nodeMap.get(msg.sender_id) : null;
                     const senderLabel =
-                      sender?.name || msg.sender_name || 'Сотрудник TedCloud';
+                      sender?.name ||
+                      msg.sender_name ||
+                      (isEn ? 'Team Member' : 'Сотрудник TedCloud');
                     const roleLabel = sender?.role_type || msg.sender_role || '';
                     const timeStr = msg.created_at
-                      ? new Date(msg.created_at).toLocaleString('ru-RU', {
+                      ? new Date(msg.created_at).toLocaleString(isEn ? 'en-US' : 'ru-RU', {
                           day: '2-digit',
                           month: '2-digit',
                           hour: '2-digit',
@@ -810,7 +836,10 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                           <span className="font-semibold text-white truncate">
                             {senderLabel}
                             {roleLabel ? (
-                              <span className="text-[#8E8E93] font-normal"> · {roleLabel}</span>
+                              <span className="text-[#8E8E93] font-normal">
+                                {' '}
+                                · {formatRole(roleLabel)}
+                              </span>
                             ) : null}
                           </span>
                           <span className="text-[10px] tabular-nums text-[#71717A] shrink-0">

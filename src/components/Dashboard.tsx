@@ -42,6 +42,14 @@ import {
   History,
   ShieldCheck,
   Search,
+  ArrowLeft,
+  Sun,
+  Moon,
+  LayoutDashboard,
+  UserCircle,
+  LogOut,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -148,7 +156,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onCreateInvoice,
   onResetSession,
 }) => {
-  const { language, currency, setLanguage, setCurrency, t, formatMoney } = useLocale();
+  const {
+    language,
+    currency,
+    theme,
+    setLanguage,
+    setCurrency,
+    toggleTheme,
+    t,
+    formatMoney,
+    formatRole,
+  } = useLocale();
+  const isEn = language === 'en';
 
   const companyId = company?.id || currentProfile?.company_id || '';
   const companyName = company?.name || 'TedCloud';
@@ -207,6 +226,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [overviewViewMode, setOverviewViewMode] = useState<'standard' | 'graph'>('standard');
   const [teamViewMode, setTeamViewMode] = useState<'table' | 'graph'>('table');
   const [decomposingTaskId, setDecomposingTaskId] = useState<string | null>(null);
+
+  // Mobile Responsive Navigation & Master-Detail Messenger states
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+
+  // Bento Dashboard Quick Add Task & Expandable Subtasks states
+  const [quickTaskTitle, setQuickTaskTitle] = useState('');
+  const [isCreatingQuickTask, setIsCreatingQuickTask] = useState(false);
+  const [expandedChecklistTaskIds, setExpandedChecklistTaskIds] = useState<Record<string, boolean>>(
+    {}
+  );
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -543,7 +573,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         payment_region: paymentRegion,
       });
       if (res.ok) {
-        showToast('Реквизиты плательщика сохранены');
+        showToast(
+          isEn ? 'Payer billing details saved' : 'Реквизиты плательщика сохранены'
+        );
       }
     } finally {
       setIsSavingBillingDetails(false);
@@ -607,9 +639,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
           params.paymentMethod === 'crypto_usdt'
         ) {
           setPrintableInvoice(created.invoice);
-          showToast(`Инвойс ${params.invoiceNumber} сформирован и готов к печати`);
+          showToast(
+            isEn
+              ? `Invoice ${params.invoiceNumber} generated and ready to print`
+              : `Инвойс ${params.invoiceNumber} сформирован и готов к печати`
+          );
         } else {
-          showToast(`Тариф ${params.plan} успешно оплачен и активирован`);
+          showToast(
+            isEn
+              ? `${params.plan} plan paid and activated`
+              : `Тариф ${params.plan} успешно оплачен и активирован`
+          );
         }
       }
     } else {
@@ -625,7 +665,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setPrintableInvoice((prev) =>
         prev && prev.id === invoiceId ? { ...prev, status: 'Paid' } : prev
       );
-      showToast('Статус счета обновлен: Оплачен');
+      showToast(
+        isEn ? 'Invoice status updated: Paid' : 'Статус счета обновлен: Оплачен'
+      );
     }
   };
 
@@ -643,6 +685,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           body: JSON.stringify({
             action: 'ai_assistant',
             mode: 'decompose_task',
+            lang: language,
             company_id: companyId,
             profile_id: currentProfile?.id,
             task_id: task.id,
@@ -658,7 +701,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
       } catch {}
 
       if (nextChecklist.length === 0) {
-        const builtIn = buildBuiltInChecklistForTask(task.title, task.description || task.notes);
+        const builtIn = buildBuiltInChecklistForTask(
+          task.title,
+          task.description || task.notes,
+          language
+        );
         nextChecklist = builtIn.checklist;
         nextSummary = builtIn.summary;
       }
@@ -667,10 +714,66 @@ export const Dashboard: React.FC<DashboardProps> = ({
         checklist: nextChecklist,
         ai_summary: nextSummary,
       });
-      showToast(`ИИ-декомпозиция выполнена: создано ${nextChecklist.length} подзадач`);
+      setExpandedChecklistTaskIds((prev) => ({ ...prev, [task.id]: true }));
+      showToast(
+        isEn
+          ? `AI decomposition complete: ${nextChecklist.length} subtasks created`
+          : `ИИ-декомпозиция выполнена: создано ${nextChecklist.length} подзадач`
+      );
     } finally {
       setDecomposingTaskId(null);
     }
+  };
+
+  const handleQuickCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = quickTaskTitle.trim();
+    if (!title || !canCreateOrEditTasks || isCreatingQuickTask) return;
+    setIsCreatingQuickTask(true);
+    try {
+      const assigneeId = currentProfile?.id || safeNodes[0]?.id || null;
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: 'tasks',
+          payload: {
+            company_id: companyId,
+            title,
+            type: 'Task',
+            priority: 'Medium',
+            status: 'Todo',
+            department: currentProfile?.department || null,
+            assigned_to: assigneeId,
+            owner_node_id: assigneeId,
+            created_by: currentProfile?.id || assigneeId,
+          },
+        }),
+      });
+      if (response.ok) {
+        setQuickTaskTitle('');
+        await onRefresh();
+        showToast(
+          isEn ? 'Task created and added to queue' : 'Задача создана и добавлена в очередь'
+        );
+      }
+    } finally {
+      setIsCreatingQuickTask(false);
+    }
+  };
+
+  const handleToggleDashboardSubtask = async (
+    task: TaskRecord,
+    subtaskId: string,
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+    if (!canCreateOrEditTasks) return;
+    const currentList = Array.isArray(task.checklist) ? task.checklist : [];
+    const nextList = currentList.map((item) =>
+      item.id === subtaskId ? { ...item, done: !item.done } : item
+    );
+    await onPatchRecord('tasks', task.id, { checklist: nextList });
   };
 
   const handleBotUsernameChange = (val: string) => {
@@ -884,10 +987,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         avatar_url: compressedDataUrl,
       });
       if (res.ok) {
-        showToast('Фотография профиля обновлена');
+        showToast(isEn ? 'Profile photo updated' : 'Фотография профиля обновлена');
       }
     } catch (err: any) {
-      showToast(err?.message || 'Ошибка при обработке фотографии');
+      showToast(
+        err?.message || (isEn ? 'Error processing photo' : 'Ошибка при обработке фотографии')
+      );
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -901,7 +1006,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         avatar_url: null,
       });
       if (res.ok) {
-        showToast('Фотография профиля удалена');
+        showToast(isEn ? 'Profile photo removed' : 'Фотография профиля удалена');
       }
     } finally {
       setIsUploadingAvatar(false);
@@ -1272,7 +1377,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     try {
       const [y, m, d] = raw.split('-').map(Number);
       if (y && m && d) {
-        formatted = new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
+        formatted = new Date(y, m - 1, d).toLocaleDateString(isEn ? 'en-US' : 'ru-RU', {
           day: 'numeric',
           month: 'short',
         });
@@ -1290,7 +1395,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }`}
       >
         <Calendar className="w-3 h-3 shrink-0" />
-        <span>Срок: {formatted}</span>
+        <span>
+          {isEn ? 'Due:' : 'Срок:'} {formatted}
+        </span>
       </span>
     );
   };
@@ -1430,11 +1537,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div
-      className="min-h-screen bg-[#09090B] text-[#EDEDED] flex font-sans antialiased"
-      style={{
-        backgroundImage:
-          'radial-gradient(ellipse 80% 40% at 50% -15%, rgba(99,102,241,0.10), transparent)',
-      }}
+      className={`min-h-screen flex font-sans antialiased overflow-x-hidden ${
+        theme === 'light'
+          ? 'theme-light bg-[#f8fafc] text-[#0f172a]'
+          : 'theme-dark bg-[#09090B] text-[#EDEDED]'
+      }`}
+      style={
+        theme === 'dark'
+          ? {
+              backgroundImage:
+                'radial-gradient(ellipse 80% 40% at 50% -15%, rgba(99,102,241,0.10), transparent)',
+            }
+          : undefined
+      }
     >
       <Sidebar
         activeSection={activeSection}
@@ -1449,7 +1564,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onRequestSignOut={onResetSession ? requestSignOut : undefined}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden">
         <TopBar
           companyName={companyName}
           activeSection={activeSection}
@@ -1457,7 +1572,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           onSearchChange={setSearchQuery}
           searchPlaceholder={
             !perms.crm_view && !perms.team_manage
-              ? language === 'en'
+              ? isEn
                 ? 'Search tasks and messages...'
                 : 'Поиск по задачам и сообщениям...'
               : t('actions.searchPlaceholder')
@@ -1466,10 +1581,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
           onRefresh={onRefresh}
           onOpenCommandBar={() => setIsCommandBarOpen(true)}
           onOpenAiCopilot={() => setIsAiDrawerOpen(true)}
+          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
         />
 
         {toastBanner && (
-          <div className="mx-6 mt-4 flex items-center justify-between rounded-lg border border-white/15 bg-zinc-900/90 px-4 py-2.5 text-xs text-zinc-200 shadow-lg">
+          <div className="mx-4 sm:mx-6 mt-4 flex items-center justify-between rounded-lg border border-white/15 bg-zinc-900/90 px-4 py-2.5 text-xs text-zinc-200 shadow-lg">
             <div className="flex items-center gap-2">
               <BellRing className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               <span>{toastBanner}</span>
@@ -1483,7 +1599,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         )}
 
-        <main className="flex-1 px-6 py-6 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 px-4 sm:px-6 py-5 sm:py-6 pb-24 lg:pb-8 max-w-7xl w-full max-w-full overflow-x-hidden mx-auto space-y-6">
           {/* Page Header & Contextual Controls */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -1503,7 +1619,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {activeSection === 'communications' && t('header.communicationsSubtitle')}
                 {activeSection === 'team' && t('header.teamSubtitle')}
                 {activeSection === 'profile' &&
-                  (language === 'en'
+                  (isEn
                     ? 'Personal details, profile photo, Telegram synchronization, and active workspace capabilities'
                     : 'Персональные реквизиты, фотография профиля, синхронизация с Telegram и рабочий контур')}
                 {activeSection === 'workspace' && t('header.workspaceSubtitle')}
@@ -1524,7 +1640,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     }`}
                   >
                     <LayoutList className="w-3.5 h-3.5" />
-                    <span>Обзор</span>
+                    <span>{isEn ? 'Overview' : 'Обзор'}</span>
                   </button>
                   <button
                     type="button"
@@ -1536,7 +1652,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     }`}
                   >
                     <Network className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Карта связей (Teamwork Graph)</span>
+                    <span>{isEn ? 'Teamwork Graph' : 'Карта связей (Teamwork Graph)'}</span>
                   </button>
                 </div>
               )}
@@ -1554,7 +1670,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     }`}
                   >
                     <Users className="w-3.5 h-3.5" />
-                    <span>Реестр штата</span>
+                    <span>{isEn ? 'Staff Directory' : 'Реестр штата'}</span>
                   </button>
                   <button
                     type="button"
@@ -1566,7 +1682,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     }`}
                   >
                     <Network className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Карта связей (Teamwork Graph)</span>
+                    <span>{isEn ? 'Teamwork Graph' : 'Карта связей (Teamwork Graph)'}</span>
                   </button>
                 </div>
               )}
@@ -1605,7 +1721,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           {/* =================================================================
-              TAB 1: ДАШБОРД / OVERVIEW
+              TAB 1: ДАШБОРД / EXECUTIVE BENTO OVERVIEW (БЛОК 3)
           ================================================================== */}
           {activeSection === 'overview' && (
             <div className="space-y-6">
@@ -1622,119 +1738,228 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 />
               ) : (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                        <span className="text-xs font-medium">{t('kpi.totalTasks')}</span>
-                        <Clock className="w-4 h-4 text-[#71717A]" />
-                      </div>
-                      <div className="text-2xl font-semibold text-white tracking-tight">
-                        {kpis.activeTasksCount}
-                      </div>
-                      <div className="text-[11px] text-[#71717A] mt-1 flex items-center justify-between">
-                        <span>
-                          {t('kpi.completed')}: {completedTasksCount}
-                        </span>
-                        {highPriorityOpenCount > 0 && (
-                          <span className="text-red-400 font-medium whitespace-nowrap">
-                            {highPriorityOpenCount} {t('kpi.highPriority')}
-                          </span>
+                  {/* ВЕРХНИЙ РЯД: 4 МНОГОСЛОЙНЫЕ KPI-КАРТОЧКИ С МИКРО-ВИЗУАЛИЗАЦИЕЙ */}
+                  {(() => {
+                    const totalTaskCount = visibleTasks.length;
+                    const taskCompletionPct =
+                      totalTaskCount > 0
+                        ? Math.round((completedTasksCount / totalTaskCount) * 100)
+                        : 0;
+                    const tgConnectedCount = safeNodes.filter((n) =>
+                      Boolean(n.telegram_chat_id)
+                    ).length;
+                    const tgConnectedPct =
+                      safeNodes.length > 0
+                        ? Math.round((tgConnectedCount / safeNodes.length) * 100)
+                        : 0;
+                    const wonSharePct =
+                      totalPipelineValue > 0
+                        ? Math.round((wonPipelineValue / totalPipelineValue) * 100)
+                        : 0;
+
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* KPI 1: Активные задачи + прогресс-бар выполнения */}
+                        <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-4 shadow-xl flex flex-col justify-between space-y-3">
+                          <div>
+                            <div className="flex items-center justify-between text-[#8E8E93] mb-2">
+                              <span className="text-xs font-medium">{t('kpi.totalTasks')}</span>
+                              <Clock className="w-4 h-4 text-indigo-400" />
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                {kpis.activeTasksCount}
+                              </div>
+                              {highPriorityOpenCount > 0 && (
+                                <span className="text-[11px] text-red-400 font-medium whitespace-nowrap">
+                                  {highPriorityOpenCount} {t('kpi.highPriority')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-[#71717A] tabular-nums">
+                              <span>
+                                {t('kpi.completed')}: {completedTasksCount}/{totalTaskCount}
+                              </span>
+                              <span>{taskCompletionPct}%</span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                              <div
+                                className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.max(4, taskCompletionPct)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* KPI 2: Штат и узлы + индикатор синхронизации Telegram */}
+                        <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-4 shadow-xl flex flex-col justify-between space-y-3">
+                          <div>
+                            <div className="flex items-center justify-between text-[#8E8E93] mb-2">
+                              <span className="text-xs font-medium">{t('kpi.orgStructure')}</span>
+                              <Users className="w-4 h-4 text-emerald-400" />
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                {safeNodes.length}
+                              </div>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-medium text-emerald-400 tabular-nums">
+                                <Send className="w-2.5 h-2.5" />
+                                <span>{tgConnectedPct}% TG</span>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-[#71717A] tabular-nums">
+                              <span>
+                                {t('kpi.telegramConnected')}: {tgConnectedCount}/{safeNodes.length}
+                              </span>
+                              <span>{companyDepartments.length} {isEn ? 'depts' : 'отд.'}</span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.max(4, tgConnectedPct)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {perms.crm_view ? (
+                          <>
+                            {/* KPI 3: Конверсия в закрытие */}
+                            <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-4 shadow-xl flex flex-col justify-between space-y-3">
+                              <div>
+                                <div className="flex items-center justify-between text-[#8E8E93] mb-2">
+                                  <span className="text-xs font-medium">
+                                    {t('kpi.conversionRate')}
+                                  </span>
+                                  <Percent className="w-4 h-4 text-indigo-400" />
+                                </div>
+                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                  {kpis.conversionRatePercent}%
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px] text-[#71717A] tabular-nums">
+                                  <span>
+                                    {t('kpi.wonDeals')}:{' '}
+                                    {
+                                      visibleLeads.filter((l) => (l.status || l.stage) === 'Won')
+                                        .length
+                                    }{' '}
+                                    / {visibleLeads.length}
+                                  </span>
+                                  <span>{kpis.conversionRatePercent}%</span>
+                                </div>
+                                <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                                  <div
+                                    className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                                    style={{
+                                      width: `${Math.max(4, kpis.conversionRatePercent)}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* KPI 4: Объем воронки */}
+                            <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-4 shadow-xl flex flex-col justify-between space-y-3">
+                              <div>
+                                <div className="flex items-center justify-between text-[#8E8E93] mb-2">
+                                  <span className="text-xs font-medium">
+                                    {t('kpi.pipelineVolume')}
+                                  </span>
+                                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                                </div>
+                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums truncate">
+                                  {formatMoney(totalPipelineValue)}
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px] text-emerald-400/90 tabular-nums">
+                                  <span className="truncate">
+                                    {t('kpi.closedWon')}: {formatMoney(wonPipelineValue)}
+                                  </span>
+                                  <span>{wonSharePct}%</span>
+                                </div>
+                                <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                                  <div
+                                    className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                                    style={{ width: `${Math.max(6, wonSharePct)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-4 shadow-xl flex flex-col justify-between space-y-3">
+                              <div>
+                                <div className="flex items-center justify-between text-[#8E8E93] mb-2">
+                                  <span className="text-xs font-medium">
+                                    {isEn ? 'Urgent Assignments' : 'Срочные поручения'}
+                                  </span>
+                                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                                </div>
+                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                  {highPriorityOpenCount}
+                                </div>
+                              </div>
+                              <div className="text-[11px] text-[#71717A]">
+                                {isEn ? 'In progress now:' : 'В работе сейчас:'}{' '}
+                                {
+                                  visibleTasks.filter((tItem) => tItem.status === 'In Progress')
+                                    .length
+                                }
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-4 shadow-xl flex flex-col justify-between space-y-3">
+                              <div>
+                                <div className="flex items-center justify-between text-[#8E8E93] mb-2">
+                                  <span className="text-xs font-medium">
+                                    {isEn ? 'Corporate Feed & Messages' : 'Инфополе и сообщения'}
+                                  </span>
+                                  <MessageSquare className="w-4 h-4 text-emerald-400" />
+                                </div>
+                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                  {visibleMessages.length}
+                                </div>
+                              </div>
+                              <div className="text-[11px] text-emerald-400/90">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveSection('communications')}
+                                  className="hover:underline"
+                                >
+                                  {isEn
+                                    ? 'Open corporate messenger →'
+                                    : 'Открыть корпоративный чат →'}
+                                </button>
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
-                    </div>
-
-                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                      <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                        <span className="text-xs font-medium">{t('kpi.orgStructure')}</span>
-                        <Users className="w-4 h-4 text-[#71717A]" />
-                      </div>
-                      <div className="text-2xl font-semibold text-white tracking-tight">
-                        {safeNodes.length}
-                      </div>
-                      <div className="text-[11px] text-[#71717A] mt-1">
-                        {t('kpi.telegramConnected')}:{' '}
-                        {safeNodes.filter((n) => Boolean(n.telegram_chat_id)).length}
-                      </div>
-                    </div>
-
-                    {perms.crm_view ? (
-                      <>
-                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                            <span className="text-xs font-medium">{t('kpi.conversionRate')}</span>
-                            <Percent className="w-4 h-4 text-[#71717A]" />
-                          </div>
-                          <div className="text-2xl font-semibold text-white tracking-tight">
-                            {kpis.conversionRatePercent}%
-                          </div>
-                          <div className="text-[11px] text-[#71717A] mt-1">
-                            {t('kpi.wonDeals')}:{' '}
-                            {visibleLeads.filter((l) => (l.status || l.stage) === 'Won').length} /{' '}
-                            {visibleLeads.length}
-                          </div>
-                        </div>
-
-                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                            <span className="text-xs font-medium">{t('kpi.pipelineVolume')}</span>
-                            <TrendingUp className="w-4 h-4 text-emerald-400" />
-                          </div>
-                          <div className="text-2xl font-semibold text-white tracking-tight">
-                            {formatMoney(totalPipelineValue)}
-                          </div>
-                          <div className="text-[11px] text-emerald-400/90 mt-1">
-                            {t('kpi.closedWon')}: {formatMoney(wonPipelineValue)}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                            <span className="text-xs font-medium">Срочные поручения</span>
-                            <AlertCircle className="w-4 h-4 text-amber-400" />
-                          </div>
-                          <div className="text-2xl font-semibold text-white tracking-tight">
-                            {highPriorityOpenCount}
-                          </div>
-                          <div className="text-[11px] text-[#71717A] mt-1">
-                            В работе сейчас:{' '}
-                            {visibleTasks.filter((tItem) => tItem.status === 'In Progress').length}
-                          </div>
-                        </div>
-
-                        <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-4">
-                          <div className="flex items-center justify-between text-[#8E8E93] mb-3">
-                            <span className="text-xs font-medium">Инфополе и сообщения</span>
-                            <MessageSquare className="w-4 h-4 text-emerald-400" />
-                          </div>
-                          <div className="text-2xl font-semibold text-white tracking-tight">
-                            {visibleMessages.length}
-                          </div>
-                          <div className="text-[11px] text-emerald-400/90 mt-1">
-                            <button
-                              type="button"
-                              onClick={() => setActiveSection('communications')}
-                              className="hover:underline"
-                            >
-                              Открыть корпоративный чат →
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   {/* Персональная сводка продуктивности для сотрудников без доступа к CRM (!perms.crm_view) */}
                   {!perms.crm_view && (
-                    <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] p-5 space-y-4">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F1F] pb-3.5">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-5 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.07] pb-3.5">
                         <div>
                           <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
-                            Персональная сводка продуктивности
+                            {isEn
+                              ? 'Personal Productivity Summary'
+                              : 'Персональная сводка продуктивности'}
                           </h2>
                           <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                            Ваши активные задачи, срочные поручения и последние сообщения из корпоративного инфополя
+                            {isEn
+                              ? 'Your active tasks, urgent assignments, and latest corporate feed messages'
+                              : 'Ваши активные задачи, срочные поручения и последние сообщения из корпоративного инфополя'}
                           </p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -1744,7 +1969,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Перейти к задачам</span>
+                            <span>{isEn ? 'Go to Tasks' : 'Перейти к задачам'}</span>
                           </button>
                           <button
                             type="button"
@@ -1752,14 +1977,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262626] bg-[#17171A] hover:bg-[#222226] text-xs font-medium text-white transition-colors"
                           >
                             <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Инфополе</span>
+                            <span>{t('nav.communications')}</span>
                           </button>
                         </div>
                       </div>
 
                       {visibleMessages.length === 0 ? (
                         <div className="text-xs text-[#71717A] py-2">
-                          В вашем инфополе пока нет новых сообщений.
+                          {isEn
+                            ? 'No new messages in your corporate feed yet.'
+                            : 'В вашем инфополе пока нет новых сообщений.'}
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1768,7 +1995,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               ? nodeMap.get(String(msg.sender_id))
                               : null;
                             const sName =
-                              senderNode?.name || msg.sender_name || 'Сотрудник TedCloud';
+                              senderNode?.name ||
+                              msg.sender_name ||
+                              (isEn ? 'TedCloud Employee' : 'Сотрудник TedCloud');
                             const sBody = extractMessageText(msg);
                             return (
                               <div
@@ -1789,7 +2018,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </div>
                                   {msg.is_urgent && (
                                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/30">
-                                      Срочно
+                                      {isEn ? 'Urgent' : 'Срочно'}
                                     </span>
                                   )}
                                 </div>
@@ -1804,152 +2033,430 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   )}
 
-                  {/* Сводка активных задач на Дашборде */}
-                  <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden">
-                    <div className="px-5 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <CheckCircle2 className="w-4 h-4 text-[#A1A1AA]" />
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
-                          {t('tasks.sectionTitle')}
-                        </h2>
-                        <span className="text-[11px] font-medium text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
-                          {visibleTasks.length}
-                        </span>
+                  {/* НИЖНИЙ РЯД BENTO-СЕТКИ: 7 КОЛОНОК СЛЕВА (ЗАДАЧИ + БЫСТРЫЙ ВВОД + ЧЕК-ЛИСТ) И 5 КОЛОНОК СПРАВА (ВОРОНКА + ПУЛЬС КОМАНДЫ) */}
+                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+                    {/* ЛЕВАЯ КОЛОНКА (xl:col-span-7): Приоритетные задачи и поручения */}
+                    <div className="xl:col-span-7 rounded-xl border border-white/[0.08] bg-[#111114] shadow-xl overflow-hidden">
+                      <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+                          <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
+                            {isEn
+                              ? 'Priority Tasks & Assignments'
+                              : 'Приоритетные задачи и поручения'}
+                          </h2>
+                          <span className="text-[11px] font-medium tabular-nums text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
+                            {visibleTasks.length}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setActiveSection('tasks')}
+                          className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors whitespace-nowrap"
+                        >
+                          {isEn ? 'All Tasks →' : 'Все задачи →'}
+                        </button>
                       </div>
-                      <button
-                        onClick={() => setActiveSection('tasks')}
-                        className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                      >
-                        {t('nav.tasks')}
-                      </button>
-                    </div>
 
-                    {visibleTasks.length === 0 ? (
-                      <div className="p-10 text-center space-y-3">
-                        <div className="text-sm font-medium text-white">{t('tasks.emptyTitle')}</div>
-                        <p className="text-xs text-[#71717A] max-w-md mx-auto">{t('tasks.empty')}</p>
-                        {canCreateOrEditTasks && (
-                          <button
-                            onClick={() => setModalType('tasks')}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>{t('tasks.addBtn')}</span>
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-[#1A1A1C]">
-                        {visibleTasks.slice(0, 8).map((task) => {
-                          const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
-                          const checklist = Array.isArray(task.checklist) ? task.checklist : [];
-                          const doneSubtasks = checklist.filter((c) => c.done).length;
-                          const isDecomposing = decomposingTaskId === task.id;
-
-                          return (
-                            <div
-                              key={task.id}
-                              onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
-                              className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#161618] transition-colors cursor-pointer"
+                      {/* Строка мгновенного создания задачи (Quick Add Task на Enter) */}
+                      {canCreateOrEditTasks && (
+                        <form
+                          onSubmit={handleQuickCreateTask}
+                          className="px-4 py-2.5 border-b border-white/[0.06] bg-[#141418] flex items-center gap-2"
+                        >
+                          <Plus className="w-4 h-4 text-[#71717A] shrink-0" />
+                          <input
+                            type="text"
+                            value={quickTaskTitle}
+                            onChange={(e) => setQuickTaskTitle(e.target.value)}
+                            placeholder={
+                              isEn
+                                ? 'Quickly create a task and press Enter...'
+                                : 'Быстро создать задачу и нажать Enter...'
+                            }
+                            className="flex-1 bg-transparent border-0 text-xs text-white placeholder-[#71717A] focus:outline-none py-1"
+                          />
+                          {quickTaskTitle.trim() && (
+                            <button
+                              type="submit"
+                              disabled={isCreatingQuickTask}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white text-black hover:bg-[#E4E4E7] text-[11px] font-semibold transition-colors shrink-0"
                             >
-                              <div className="min-w-0">
-                                <p
-                                  className={`text-sm font-medium truncate ${
-                                    task.status === 'Done'
-                                      ? 'text-[#71717A] line-through'
-                                      : 'text-white'
-                                  }`}
-                                >
-                                  {task.title}
-                                </p>
-                                  <div className="flex flex-wrap items-center gap-2 mt-1">
-                                    {renderPriorityBadge(task.priority)}
-                                    {renderTaskStatusBadge(task.status)}
-                                    {renderDueDateBadge(task.due_date, task.status)}
-                                    {task.department && (
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8]">
-                                        {task.department}
-                                      </span>
-                                    )}
-                                    {checklist.length > 0 && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 border border-white/10 text-[11px] tabular-nums text-zinc-300">
-                                        <ListChecks className="w-3 h-3 text-indigo-400" />
-                                        <span>
-                                          {doneSubtasks}/{checklist.length}
+                              {isCreatingQuickTask ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Plus className="w-3 h-3" />
+                              )}
+                              <span>{isEn ? 'Add' : 'Создать'}</span>
+                            </button>
+                          )}
+                        </form>
+                      )}
+
+                      {visibleTasks.length === 0 ? (
+                        <div className="p-10 text-center space-y-3">
+                          <div className="text-sm font-medium text-white">
+                            {t('tasks.emptyTitle')}
+                          </div>
+                          <p className="text-xs text-[#71717A] max-w-md mx-auto">
+                            {t('tasks.empty')}
+                          </p>
+                          {canCreateOrEditTasks && (
+                            <button
+                              onClick={() => setModalType('tasks')}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>{t('tasks.addBtn')}</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-white/[0.06]">
+                          {visibleTasks.slice(0, 8).map((task) => {
+                            const assignee = task.assigned_to
+                              ? nodeMap.get(task.assigned_to)
+                              : null;
+                            const checklist = Array.isArray(task.checklist) ? task.checklist : [];
+                            const doneSubtasks = checklist.filter((c) => c.done).length;
+                            const isDecomposing = decomposingTaskId === task.id;
+                            const isChecklistExpanded = Boolean(
+                              expandedChecklistTaskIds[task.id]
+                            );
+
+                            return (
+                              <div
+                                key={task.id}
+                                onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
+                                className="px-5 py-3.5 hover:bg-[#16161A] transition-colors cursor-pointer space-y-2.5"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p
+                                      className={`text-sm font-medium truncate ${
+                                        task.status === 'Done'
+                                          ? 'text-[#71717A] line-through'
+                                          : 'text-white'
+                                      }`}
+                                    >
+                                      {task.title}
+                                    </p>
+                                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                                      {renderPriorityBadge(task.priority)}
+                                      {renderTaskStatusBadge(task.status)}
+                                      {renderDueDateBadge(task.due_date, task.status)}
+                                      {task.department && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8]">
+                                          {formatRole(task.department)}
                                         </span>
-                                      </span>
-                                    )}
-                                    {assignee ? (
-                                      <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
-                                        <UserAvatar
-                                          name={assignee.name}
-                                          avatarUrl={assignee.avatar_url}
-                                          size="xs"
-                                        />
-                                        <span>
-                                          {assignee.name} ({assignee.role_type})
+                                      )}
+                                      {checklist.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setExpandedChecklistTaskIds((prev) => ({
+                                              ...prev,
+                                              [task.id]: !prev[task.id],
+                                            }));
+                                          }}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-[11px] tabular-nums text-zinc-200 transition-colors"
+                                          title={
+                                            isEn
+                                              ? 'Toggle AI subtask checklist'
+                                              : 'Развернуть чек-лист подзадач'
+                                          }
+                                        >
+                                          <ListChecks className="w-3 h-3 text-indigo-400" />
+                                          <span>
+                                            {doneSubtasks}/{checklist.length}
+                                          </span>
+                                          {isChecklistExpanded ? (
+                                            <ChevronUp className="w-3 h-3 text-zinc-400" />
+                                          ) : (
+                                            <ChevronDown className="w-3 h-3 text-zinc-400" />
+                                          )}
+                                        </button>
+                                      )}
+                                      {assignee ? (
+                                        <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
+                                          <UserAvatar
+                                            name={assignee.name}
+                                            avatarUrl={assignee.avatar_url}
+                                            size="xs"
+                                          />
+                                          <span>
+                                            {assignee.name} ({formatRole(assignee.role_type)})
+                                          </span>
                                         </span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-[#71717A]">
-                                        {t('tasks.unassigned')}
-                                      </span>
+                                      ) : (
+                                        <span className="text-xs text-[#71717A]">
+                                          {t('tasks.unassigned')}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div
+                                    className="flex items-center gap-2 shrink-0"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {canCreateOrEditTasks && (
+                                      <button
+                                        type="button"
+                                        disabled={isDecomposing}
+                                        onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
+                                        title={
+                                          isEn
+                                            ? 'Decompose task into AI subtask checklist'
+                                            : 'ИИ-декомпозиция задачи на чек-лист подзадач'
+                                        }
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
+                                      >
+                                        {isDecomposing ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                          <Cpu className="w-3 h-3 text-indigo-400" />
+                                        )}
+                                        <span>{isEn ? 'AI Subtasks' : 'ИИ-декомпозиция'}</span>
+                                      </button>
                                     )}
-                                    {(task.description || task.notes) && (
-                                      <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
-                                        <FileText className="w-3 h-3" />
-                                        <span>{t('drawer.openDetails')}</span>
-                                      </span>
-                                    )}
+
+                                    <select
+                                      disabled={!canCreateOrEditTasks}
+                                      value={task.status || 'Todo'}
+                                      onChange={(e) =>
+                                        handleTaskUpdate(task.id, {
+                                          status: e.target.value as TaskStatus,
+                                        })
+                                      }
+                                      className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                                    >
+                                      <option value="Todo">{t('status.Todo')}</option>
+                                      <option value="In Progress">
+                                        {t('status.In Progress')}
+                                      </option>
+                                      <option value="Done">{t('status.Done')}</option>
+                                    </select>
                                   </div>
                                 </div>
 
-                                <div
-                                  className="flex items-center gap-2 shrink-0"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {canCreateOrEditTasks && (
-                                    <button
-                                      type="button"
-                                      disabled={isDecomposing}
-                                      onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
-                                      title="ИИ-декомпозиция задачи на чек-лист подзадач"
-                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
-                                    >
-                                      {isDecomposing ? (
-                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                      ) : (
-                                        <Cpu className="w-3 h-3 text-indigo-400" />
-                                      )}
-                                      <span>ИИ-декомпозиция</span>
-                                    </button>
-                                  )}
-
-                                  <select
-                                    disabled={!canCreateOrEditTasks}
-                                    value={task.status || 'Todo'}
-                                    onChange={(e) =>
-                                      handleTaskUpdate(task.id, {
-                                        status: e.target.value as TaskStatus,
-                                      })
-                                    }
-                                    className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                                {/* Раскрывающийся интерактивный чек-лист подзадач прямо в карточке на дашборде */}
+                                {checklist.length > 0 && isChecklistExpanded && (
+                                  <div
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="rounded-lg border border-white/[0.07] bg-[#151519] p-2.5 space-y-1.5"
                                   >
-                                    <option value="Todo">{t('status.Todo')}</option>
-                                    <option value="In Progress">{t('status.In Progress')}</option>
-                                    <option value="Done">{t('status.Done')}</option>
-                                  </select>
-                                </div>
+                                    {checklist.map((subItem) => (
+                                      <button
+                                        key={subItem.id}
+                                        type="button"
+                                        onClick={(e) =>
+                                          void handleToggleDashboardSubtask(task, subItem.id, e)
+                                        }
+                                        className="w-full flex items-center gap-2 text-left text-xs px-2 py-1 rounded hover:bg-white/[0.04] transition-colors"
+                                      >
+                                        <span
+                                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
+                                            subItem.done
+                                              ? 'bg-emerald-500 border-emerald-500 text-black'
+                                              : 'border-zinc-600'
+                                          }`}
+                                        >
+                                          {subItem.done && <Check className="w-2.5 h-2.5" />}
+                                        </span>
+                                        <span
+                                          className={
+                                            subItem.done
+                                              ? 'text-[#71717A] line-through'
+                                              : 'text-zinc-200'
+                                          }
+                                        >
+                                          {subItem.title}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
                         </div>
                       )}
                     </div>
-                  </>
-                )}
-              </div>
-            )}
+
+                    {/* ПРАВАЯ КОЛОНКА (xl:col-span-5): 2 АНАЛИТИЧЕСКИХ EXECUTIVE-БЛОКА */}
+                    <div className="xl:col-span-5 space-y-6">
+                      {/* 1. Структура воронки CRM (Pipeline Breakdown) */}
+                      {perms.crm_view && (
+                        <div className="rounded-xl border border-white/[0.08] bg-[#111114] shadow-xl p-5 space-y-4">
+                          <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
+                            <div className="flex items-center gap-2">
+                              <Briefcase className="w-4 h-4 text-emerald-400" />
+                              <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                                {isEn ? 'CRM Pipeline Breakdown' : 'Структура воронки CRM'}
+                              </h3>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setActiveSection('crm')}
+                              className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                            >
+                              {isEn ? 'Open CRM →' : 'Воронка →'}
+                            </button>
+                          </div>
+
+                          <div className="space-y-3.5">
+                            {(
+                              [
+                                {
+                                  stage: 'New' as CrmLeadStatus,
+                                  label: t('stage.New'),
+                                  barColor: 'bg-blue-500',
+                                },
+                                {
+                                  stage: 'Negotiation' as CrmLeadStatus,
+                                  label: t('stage.Negotiation'),
+                                  barColor: 'bg-amber-500',
+                                },
+                                {
+                                  stage: 'Won' as CrmLeadStatus,
+                                  label: t('stage.Won'),
+                                  barColor: 'bg-emerald-500',
+                                },
+                              ] as const
+                            ).map((row) => {
+                              const stageLeads = visibleLeads.filter(
+                                (l) => (l.status || l.stage || 'New') === row.stage
+                              );
+                              const stageSum = stageLeads.reduce(
+                                (acc, l) => acc + Number(l.amount ?? l.deal_value ?? 0),
+                                0
+                              );
+                              const sharePct =
+                                totalPipelineValue > 0
+                                  ? Math.round((stageSum / totalPipelineValue) * 100)
+                                  : 0;
+
+                              return (
+                                <div key={row.stage} className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-white">{row.label}</span>
+                                      <span className="text-[11px] tabular-nums text-[#71717A]">
+                                        ({stageLeads.length})
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 tabular-nums">
+                                      <span className="font-semibold text-white">
+                                        {formatMoney(stageSum)}
+                                      </span>
+                                      <span className="text-[11px] text-[#8E8E93] w-9 text-right">
+                                        {sharePct}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="h-2 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                                    <div
+                                      className={`h-full ${row.barColor} rounded-full transition-all duration-300`}
+                                      style={{ width: `${Math.max(4, sharePct)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 2. Загрузка подразделений и пульс команды (Team Workload & Organization Pulse) */}
+                      <div className="rounded-xl border border-white/[0.08] bg-[#111114] shadow-xl p-5 space-y-4">
+                        <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-indigo-400" />
+                            <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                              {isEn
+                                ? 'Team Workload & Organization Pulse'
+                                : 'Загрузка подразделений и пульс команды'}
+                            </h3>
+                          </div>
+                          {perms.team_manage && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveSection('team')}
+                              className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                            >
+                              {isEn ? 'Manage →' : 'Штат →'}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="divide-y divide-white/[0.06]">
+                          {safeNodes.slice(0, 6).map((member) => {
+                            const memberActiveTasks = visibleTasks.filter(
+                              (tItem) =>
+                                tItem.status !== 'Done' &&
+                                (tItem.assigned_to === member.id ||
+                                  tItem.owner_node_id === member.id)
+                            ).length;
+                            const hasTg = Boolean(member.telegram_chat_id);
+
+                            return (
+                              <div
+                                key={member.id}
+                                className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <UserAvatar
+                                    name={member.name}
+                                    avatarUrl={member.avatar_url}
+                                    size="sm"
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-semibold text-white truncate">
+                                      {member.name}
+                                    </div>
+                                    <div className="text-[11px] text-[#8E8E93] truncate">
+                                      {formatRole(member.role_type)}
+                                      {member.department
+                                        ? ` · ${formatRole(member.department)}`
+                                        : ''}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span
+                                    className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-white/[0.08] text-[11px] font-medium tabular-nums text-white"
+                                    title={isEn ? 'Active tasks' : 'Активных задач'}
+                                  >
+                                    {memberActiveTasks} {isEn ? 'tasks' : 'задач'}
+                                  </span>
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                      hasTg
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                        : 'bg-zinc-900 border-white/[0.07] text-[#71717A]'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full ${
+                                        hasTg ? 'bg-emerald-400' : 'bg-zinc-500'
+                                      }`}
+                                    />
+                                    <span>{hasTg ? 'TG' : isEn ? 'Offline' : 'Ожид.'}</span>
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
             {/* =================================================================
                 TAB 2: ЗАДАЧИ / TASKS (БЛОК 4: Полноценная Канбан-доска + Сроки due_date)
@@ -2013,7 +2520,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         }`}
                       >
                         <LayoutList className="w-3.5 h-3.5" />
-                        <span>Список</span>
+                        <span>{isEn ? 'List' : 'Список'}</span>
                       </button>
                       <button
                         type="button"
@@ -2025,7 +2532,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         }`}
                       >
                         <Columns3 className="w-3.5 h-3.5" />
-                        <span>Канбан-доска</span>
+                        <span>{isEn ? 'Kanban Board' : 'Канбан-доска'}</span>
                       </button>
                     </div>
                   </div>
@@ -2097,7 +2604,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 {renderDueDateBadge(task.due_date, task.status)}
                                 {task.department && (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8] whitespace-nowrap">
-                                    {task.department}
+                                    {formatRole(task.department)}
                                   </span>
                                 )}
                                 {checklist.length > 0 && (
@@ -2116,7 +2623,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       size="xs"
                                     />
                                     <strong className="text-[#D4D4D8] font-medium">
-                                      {assignee.name} ({assignee.role_type})
+                                      {assignee.name} ({formatRole(assignee.role_type)})
                                     </strong>
                                   </span>
                                 )}
@@ -2141,7 +2648,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 type="button"
                                 disabled={isDecomposing}
                                 onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
-                                title="ИИ-декомпозиция задачи на чек-лист подзадач"
+                                title={
+                                  isEn
+                                    ? 'Decompose task into AI subtask checklist'
+                                    : 'ИИ-декомпозиция задачи на чек-лист подзадач'
+                                }
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
                               >
                                 {isDecomposing ? (
@@ -2149,7 +2660,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 ) : (
                                   <Cpu className="w-3 h-3 text-indigo-400" />
                                 )}
-                                <span>ИИ-декомпозиция</span>
+                                <span>{isEn ? 'AI Subtasks' : 'ИИ-декомпозиция'}</span>
                               </button>
                             )}
 
@@ -2167,7 +2678,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 <option value="">{t('tasks.unassigned')}</option>
                                 {safeNodes.map((node) => (
                                   <option key={node.id} value={node.id}>
-                                    {node.name} — {node.role_type}
+                                    {node.name} — {formatRole(node.role_type)}
                                   </option>
                                 ))}
                               </select>
@@ -2255,7 +2766,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                           {colTasks.length === 0 ? (
                             <div className="py-10 text-center text-xs text-zinc-600 border border-dashed border-white/[0.06] rounded-lg">
-                              Нет задач в колонке
+                              {isEn ? 'No tasks in column' : 'Нет задач в колонке'}
                             </div>
                           ) : (
                             colTasks.map((task) => {
@@ -2299,7 +2810,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     {renderDueDateBadge(task.due_date, task.status)}
                                     {task.department && (
                                       <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-900 border border-white/[0.08] text-[10px] text-zinc-300">
-                                        {task.department}
+                                        {formatRole(task.department)}
                                       </span>
                                     )}
                                   </div>
@@ -2309,7 +2820,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       <div className="flex items-center justify-between text-[11px] text-zinc-400 tabular-nums">
                                         <span className="inline-flex items-center gap-1">
                                           <ListChecks className="w-3 h-3 text-indigo-400" />
-                                          <span>Чек-лист</span>
+                                          <span>{isEn ? 'Checklist' : 'Чек-лист'}</span>
                                         </span>
                                         <span>
                                           {doneSubtasks}/{checklist.length} ({progressPct}%)
@@ -2400,7 +2911,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       }`}
                     >
                       <Columns3 className="w-3.5 h-3.5" />
-                      <span>Воронка (Канбан)</span>
+                      <span>{isEn ? 'Pipeline (Kanban)' : 'Воронка (Канбан)'}</span>
                     </button>
                     <button
                       type="button"
@@ -2412,7 +2923,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       }`}
                     >
                       <LayoutList className="w-3.5 h-3.5" />
-                      <span>Реестр (Таблица)</span>
+                      <span>{isEn ? 'Registry (Table)' : 'Реестр (Таблица)'}</span>
                     </button>
                   </div>
 
@@ -2511,7 +3022,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <div className="space-y-2.5 flex-1">
                           {colLeads.length === 0 ? (
                             <div className="py-10 text-center text-xs text-[#52525B]">
-                              Нет сделок на стадии
+                              {isEn ? 'No deals in stage' : 'Нет сделок на стадии'}
                             </div>
                           ) : (
                             colLeads.map((lead) => {
@@ -2538,7 +3049,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                   {lead.contract_number && (
                                     <div className="text-[11px] text-[#A1A1AA] tabular-nums">
-                                      Договор № {lead.contract_number}
+                                      {isEn ? 'Contract #' : 'Договор №'} {lead.contract_number}
                                     </div>
                                   )}
 
@@ -2564,7 +3075,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                     {lead.department && (
                                       <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[10px] text-[#D4D4D8] truncate max-w-[110px]">
-                                        {lead.department}
+                                        {formatRole(lead.department)}
                                       </span>
                                     )}
                                   </div>
@@ -2678,7 +3189,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 )}
                                 {lead.department && (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[10px] text-[#D4D4D8] whitespace-nowrap">
-                                    {lead.department}
+                                    {formatRole(lead.department)}
                                   </span>
                                 )}
                               </div>
@@ -2735,39 +3246,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 4: ИНФОПОЛЕ И СВЯЗЬ / SPLIT-VIEW CORPORATE MESSENGER
+              TAB 4: ИНФОПОЛЕ И СВЯЗЬ / SPLIT-VIEW CORPORATE MESSENGER (БЛОК 4: Mobile Master-Detail)
           ================================================================== */}
           {activeSection === 'communications' && (
-            <div className="rounded-xl border border-[#1F1F1F] bg-[#111113] overflow-hidden flex flex-col lg:flex-row min-h-[640px]">
-              {/* ЛЕВАЯ ПАНЕЛЬ (Ширина 300px на десктопе): Каналы и Личные диалоги */}
-              <aside className="w-full lg:w-[300px] shrink-0 border-b lg:border-b-0 lg:border-r border-[#1F1F1F] bg-[#0D0D0F] flex flex-col">
-                <div className="px-4 py-3.5 border-b border-[#1F1F1F] flex items-center justify-between">
+            <div className="rounded-xl border border-white/[0.08] bg-[#111114] overflow-hidden flex flex-col lg:flex-row min-h-[560px] lg:min-h-[640px] shadow-2xl">
+              {/* ЛЕВАЯ ПАНЕЛЬ (Ширина 300px на десктопе, 100% на мобильных при !mobileChatOpen): Каналы и Личные диалоги */}
+              <aside
+                className={`${
+                  mobileChatOpen ? 'hidden lg:flex' : 'flex'
+                } w-full lg:w-[300px] shrink-0 border-b lg:border-b-0 lg:border-r border-white/[0.07] bg-[#0D0D0F] flex-col`}
+              >
+                <div className="px-4 py-3.5 border-b border-white/[0.07] flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span className="text-xs font-semibold uppercase tracking-wider text-white">
-                      Каналы и Диалоги
+                      {isEn ? 'Channels & Direct Messages' : 'Каналы и Диалоги'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-3 space-y-5">
+                <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-5">
                   {/* Блок 1: Корпоративные каналы */}
                   <div className="space-y-1">
                     <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
-                      Корпоративные каналы
+                      {isEn ? 'Corporate Channels' : 'Корпоративные каналы'}
                     </div>
 
                     {/* Общий поток (Циркуляры компании) */}
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
                         setActiveCommThread({
                           type: 'broadcast',
                           id: 'general',
-                          label: 'Общий поток (Циркуляры компании)',
-                        })
-                      }
-                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                          label: isEn
+                            ? 'General Stream (Company Broadcasts)'
+                            : 'Общий поток (Циркуляры компании)',
+                        });
+                        setMobileChatOpen(true);
+                      }}
+                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-2.5 rounded-lg text-left transition-colors ${
                         activeCommThread.type === 'broadcast'
                           ? 'bg-[#1C1C21] text-white border border-[#2E2E36]'
                           : 'text-[#A1A1AA] hover:bg-[#151518] hover:text-white border border-transparent'
@@ -2776,7 +3294,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div className="flex items-center gap-2 min-w-0">
                         <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                         <span className="text-xs font-medium truncate">
-                          Общий поток (Циркуляры компании)
+                          {isEn
+                            ? 'General Stream (Company Broadcasts)'
+                            : 'Общий поток (Циркуляры компании)'}
                         </span>
                       </div>
                       <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
@@ -2799,14 +3319,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <button
                           key={dept}
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
                             setActiveCommThread({
                               type: 'department',
                               id: dept,
                               label: dept,
-                            })
-                          }
-                          className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                            });
+                            setMobileChatOpen(true);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2 px-2.5 py-2.5 rounded-lg text-left transition-colors ${
                             isSelected
                               ? 'bg-[#1C1C21] text-white border border-[#2E2E36]'
                               : 'text-[#A1A1AA] hover:bg-[#151518] hover:text-white border border-transparent'
@@ -2814,7 +3335,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <Hash className="w-3.5 h-3.5 text-[#71717A] shrink-0" />
-                            <span className="text-xs font-medium truncate">{dept}</span>
+                            <span className="text-xs font-medium truncate">
+                              {formatRole(dept)}
+                            </span>
                           </div>
                           <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
                             {deptMsgCount}
@@ -2828,7 +3351,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="space-y-1">
                     <div className="px-2 pb-1 flex items-center justify-between">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
-                        Личные диалоги (Сотрудники)
+                        {isEn ? 'Direct Messages (Team)' : 'Личные диалоги (Сотрудники)'}
                       </span>
                       <span className="text-[10px] tabular-nums text-[#71717A]">
                         {colleagueNodes.length}
@@ -2837,7 +3360,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                     {colleagueNodes.length === 0 ? (
                       <div className="px-2.5 py-3 rounded-lg border border-[#1C1C1F] bg-[#121215] text-[11px] text-[#71717A]">
-                        В штате пока нет других сотрудников для личного диалога.
+                        {isEn
+                          ? 'No other employees in the directory yet for direct messages.'
+                          : 'В штате пока нет других сотрудников для личного диалога.'}
                       </div>
                     ) : (
                       colleagueNodes.map((colleague) => {
@@ -2861,16 +3386,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <button
                             key={colleague.id}
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
                               setActiveCommThread({
                                 type: 'direct',
                                 id: String(colleague.id),
                                 label: colleague.name,
                                 subtitle: colleague.role_type,
                                 telegramConnected: hasTelegram,
-                              })
-                            }
-                            className={`w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                              });
+                              setMobileChatOpen(true);
+                            }}
+                            className={`w-full flex items-center justify-between gap-2.5 px-2.5 py-2.5 rounded-lg text-left transition-colors ${
                               isSelected
                                 ? 'bg-[#1C1C21] text-white border border-[#2E2E36]'
                                 : 'text-[#A1A1AA] hover:bg-[#151518] hover:text-white border border-transparent'
@@ -2888,7 +3414,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 </span>
                                 {hasTelegram && (
                                   <span
-                                    title="Telegram подключен"
+                                    title={isEn ? 'Telegram connected' : 'Telegram подключен'}
                                     className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0"
                                   >
                                     TG
@@ -2896,8 +3422,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 )}
                               </div>
                               <div className="text-[11px] text-[#71717A] truncate">
-                                {colleague.role_type}
-                                {colleague.department ? ` · ${colleague.department}` : ''}
+                                {formatRole(colleague.role_type)}
+                                {colleague.department
+                                  ? ` · ${formatRole(colleague.department)}`
+                                  : ''}
                               </div>
                             </div>
 
@@ -2912,8 +3440,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </aside>
 
-              {/* ПРАВАЯ ПАНЕЛЬ: Окно выбранного чата / канала */}
-              <section className="flex-1 flex flex-col min-w-0 bg-[#111113]">
+              {/* ПРАВАЯ ПАНЕЛЬ: Окно выбранного чата / канала (100% на мобильных при mobileChatOpen) */}
+              <section
+                className={`${
+                  mobileChatOpen ? 'flex' : 'hidden lg:flex'
+                } flex-1 flex-col min-w-0 bg-[#111113]`}
+              >
                 {/* Шапка диалога */}
                 {(() => {
                   const selectedColleague =
@@ -2924,15 +3456,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     activeCommThread.type === 'direct'
                       ? selectedColleague?.name || activeCommThread.label
                       : activeCommThread.type === 'department'
-                      ? `# ${activeCommThread.label}`
+                      ? `# ${formatRole(activeCommThread.label)}`
+                      : isEn
+                      ? 'General Stream (Company Broadcasts)'
                       : 'Общий поток (Циркуляры компании)';
                   const headerSubtitle =
                     activeCommThread.type === 'direct'
-                      ? [selectedColleague?.role_type, selectedColleague?.department]
+                      ? [
+                          formatRole(selectedColleague?.role_type),
+                          formatRole(selectedColleague?.department),
+                        ]
                           .filter(Boolean)
-                          .join(' · ') || 'Личный защищенный диалог (Direct)'
+                          .join(' · ') ||
+                        (isEn
+                          ? 'Private Direct Message'
+                          : 'Личный защищенный диалог (Direct)')
                       : activeCommThread.type === 'department'
-                      ? 'Канал подразделения · Сообщения видны сотрудникам отдела и руководству'
+                      ? isEn
+                        ? 'Department channel · Visible to department members and management'
+                        : 'Канал подразделения · Сообщения видны сотрудникам отдела и руководству'
+                      : isEn
+                      ? 'Public corporate stream · Visible to all company employees'
                       : 'Публичный корпоративный поток · Виден всем сотрудникам компании';
 
                   const tgActive =
@@ -2941,8 +3485,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       : safeNodes.some((n) => Boolean(n.telegram_chat_id));
 
                   return (
-                    <div className="px-5 py-3.5 border-b border-[#1F1F1F] bg-[#131316] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-3 min-w-0">
+                    <div className="px-4 sm:px-5 py-3.5 border-b border-white/[0.07] bg-[#131316] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {/* Кнопка возврата к списку диалогов на мобильном экране (< 1024px) */}
+                        <button
+                          type="button"
+                          onClick={() => setMobileChatOpen(false)}
+                          className="lg:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] text-xs font-medium text-white shrink-0"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>{isEn ? 'All Threads' : 'Все диалоги'}</span>
+                        </button>
+
                         {activeCommThread.type === 'direct' && (
                           <UserAvatar
                             name={headerTitle}
@@ -2956,9 +3510,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               {headerTitle}
                             </h2>
                             {activeCommThread.type === 'direct' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#1C1C22] text-[#A1A1AA] border border-[#2C2C35]">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#1C1C22] text-[#A1A1AA] border border-[#2C2C35] shrink-0">
                                 <Lock className="w-2.5 h-2.5 text-emerald-400" />
-                                <span>Приватный диалог</span>
+                                <span>{isEn ? 'Private DM' : 'Приватный диалог'}</span>
                               </span>
                             )}
                           </div>
@@ -2983,7 +3537,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           />
                           <span>
                             {tgActive
-                              ? 'Доставка в Telegram активна'
+                              ? isEn
+                                ? 'Telegram sync active'
+                                : 'Доставка в Telegram активна'
+                              : isEn
+                              ? 'Telegram not linked'
                               : 'Telegram не привязан у получателя'}
                           </span>
                         </span>
@@ -2992,19 +3550,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                {/* Поток сообщений (Компактные баблы по тексту w-fit max-w-[75%]) */}
-                <div className="flex-1 overflow-y-auto p-5 space-y-3 max-h-[520px]">
+                {/* Поток сообщений (Компактные баблы по тексту w-fit max-w-[85%] sm:max-w-[75%]) */}
+                <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-5 space-y-3 max-h-[520px]">
                   {activeThreadMessages.length === 0 ? (
-                    <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-center p-6 space-y-2">
+                    <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center p-6 space-y-2">
                       <MessageSquare className="w-6 h-6 text-[#52525B]" />
                       <div className="text-sm font-medium text-white">
-                        В выбранном потоке пока нет сообщений
+                        {isEn
+                          ? 'No messages in this thread yet'
+                          : 'В выбранном потоке пока нет сообщений'}
                       </div>
                       <p className="text-xs text-[#71717A] max-w-md">
                         {activeCommThread.type === 'direct'
-                          ? 'Отправьте личное сообщение сотруднику. Оно будет видно исключительно вам и получателю, а также мгновенно доставлено в Telegram.'
+                          ? isEn
+                            ? 'Send a direct message to this colleague. It is visible only to you and the recipient and delivered directly to Telegram.'
+                            : 'Отправьте личное сообщение сотруднику. Оно будет видно исключительно вам и получателю, а также мгновенно доставлено в Telegram.'
                           : activeCommThread.type === 'department'
-                          ? `Напишите сообщение в подразделение «${activeCommThread.label}». Все сотрудники отдела получат уведомление.`
+                          ? isEn
+                            ? `Post a message to #${formatRole(activeCommThread.label)}. All department members will be notified.`
+                            : `Напишите сообщение в подразделение «${activeCommThread.label}». Все сотрудники отдела получат уведомление.`
+                          : isEn
+                          ? 'Post a company-wide broadcast or operational update for the entire team.'
                           : 'Опубликуйте циркуляр или оперативное сообщение для всей команды компании.'}
                       </p>
                     </div>
@@ -3023,8 +3589,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         : null;
 
                       const senderName =
-                        senderNode?.name || msg.sender_name || 'Сотрудник TedCloud';
-                      const senderRole = senderNode?.role_type || msg.sender_role || '';
+                        senderNode?.name ||
+                        msg.sender_name ||
+                        (isEn ? 'TedCloud Employee' : 'Сотрудник TedCloud');
+                      const senderRole = formatRole(
+                        senderNode?.role_type || msg.sender_role || ''
+                      );
                       const senderAvatarUrl =
                         senderNode?.avatar_url ||
                         (isOutgoing ? currentProfile?.avatar_url : null);
@@ -3038,16 +3608,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         msg.target_label ||
                         recipientNode?.name ||
                         msg.target_department ||
-                        'Всем';
+                        (isEn ? 'All' : 'Всем');
 
                       const messageBody =
                         msg.message_text || msg.text || msg.content || '';
 
                       const shortTime = msg.created_at
-                        ? new Date(msg.created_at).toLocaleTimeString('ru-RU', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
+                        ? new Date(msg.created_at).toLocaleTimeString(
+                            isEn ? 'en-US' : 'ru-RU',
+                            {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }
+                          )
                         : '';
 
                       return (
@@ -3067,7 +3640,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           )}
 
                           <div
-                            className={`w-fit max-w-[75%] min-w-[180px] rounded-2xl border px-3.5 py-2.5 space-y-1 transition-colors ${
+                            className={`w-fit max-w-[85%] sm:max-w-[75%] min-w-[160px] rounded-2xl border px-3.5 py-2.5 space-y-1 transition-colors ${
                               isOutgoing
                                 ? 'bg-emerald-950/30 border-emerald-500/30 rounded-br-sm'
                                 : 'bg-[#16161A] border-[#26262C] rounded-bl-sm'
@@ -3090,13 +3663,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   recipientLabel !== 'Всем сотрудникам' &&
                                   recipientLabel !== 'Циркуляр по компании' && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#1F1F26] border border-[#2E2E38] text-[10px] font-medium text-[#A1A1AA]">
-                                      {recipientLabel}
+                                      {formatRole(recipientLabel)}
                                     </span>
                                   )}
                                 {msg.is_urgent && (
                                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/15 border border-red-500/30 text-[10px] font-semibold text-red-300">
                                     <AlertCircle className="w-2.5 h-2.5" />
-                                    <span>Срочно</span>
+                                    <span>{isEn ? 'Urgent' : 'Срочно'}</span>
                                   </span>
                                 )}
                               </div>
@@ -3106,10 +3679,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   type="button"
                                   onClick={() => handleConvertMessageToTask(msg)}
                                   className="opacity-0 group-hover:opacity-100 focus:opacity-100 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#202026]/90 hover:bg-white hover:text-black text-[10px] font-medium text-[#D4D4D8] border border-[#32323A] transition-all shrink-0"
-                                  title="Создать поручение на основе этого сообщения"
+                                  title={
+                                    isEn
+                                      ? 'Convert message into task'
+                                      : 'Создать поручение на основе этого сообщения'
+                                  }
                                 >
                                   <Plus className="w-2.5 h-2.5" />
-                                  <span>В задачу</span>
+                                  <span>{isEn ? 'To Task' : 'В задачу'}</span>
                                 </button>
                               )}
                             </div>
@@ -3144,7 +3721,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {/* Нижняя панель ввода (Composer): по умолчанию не срочно, иконка молнии рядом с кнопкой отправки */}
                 <form
                   onSubmit={handleSendCorporateMessage}
-                  className="p-3.5 border-t border-[#1F1F1F] bg-[#0E0E11] flex items-end gap-2.5"
+                  className="p-3.5 border-t border-white/[0.07] bg-[#0E0E11] flex items-end gap-2.5"
                 >
                   <div className="flex-1 min-w-0">
                     <textarea
@@ -3159,9 +3736,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       }}
                       placeholder={
                         activeCommThread.type === 'direct'
-                          ? `Написать личное сообщение для ${activeCommThread.label}... (Enter — отправить)`
+                          ? isEn
+                            ? `Message ${activeCommThread.label}... (Enter to send)`
+                            : `Написать личное сообщение для ${activeCommThread.label}... (Enter — отправить)`
                           : activeCommThread.type === 'department'
-                          ? `Сообщение в отдел #${activeCommThread.label}... (Enter — отправить)`
+                          ? isEn
+                            ? `Message #${formatRole(activeCommThread.label)}... (Enter to send)`
+                            : `Сообщение в отдел #${activeCommThread.label}... (Enter — отправить)`
+                          : isEn
+                          ? 'Post a company-wide broadcast... (Enter to send)'
                           : 'Опубликовать циркуляр по компании... (Enter — отправить)'
                       }
                       className="w-full rounded-xl border border-[#262626] bg-[#16161A] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none leading-relaxed resize-none"
@@ -3172,10 +3755,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setCommUrgent((prev) => !prev)}
-                      aria-label="Срочный Push в Telegram"
+                      aria-label={isEn ? 'Urgent Telegram Push' : 'Срочный Push в Telegram'}
                       title={
                         commUrgent
-                          ? 'Срочный Push-статус включен (отметить как обычное)'
+                          ? isEn
+                            ? 'Urgent push enabled (click to make normal)'
+                            : 'Срочный Push-статус включен (отметить как обычное)'
+                          : isEn
+                          ? 'Mark message as Urgent'
                           : 'Отметить сообщение как «Срочно»'
                       }
                       className={`inline-flex items-center justify-center w-9 h-9 rounded-xl border transition-colors ${
@@ -3197,7 +3784,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       ) : (
                         <Send className="w-3.5 h-3.5" />
                       )}
-                      <span>{isSendingComm ? t('comm.sendingBtn') : 'Отправить'}</span>
+                      <span>
+                        {isSendingComm ? t('comm.sendingBtn') : isEn ? 'Send' : 'Отправить'}
+                      </span>
                     </button>
                   </div>
                 </form>
@@ -3306,10 +3895,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                 <td className="py-4 px-5">
                                   <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] text-white border border-white/[0.08] font-medium whitespace-nowrap">
-                                    {node.role_type}
+                                    {formatRole(node.role_type)}
                                   </div>
                                   <div className="text-[11px] text-[#8E8E93] mt-1">
-                                    {node.department || t('team.noDepartment')}
+                                    {node.department
+                                      ? formatRole(node.department)
+                                      : t('team.noDepartment')}
                                   </div>
                                 </td>
 
@@ -3385,7 +3976,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ================================================================== */}
           {activeSection === 'profile' && currentProfile && (
             <div className="space-y-6">
-              {/* Верхняя карточка-баннер: Клик прямо по кружку аватара открывает выбор файла (без белой кнопки справа) */}
+              {/* Верхняя карточка-баннер: Клик прямо по кружку аватара открывает выбор файла */}
               <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="relative group shrink-0">
@@ -3393,7 +3984,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       type="button"
                       disabled={isUploadingAvatar}
                       onClick={() => avatarFileInputRef.current?.click()}
-                      title="Нажмите, чтобы обновить фотографию профиля"
+                      title={
+                        isEn
+                          ? 'Click to update profile photo'
+                          : 'Нажмите, чтобы обновить фотографию профиля'
+                      }
                       className="relative rounded-full focus:outline-none group"
                     >
                       <UserAvatar
@@ -3415,7 +4010,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       accept="image/*"
                       onChange={handleAvatarFileChange}
                       className="hidden"
-                      aria-label="Выбрать файл фотографии профиля"
+                      aria-label={
+                        isEn ? 'Choose profile photo file' : 'Выбрать файл фотографии профиля'
+                      }
                     />
                   </div>
 
@@ -3425,11 +4022,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         {currentProfile.name}
                       </h2>
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-medium text-white whitespace-nowrap">
-                        {currentProfile.role_type}
+                        {formatRole(currentProfile.role_type)}
                       </span>
                       {currentProfile.department && (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.07] text-xs text-[#A1A1AA] whitespace-nowrap">
-                          {currentProfile.department}
+                          {formatRole(currentProfile.department)}
                         </span>
                       )}
                     </div>
@@ -3443,11 +4040,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       {currentProfile.telegram_chat_id ? (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium tabular-nums">
                           <Send className="w-3 h-3" />
-                          <span>Telegram синхронизирован ({currentProfile.telegram_chat_id})</span>
+                          <span>
+                            {isEn
+                              ? `Telegram Synchronized (${currentProfile.telegram_chat_id})`
+                              : `Telegram синхронизирован (${currentProfile.telegram_chat_id})`}
+                          </span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.07] text-[#8E8E93]">
-                          <span>Telegram не привязан</span>
+                          <span>{isEn ? 'Telegram not linked' : 'Telegram не привязан'}</span>
                         </span>
                       )}
                     </div>
@@ -3463,7 +4064,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-[#17171B] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>Удалить фото</span>
+                      <span>{isEn ? 'Remove Photo' : 'Удалить фото'}</span>
                     </button>
                   </div>
                 )}
@@ -3480,10 +4081,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div className="flex items-center justify-between border-b border-white/[0.07] pb-4">
                       <div>
                         <h3 className="text-sm font-semibold text-white">
-                          Личные реквизиты и контакты
+                          {isEn
+                            ? 'Personal Details & Contact Information'
+                            : 'Личные реквизиты и контакты'}
                         </h3>
                         <p className="text-xs text-[#8E8E93] mt-0.5">
-                          Учетная карточка сотрудника в корпоративном реестре {companyName}
+                          {isEn
+                            ? `Employee profile record in the ${companyName} corporate directory`
+                            : `Учетная карточка сотрудника в корпоративном реестре ${companyName}`}
                         </p>
                       </div>
                     </div>
@@ -3538,7 +4143,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               type="text"
                               value={profileDepartment}
                               onChange={(e) => setProfileDepartment(e.target.value)}
-                              placeholder="Например: Дирекция"
+                              placeholder={
+                                isEn ? 'e.g., Executive Management' : 'Например: Дирекция'
+                              }
                               className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                             />
                           </div>
@@ -3554,7 +4161,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <span>{t('profile.jobTitle')}</span>
                           </div>
                           <div className="font-semibold text-white mt-1">
-                            {currentProfile.role_type}
+                            {formatRole(currentProfile.role_type)}
                           </div>
                         </div>
                         <div>
@@ -3563,7 +4170,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <span>{t('profile.department')}</span>
                           </div>
                           <div className="font-semibold text-white mt-1">
-                            {currentProfile.department || 'Не назначено'}
+                            {currentProfile.department
+                              ? formatRole(currentProfile.department)
+                              : isEn
+                              ? 'Unassigned'
+                              : 'Не назначено'}
                           </div>
                         </div>
                       </div>
@@ -3574,7 +4185,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div className="flex items-center gap-2.5">
                         <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
                         <div>
-                          <div className="text-[11px] text-[#8E8E93]">Персональный код входа</div>
+                          <div className="text-[11px] text-[#8E8E93]">
+                            {isEn ? 'Personal Login Code' : 'Персональный код входа'}
+                          </div>
                           <div className="font-semibold text-white mt-0.5 tabular-nums">
                             {currentProfile.invite_code || 'TC-0000'}
                           </div>
@@ -3625,13 +4238,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 {/* Правая колонка: Синхронизация с Telegram-ботом + Активный рабочий контур */}
                 <div className="space-y-6">
-                  {/* Карточка синхронизации с Telegram-ботом (Без сырого инпута с URL и без плашки /start) */}
+                  {/* Карточка синхронизации с Telegram-ботом */}
                   <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <Send className="w-4 h-4 text-emerald-400" />
                         <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                          Синхронизация с Telegram-ботом
+                          {isEn
+                            ? 'Telegram Bot Synchronization'
+                            : 'Синхронизация с Telegram-ботом'}
                         </h3>
                       </div>
                       <span
@@ -3647,13 +4262,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           }`}
                         />
                         <span>
-                          {currentProfile.telegram_chat_id ? 'Подключено' : 'Ожидает привязки'}
+                          {currentProfile.telegram_chat_id
+                            ? isEn
+                              ? 'Connected'
+                              : 'Подключено'
+                            : isEn
+                            ? 'Pending link'
+                            : 'Ожидает привязки'}
                         </span>
                       </span>
                     </div>
 
                     <p className="text-xs text-[#8E8E93] leading-relaxed">
-                      Подключите личный аккаунт Telegram для мгновенного получения уведомлений о новых задачах и прямых сообщений от коллег.
+                      {isEn
+                        ? 'Link your personal Telegram account to receive instant push notifications for new tasks and direct messages from colleagues.'
+                        : 'Подключите личный аккаунт Telegram для мгновенного получения уведомлений о новых задачах и прямых сообщений от коллег.'}
                     </p>
 
                     <div className="flex flex-wrap items-center gap-2.5 pt-1">
@@ -3666,7 +4289,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
                       >
                         <Send className="w-3.5 h-3.5" />
-                        <span>Открыть Telegram-бот</span>
+                        <span>{isEn ? 'Open Telegram Bot' : 'Открыть Telegram-бот'}</span>
                       </a>
 
                       <button
@@ -3689,20 +4312,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ) : (
                           <>
                             <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                            <span>Скопировать ссылку привязки</span>
+                            <span>
+                              {isEn ? 'Copy Activation Link' : 'Скопировать ссылку привязки'}
+                            </span>
                           </>
                         )}
                       </button>
                     </div>
                   </div>
 
-                  {/* Компактная карточка «Активный рабочий контур» с полным спектром управленческих прав для Superadmin/Manager */}
+                  {/* Компактная карточка «Активный рабочий контур» с полным спектром управленческих прав */}
                   <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <Shield className="w-4 h-4 text-emerald-400" />
                         <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                          Активный рабочий контур
+                          {isEn
+                            ? 'Active Workspace Scope & Permissions'
+                            : 'Активный рабочий контур'}
                         </h3>
                       </div>
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-medium text-emerald-300 whitespace-nowrap">
@@ -3711,22 +4338,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
 
                     <p className="text-xs text-[#8E8E93] leading-relaxed">
-                      Доступные вам рабочие модули и полномочия в пространстве компании:
+                      {isEn
+                        ? 'Workspace modules and granular permissions enabled for your account:'
+                        : 'Доступные вам рабочие модули и полномочия в пространстве компании:'}
                     </p>
 
                     <div className="space-y-2">
                       {Array.from(
                         new Set([
                           ...(currentAccessLevel === 'root' || currentAccessLevel === 'manager'
-                            ? [
-                                'Управление коммерческой воронкой CRM',
-                                'Управление штатом и матрицей доступа',
-                                'Международный биллинг и аудит безопасности',
-                              ]
+                            ? isEn
+                              ? [
+                                  'Commercial CRM Pipeline Management',
+                                  'Staff Directory & Access Matrix Control',
+                                  'International Billing & Security Audit',
+                                ]
+                              : [
+                                  'Управление коммерческой воронкой CRM',
+                                  'Управление штатом и матрицей доступа',
+                                  'Международный биллинг и аудит безопасности',
+                                ]
                             : []),
-                          'Управление операционными задачами и SLA',
-                          'Корпоративный мессенджер и каналы отделов',
-                          'Прямая синхронизация с Telegram-ботом',
+                          ...(isEn
+                            ? [
+                                'Operational Tasks & SLA Execution',
+                                'Corporate Messenger & Department Channels',
+                                'Direct Telegram Bot Synchronization',
+                              ]
+                            : [
+                                'Управление операционными задачами и SLA',
+                                'Корпоративный мессенджер и каналы отделов',
+                                'Прямая синхронизация с Telegram-ботом',
+                              ]),
                           ...PERMISSION_KEYS.filter((k) => Boolean(perms[k])).map((k) =>
                             t(`perm.${k}`)
                           ),
@@ -3743,7 +4386,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             </span>
                           </div>
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            Активно
+                            {isEn ? 'Active' : 'Активно'}
                           </span>
                         </div>
                       ))}
@@ -3756,7 +4399,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           {/* =================================================================
               TAB 7: ОРГАНИЗАЦИЯ И БИЛЛИНГ / WORKSPACE & BILLING
-              (БЛОК 1: без тегов отделов сверху; БЛОК 4: Квоты, Реквизиты, Счета; БЛОК 5: Audit Log)
           ================================================================== */}
           {activeSection === 'workspace' && perms.billing_admin && (
             <div className="space-y-6">
@@ -3775,16 +4417,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <ShieldCheck className="w-4 h-4 text-emerald-400" />
                         <div>
                           <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                            Квоты и лимиты корпоративного тарифа ({selectedPlan})
+                            {isEn
+                              ? `Corporate Plan Quotas & Limits (${selectedPlan})`
+                              : `Квоты и лимиты корпоративного тарифа (${selectedPlan})`}
                           </h3>
                           <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                            Мониторинг лицензий сотрудников, AI-квот и защищенного API-шлюза компании
+                            {isEn
+                              ? 'Monitoring employee seat licenses, AI quotas, and secure API gateway'
+                              : 'Мониторинг лицензий сотрудников, AI-квот и защищенного API-шлюза компании'}
                           </p>
                         </div>
                       </div>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-xs font-medium text-emerald-300">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span>Хранилище и API-шлюз: Активно</span>
+                        <span>
+                          {isEn
+                            ? 'Storage & API Gateway: Active'
+                            : 'Хранилище и API-шлюз: Активно'}
+                        </span>
                       </span>
                     </div>
 
@@ -3792,7 +4442,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div className="rounded-lg border border-white/[0.07] bg-[#151519] p-3.5 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-[#A1A1AA] font-medium">
-                            Активные сотрудники (Тариф {selectedPlan})
+                            {isEn
+                              ? `Active Employees (${selectedPlan} Plan)`
+                              : `Активные сотрудники (Тариф ${selectedPlan})`}
                           </span>
                           <span className="tabular-nums font-semibold text-white">
                             {safeNodes.length} / {selectedPlan === 'Enterprise' ? '∞' : maxSeats}
@@ -3809,10 +4461,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div className="rounded-lg border border-white/[0.07] bg-[#151519] p-3.5 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-[#A1A1AA] font-medium">
-                            Хранилище, Telegram Webhook и TedCloud Intelligence
+                            {isEn
+                              ? 'Cloud Storage, Telegram Webhook & TedCloud Intelligence'
+                              : 'Хранилище, Telegram Webhook и TedCloud Intelligence'}
                           </span>
                           <span className="tabular-nums font-semibold text-emerald-400">
-                            Активно · 99.98% SLA
+                            {isEn ? 'Active · 99.98% SLA' : 'Активно · 99.98% SLA'}
                           </span>
                         </div>
                         <div className="h-2 w-full rounded-full bg-[#24242A] overflow-hidden">
@@ -3858,7 +4512,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Subscription Plan Selector (открывает модальное окно оформления подписки и B2B-счета) */}
+                {/* Subscription Plan Selector */}
                 <div className="lg:col-span-2 rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
@@ -3936,7 +4590,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 ? t('workspace.activeTier')
                                 : t('workspace.upgradeBtn')
                               : isCurrent
-                              ? 'Продлить / Выставить счет'
+                              ? isEn
+                                ? 'Renew / Issue Invoice'
+                                : 'Продлить / Выставить счет'
+                              : isEn
+                              ? 'Select Plan'
                               : 'Выбрать тариф'}
                           </button>
                         </div>
@@ -3946,7 +4604,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
 
-              {/* 3. Платежный шлюз и Форма «Реквизиты плательщика» (companies.billing_details) */}
+              {/* 3. Платежный шлюз и Форма «Реквизиты плательщика» */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                 <div className="space-y-4">
                   <div className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4">
@@ -3997,7 +4655,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   {renderLocalizationCard()}
                 </div>
 
-                {/* Форма «Реквизиты плательщика» (сохранение в companies.billing_details) */}
+                {/* Форма «Реквизиты плательщика» */}
                 <form
                   onSubmit={handleSaveBillingDetails}
                   className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl p-5 space-y-4"
@@ -4007,10 +4665,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <Receipt className="w-4 h-4 text-emerald-400" />
                       <div>
                         <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                          Реквизиты плательщика ({paymentRegion === 'RU' ? 'РФ и СНГ' : 'Global'})
+                          {isEn
+                            ? `Payer Billing Details (${
+                                paymentRegion === 'RU' ? 'RU & CIS' : 'Global'
+                              })`
+                            : `Реквизиты плательщика (${
+                                paymentRegion === 'RU' ? 'РФ и СНГ' : 'Global'
+                              })`}
                         </h3>
                         <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                          Юридические данные автоматически подставляются в закрывающие документы и B2B-счета
+                          {isEn
+                            ? 'Legal details are automatically populated into closing documents and B2B invoices'
+                            : 'Юридические данные автоматически подставляются в закрывающие документы и B2B-счета'}
                         </p>
                       </div>
                     </div>
@@ -4020,21 +4686,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <div className="sm:col-span-2">
                         <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          Наименование юрлица (ООО / АО / ИП)
+                          {isEn
+                            ? 'Legal Entity Name (LLC / JSC / Sole Proprietor)'
+                            : 'Наименование юрлица (ООО / АО / ИП)'}
                         </label>
                         <input
                           type="text"
                           required
                           value={payerLegalName}
                           onChange={(e) => setPayerLegalName(e.target.value)}
-                          placeholder='ООО «Сигма Технологии»'
+                          placeholder={
+                            isEn ? 'Sigma Technologies LLC' : 'ООО «Сигма Технологии»'
+                          }
                           className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          ИНН
+                          {isEn ? 'Tax ID (INN)' : 'ИНН'}
                         </label>
                         <input
                           type="text"
@@ -4047,7 +4717,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                       <div>
                         <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          КПП
+                          {isEn ? 'Registration Code (KPP)' : 'КПП'}
                         </label>
                         <input
                           type="text"
@@ -4060,20 +4730,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                       <div>
                         <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          Юридический адрес
+                          {isEn ? 'Registered Legal Address' : 'Юридический адрес'}
                         </label>
                         <input
                           type="text"
                           value={payerLegalAddress}
                           onChange={(e) => setPayerLegalAddress(e.target.value)}
-                          placeholder="г. Москва, Пресненская наб., д. 12"
+                          placeholder={
+                            isEn
+                              ? 'Moscow, Presnenskaya Emb., 12'
+                              : 'г. Москва, Пресненская наб., д. 12'
+                          }
                           className="w-full rounded-lg border border-white/[0.08] bg-[#17171B] px-3 py-2 text-xs text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
                         />
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-medium text-[#A1A1AA] mb-1">
-                          Email для счетов и ЭДО
+                          {isEn ? 'Billing & Invoicing Email' : 'Email для счетов и ЭДО'}
                         </label>
                         <input
                           type="email"
@@ -4141,7 +4815,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   )}
 
-                  <div className="pt-1 flex items-center justify-between gap-2">
+                  <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() =>
@@ -4150,7 +4824,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition-colors"
                     >
                       <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Сформировать B2B-счет</span>
+                      <span>{isEn ? 'Generate B2B Invoice' : 'Сформировать B2B-счет'}</span>
                     </button>
 
                     <button
@@ -4163,7 +4837,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       ) : (
                         <Save className="w-3.5 h-3.5" />
                       )}
-                      <span>Сохранить реквизиты</span>
+                      <span>{isEn ? 'Save Details' : 'Сохранить реквизиты'}</span>
                     </button>
                   </div>
                 </form>
@@ -4175,7 +4849,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="flex items-center gap-2.5">
                     <FileText className="w-4 h-4 text-emerald-400" />
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                      История счетов и платежей (B2B Invoices)
+                      {isEn
+                        ? 'Billing & Payment History (B2B Invoices)'
+                        : 'История счетов и платежей (B2B Invoices)'}
                     </h3>
                     <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded tabular-nums">
                       {safeInvoices.length}
@@ -4189,17 +4865,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Выставить новый счет</span>
+                    <span>{isEn ? 'Issue New Invoice' : 'Выставить новый счет'}</span>
                   </button>
                 </div>
 
                 {safeInvoices.length === 0 ? (
                   <div className="p-8 text-center space-y-2">
                     <div className="text-xs font-medium text-white">
-                      По вашей организации пока нет выставленных счетов
+                      {isEn
+                        ? 'No invoices issued for your organization yet'
+                        : 'По вашей организации пока нет выставленных счетов'}
                     </div>
                     <p className="text-[11px] text-[#71717A]">
-                      Выберите тариф «Business» или «Enterprise», чтобы сформировать официальный B2B-счет на оплату или оплатить подписку картой.
+                      {isEn
+                        ? 'Select the Business or Enterprise plan to generate an official B2B invoice or pay by card.'
+                        : 'Выберите тариф «Business» или «Enterprise», чтобы сформировать официальный B2B-счет на оплату или оплатить подписку картой.'}
                     </p>
                   </div>
                 ) : (
@@ -4207,19 +4887,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
-                          <th className="py-3 px-5">№ счета</th>
-                          <th className="py-3 px-5">Дата</th>
-                          <th className="py-3 px-5">Тариф и период</th>
-                          <th className="py-3 px-5">Сумма</th>
-                          <th className="py-3 px-5">Статус</th>
-                          <th className="py-3 px-5 text-right">Документ</th>
+                          <th className="py-3 px-5">{isEn ? 'Invoice #' : '№ счета'}</th>
+                          <th className="py-3 px-5">{isEn ? 'Date' : 'Дата'}</th>
+                          <th className="py-3 px-5">
+                            {isEn ? 'Plan & Cycle' : 'Тариф и период'}
+                          </th>
+                          <th className="py-3 px-5">{isEn ? 'Amount' : 'Сумма'}</th>
+                          <th className="py-3 px-5">{isEn ? 'Status' : 'Статус'}</th>
+                          <th className="py-3 px-5 text-right">
+                            {isEn ? 'Document' : 'Документ'}
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/[0.05] text-xs">
                         {safeInvoices.map((inv) => {
                           const isPaid = inv.status === 'Paid';
                           const dateStr = inv.created_at
-                            ? new Date(inv.created_at).toLocaleDateString('ru-RU')
+                            ? new Date(inv.created_at).toLocaleDateString(
+                                isEn ? 'en-US' : 'ru-RU'
+                              )
                             : '—';
                           return (
                             <tr key={inv.id} className="hover:bg-[#16161A] transition-colors">
@@ -4228,9 +4914,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               </td>
                               <td className="py-3.5 px-5 text-[#A1A1AA] tabular-nums">{dateStr}</td>
                               <td className="py-3.5 px-5">
-                                <span className="font-medium text-white">Тариф {inv.plan}</span>
+                                <span className="font-medium text-white">
+                                  {isEn ? `${inv.plan} Plan` : `Тариф ${inv.plan}`}
+                                </span>
                                 <span className="text-[11px] text-[#71717A] ml-1.5">
-                                  ({inv.billing_cycle === 'yearly' ? '12 месяцев, -20%' : '1 месяц'})
+                                  (
+                                  {inv.billing_cycle === 'yearly'
+                                    ? isEn
+                                      ? '12 months, -20%'
+                                      : '12 месяцев, -20%'
+                                    : isEn
+                                    ? '1 month'
+                                    : '1 месяц'}
+                                  )
                                 </span>
                               </td>
                               <td className="py-3.5 px-5 tabular-nums font-semibold text-white">
@@ -4240,12 +4936,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 {isPaid ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-medium text-emerald-400">
                                     <CheckCircle2 className="w-3 h-3" />
-                                    <span>Оплачен</span>
+                                    <span>{isEn ? 'Paid' : 'Оплачен'}</span>
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] font-medium text-amber-300">
                                     <Clock className="w-3 h-3" />
-                                    <span>Ожидает оплаты</span>
+                                    <span>{isEn ? 'Pending' : 'Ожидает оплаты'}</span>
                                   </span>
                                 )}
                               </td>
@@ -4256,7 +4952,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white hover:text-black text-xs font-medium text-white transition-colors whitespace-nowrap"
                                 >
                                   <Printer className="w-3.5 h-3.5" />
-                                  <span>Открыть счет (Печать / PDF)</span>
+                                  <span>
+                                    {isEn ? 'Open Invoice (Print / PDF)' : 'Открыть счет (Печать / PDF)'}
+                                  </span>
                                 </button>
                               </td>
                             </tr>
@@ -4318,43 +5016,54 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <History className="w-4 h-4 text-emerald-400" />
                     <div>
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-                        Журнал безопасности и аудита действий (Audit Log)
+                        {isEn
+                          ? 'Security & Action Audit Log'
+                          : 'Журнал безопасности и аудита действий (Audit Log)'}
                       </h3>
                       <p className="text-[11px] text-[#8E8E93] mt-0.5">
-                        Неизменяемый реестр критически важных событий безопасности и изменений в {companyName}
+                        {isEn
+                          ? `Immutable ledger of security events and record mutations in ${companyName}`
+                          : `Неизменяемый реестр критически важных событий безопасности и изменений в ${companyName}`}
                       </p>
                     </div>
                   </div>
                   <span className="text-[11px] tabular-nums text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded">
-                    {safeAuditLogs.length} событий
+                    {safeAuditLogs.length} {isEn ? 'events' : 'событий'}
                   </span>
                 </div>
 
                 {safeAuditLogs.length === 0 ? (
                   <div className="p-8 text-center text-xs text-[#71717A]">
-                    Журнал аудита инициализирован. Все последующие операции создания/удаления задач, сделок, изменения прав и счетов фиксируются автоматически.
+                    {isEn
+                      ? 'Audit log initialized. All subsequent creations, updates, permission changes, and billing events are recorded automatically.'
+                      : 'Журнал аудита инициализирован. Все последующие операции создания/удаления задач, сделок, изменения прав и счетов фиксируются автоматически.'}
                   </div>
                 ) : (
-                  <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+                  <div className="overflow-x-auto max-h-[360px] overflow-y-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider">
-                          <th className="py-3 px-5">Время</th>
-                          <th className="py-3 px-5">Сотрудник (Инициатор)</th>
-                          <th className="py-3 px-5">Действие</th>
-                          <th className="py-3 px-5">Объект</th>
-                          <th className="py-3 px-5">Детали</th>
+                          <th className="py-3 px-5">{isEn ? 'Time' : 'Время'}</th>
+                          <th className="py-3 px-5">
+                            {isEn ? 'Actor (Employee)' : 'Сотрудник (Инициатор)'}
+                          </th>
+                          <th className="py-3 px-5">{isEn ? 'Action' : 'Действие'}</th>
+                          <th className="py-3 px-5">{isEn ? 'Entity' : 'Объект'}</th>
+                          <th className="py-3 px-5">{isEn ? 'Details' : 'Детали'}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/[0.05] text-xs">
                         {safeAuditLogs.slice(0, 40).map((log) => {
                           const timeFormatted = log.created_at
-                            ? new Date(log.created_at).toLocaleString('ru-RU', {
-                                day: '2-digit',
-                                month: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })
+                            ? new Date(log.created_at).toLocaleString(
+                                isEn ? 'en-US' : 'ru-RU',
+                                {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                }
+                              )
                             : '—';
                           return (
                             <tr key={log.id} className="hover:bg-[#16161A] transition-colors">
@@ -4364,7 +5073,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               <td className="py-3 px-5">
                                 <div className="font-medium text-white">{log.actor_name}</div>
                                 {log.actor_role && (
-                                  <div className="text-[10px] text-[#71717A]">{log.actor_role}</div>
+                                  <div className="text-[10px] text-[#71717A]">
+                                    {formatRole(log.actor_role)}
+                                  </div>
                                 )}
                               </td>
                               <td className="py-3 px-5">
@@ -4388,6 +5099,258 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
         </main>
       </div>
+
+      {/* =================================================================
+          БЛОК 4: МОБИЛЬНЫЙ SLIDE-OVER DRAWER МЕНЮ (< 1024px)
+      ================================================================== */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          <div className="relative z-10 w-72 max-w-[82vw] h-full bg-[#09090B] border-r border-white/[0.08] flex flex-col justify-between p-4 overflow-y-auto no-scrollbar shadow-2xl">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-white text-black flex items-center justify-center font-semibold text-xs">
+                    TC
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-white leading-none">TedCloud</div>
+                    <div className="text-[11px] text-[#71717A] mt-0.5">{companyName}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-1.5 rounded-lg text-[#8E8E93] hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {currentProfile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSection('profile');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full text-left rounded-xl border border-white/[0.08] bg-[#121216] p-3 flex items-center gap-2.5"
+                >
+                  <UserAvatar
+                    name={currentProfile.name}
+                    avatarUrl={currentProfile.avatar_url}
+                    size="md"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-white truncate">
+                      {currentProfile.name}
+                    </div>
+                    <div className="text-[11px] text-[#8E8E93] truncate">
+                      {formatRole(currentProfile.role_type)}
+                    </div>
+                  </div>
+                </button>
+              )}
+
+              <nav className="space-y-1">
+                {(
+                  [
+                    {
+                      id: 'overview' as DashboardSection,
+                      label: t('nav.overview'),
+                      icon: LayoutDashboard,
+                      visible: true,
+                    },
+                    {
+                      id: 'tasks' as DashboardSection,
+                      label: t('nav.tasks'),
+                      icon: CheckCircle2,
+                      visible: true,
+                    },
+                    {
+                      id: 'crm' as DashboardSection,
+                      label: t('nav.crm'),
+                      icon: Briefcase,
+                      visible: perms.crm_view,
+                    },
+                    {
+                      id: 'communications' as DashboardSection,
+                      label: t('nav.communications'),
+                      icon: MessageSquare,
+                      visible: true,
+                    },
+                    {
+                      id: 'team' as DashboardSection,
+                      label: t('nav.team'),
+                      icon: Users,
+                      visible: perms.team_manage,
+                    },
+                    {
+                      id: 'profile' as DashboardSection,
+                      label: t('nav.profile'),
+                      icon: UserCircle,
+                      visible: true,
+                    },
+                    {
+                      id: 'workspace' as DashboardSection,
+                      label: t('nav.workspace'),
+                      icon: Building2,
+                      visible: perms.billing_admin,
+                    },
+                  ] as const
+                )
+                  .filter((item) => item.visible)
+                  .map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeSection === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveSection(item.id);
+                          setIsMobileMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${
+                          isActive
+                            ? 'bg-zinc-800/90 text-white'
+                            : 'text-[#8E8E93] hover:text-white hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    );
+                  })}
+              </nav>
+            </div>
+
+            <div className="pt-4 border-t border-white/[0.08] space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="inline-flex rounded-lg border border-white/[0.08] bg-[#141418] p-0.5">
+                  {(['ru', 'en'] as LanguageCode[]).map((lang) => (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() => setLanguage(lang)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-semibold uppercase ${
+                        language === lang ? 'bg-white text-black' : 'text-[#8E8E93]'
+                      }`}
+                    >
+                      {lang}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/[0.08] bg-[#141418] text-xs font-medium text-white"
+                >
+                  {theme === 'light' ? (
+                    <>
+                      <Moon className="w-3.5 h-3.5 text-slate-700" />
+                      <span>{isEn ? 'Dark' : 'Темная'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sun className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{isEn ? 'Light' : 'Светлая'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {onResetSession && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    requestSignOut();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-white/[0.08] bg-[#141418] text-xs font-medium text-[#A1A1AA] hover:text-white"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{t('sidebar.switchAccount')}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================
+          БЛОК 4: МОБИЛЬНАЯ НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (< 1024px, Telegram Mini App)
+      ================================================================== */}
+      <nav
+        aria-label="Mobile bottom navigation"
+        className={`fixed bottom-0 inset-x-0 z-40 lg:hidden backdrop-blur-xl border-t pb-[env(safe-area-inset-bottom)] ${
+          theme === 'light'
+            ? 'bg-white/95 border-[#e2e8f0]'
+            : 'bg-[#09090B]/95 border-white/[0.08]'
+        }`}
+      >
+        <div className="grid grid-cols-5 h-14">
+          {(
+            [
+              {
+                id: 'overview' as DashboardSection,
+                label: isEn ? 'Overview' : 'Дашборд',
+                icon: LayoutDashboard,
+              },
+              {
+                id: 'tasks' as DashboardSection,
+                label: isEn ? 'Tasks' : 'Задачи',
+                icon: CheckCircle2,
+              },
+              perms.crm_view
+                ? {
+                    id: 'crm' as DashboardSection,
+                    label: isEn ? 'Deals' : 'Сделки',
+                    icon: Briefcase,
+                  }
+                : {
+                    id: 'workspace' as DashboardSection,
+                    label: isEn ? 'Billing' : 'Тариф',
+                    icon: Building2,
+                  },
+              {
+                id: 'communications' as DashboardSection,
+                label: isEn ? 'Chat' : 'Чат',
+                icon: MessageSquare,
+              },
+              {
+                id: 'profile' as DashboardSection,
+                label: isEn ? 'Profile' : 'Профиль',
+                icon: UserCircle,
+              },
+            ] as const
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeSection === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveSection(tab.id)}
+                className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${
+                  isActive
+                    ? theme === 'light'
+                      ? 'text-[#0f172a] font-semibold'
+                      : 'text-white font-semibold'
+                    : 'text-[#71717A]'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span className="truncate max-w-[64px]">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* Add Record Modal */}
       <AddRecordModal

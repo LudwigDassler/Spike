@@ -1,23 +1,68 @@
 @import "tailwindcss";
 
 @layer base {
-  :root {
+  :root,
+  .theme-dark {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --bg-page: #09090b;
+    --bg-surface: #111114;
+    --bg-elevated: #16161a;
+    --bg-input: #17171b;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
     color-scheme: dark;
+  }
+
+  .theme-light {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --bg-page: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f1f5f9;
+    --bg-input: #f8fafc;
+    --border-subtle: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    color-scheme: light;
   }
 
   body {
     font-family: var(--font-sans);
-    color: #ededed;
-    background-color: #09090b;
+    color: var(--text-primary);
+    background-color: var(--bg-page);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 
-  code, pre {
+  code,
+  pre {
     font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Global focus reset — eliminate browser blue focus rings */
+*:focus {
+  outline: none !important;
+}
+
+*:focus-visible {
+  outline: none !important;
+}
+
+/* Hide scrollbars in modals, command bar, and horizontal pill bars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 ::-webkit-scrollbar {
@@ -30,8 +75,16 @@
   border-radius: 9999px;
 }
 
+.theme-light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
 ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
+}
+
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 ::-webkit-scrollbar-track {
@@ -40,4 +93,258 @@
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+   LIGHT MODE ("ALABASTER & SLATE" — STRIPE / LINEAR LIGHT) SYSTEM MAPPING
+   ============================================================================ */
+
+/* Page & Root Backgrounds */
+.theme-light.bg-\[\#09090B\],
+.theme-light .bg-\[\#09090B\],
+.theme-light .bg-zinc-950 {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Header & Sidebar Surfaces */
+.theme-light .bg-\[\#09090B\]\/90,
+.theme-light .bg-\[\#0B0B0E\],
+.theme-light .bg-\[\#0D0D0F\],
+.theme-light .bg-\[\#0D0D10\],
+.theme-light .bg-\[\#0D0D11\],
+.theme-light .bg-\[\#0E0E11\],
+.theme-light .bg-\[\#0F0F14\] {
+  background-color: #ffffff !important;
+}
+
+/* Cards, Modals & Drawers */
+.theme-light .bg-\[\#111113\],
+.theme-light .bg-\[\#111114\],
+.theme-light .bg-\[\#111115\],
+.theme-light .bg-\[\#111116\],
+.theme-light .bg-\[\#121212\],
+.theme-light .bg-\[\#121214\],
+.theme-light .bg-\[\#121215\],
+.theme-light .bg-\[\#121216\],
+.theme-light .bg-\[\#121217\],
+.theme-light .bg-\[\#131316\],
+.theme-light .bg-\[\#131317\],
+.theme-light .bg-\[\#131319\],
+.theme-light .bg-zinc-900,
+.theme-light .bg-zinc-900\/50,
+.theme-light .bg-zinc-900\/60,
+.theme-light .bg-zinc-900\/90 {
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 8px 24px -4px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* Secondary / Nested Card Surfaces */
+.theme-light .bg-\[\#141414\],
+.theme-light .bg-\[\#141416\],
+.theme-light .bg-\[\#141417\],
+.theme-light .bg-\[\#141418\],
+.theme-light .bg-\[\#141419\],
+.theme-light .bg-\[\#14141B\],
+.theme-light .bg-\[\#151518\],
+.theme-light .bg-\[\#151519\],
+.theme-light .bg-\[\#15151A\],
+.theme-light .bg-\[\#15151B\],
+.theme-light .bg-\[\#161618\],
+.theme-light .bg-\[\#161619\],
+.theme-light .bg-\[\#16161A\],
+.theme-light .bg-\[\#16161C\],
+.theme-light .bg-\[\#16161D\],
+.theme-light .bg-\[\#171717\],
+.theme-light .bg-\[\#17171A\],
+.theme-light .bg-\[\#17171B\],
+.theme-light .bg-\[\#17171E\],
+.theme-light .bg-\[\#17171F\],
+.theme-light .bg-\[\#18181B\],
+.theme-light .bg-\[\#18181C\],
+.theme-light .bg-\[\#18181E\],
+.theme-light .bg-\[\#181820\],
+.theme-light .bg-\[\#19191D\],
+.theme-light .bg-\[\#1A1A1C\],
+.theme-light .bg-\[\#1B1B20\],
+.theme-light .bg-\[\#1C1C1F\],
+.theme-light .bg-\[\#1C1C21\],
+.theme-light .bg-\[\#1C1C22\],
+.theme-light .bg-\[\#1F1F1F\],
+.theme-light .bg-\[\#1F1F24\],
+.theme-light .bg-\[\#1F1F26\],
+.theme-light .bg-\[\#222226\],
+.theme-light .bg-\[\#22222A\],
+.theme-light .bg-\[\#242424\],
+.theme-light .bg-\[\#242428\],
+.theme-light .bg-\[\#24242A\],
+.theme-light .bg-zinc-800,
+.theme-light .bg-zinc-800\/80,
+.theme-light .bg-zinc-800\/90,
+.theme-light .bg-white\/\[0\.03\],
+.theme-light .bg-white\/\[0\.04\],
+.theme-light .bg-white\/\[0\.05\],
+.theme-light .bg-white\/\[0\.06\],
+.theme-light .bg-white\/10 {
+  background-color: #f1f5f9 !important;
+}
+
+/* Inputs, Selects, Textareas in Light Mode */
+.theme-light input:not([type="checkbox"]):not([type="radio"]),
+.theme-light select,
+.theme-light textarea {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.theme-light input::placeholder,
+.theme-light textarea::placeholder {
+  color: #64748b !important;
+}
+
+.theme-light input:focus,
+.theme-light select:focus,
+.theme-light textarea:focus {
+  border-color: #64748b !important;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Borders & Dividers in Light Mode */
+.theme-light .border-white\/\[0\.05\],
+.theme-light .border-white\/\[0\.06\],
+.theme-light .border-white\/\[0\.07\],
+.theme-light .border-white\/\[0\.08\],
+.theme-light .border-white\/10,
+.theme-light .border-white\/15,
+.theme-light .border-white\/20,
+.theme-light .border-\[\#1A1A1C\],
+.theme-light .border-\[\#1C1C1F\],
+.theme-light .border-\[\#1F1F1F\],
+.theme-light .border-\[\#222225\],
+.theme-light .border-\[\#222226\],
+.theme-light .border-\[\#22222A\],
+.theme-light .border-\[\#242428\],
+.theme-light .border-\[\#24242C\],
+.theme-light .border-\[\#262626\],
+.theme-light .border-\[\#262629\],
+.theme-light .border-\[\#26262C\],
+.theme-light .border-\[\#26262E\],
+.theme-light .border-\[\#27272A\],
+.theme-light .border-\[\#2A2A2A\],
+.theme-light .border-\[\#2A2A2E\],
+.theme-light .border-\[\#2C2C2E\],
+.theme-light .border-\[\#2C2C30\],
+.theme-light .border-\[\#2C2C35\],
+.theme-light .border-\[\#2C2C36\],
+.theme-light .border-\[\#2E2E2E\],
+.theme-light .border-\[\#2E2E34\],
+.theme-light .border-\[\#2E2E36\],
+.theme-light .border-\[\#2E2E38\],
+.theme-light .border-\[\#333333\],
+.theme-light .border-\[\#333338\],
+.theme-light .border-zinc-800 {
+  border-color: #e2e8f0 !important;
+}
+
+.theme-light .divide-\[\#1A1A1C\] > :not([hidden]) ~ :not([hidden]),
+.theme-light .divide-\[\#222225\] > :not([hidden]) ~ :not([hidden]),
+.theme-light .divide-\[\#222226\] > :not([hidden]) ~ :not([hidden]),
+.theme-light .divide-white\/\[0\.05\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0 !important;
+}
+
+/* Selected / Active Card Borders in Light Mode */
+.theme-light .border-white\/80,
+.theme-light .border-white {
+  border-color: #0f172a !important;
+}
+
+/* Primary Typography in Light Mode */
+.theme-light .text-white,
+.theme-light .text-\[\#EDEDED\],
+.theme-light .text-\[\#E4E4E7\],
+.theme-light .text-zinc-100,
+.theme-light .text-zinc-200 {
+  color: #0f172a !important;
+}
+
+/* Secondary Typography in Light Mode */
+.theme-light .text-\[\#D4D4D8\],
+.theme-light .text-\[\#A1A1AA\],
+.theme-light .text-zinc-300,
+.theme-light .text-zinc-400 {
+  color: #475569 !important;
+}
+
+/* Muted Typography in Light Mode */
+.theme-light .text-\[\#8E8E93\],
+.theme-light .text-\[\#71717A\],
+.theme-light .text-\[\#52525B\],
+.theme-light .text-zinc-500,
+.theme-light .text-zinc-600 {
+  color: #64748b !important;
+}
+
+/* Primary Action Buttons (bg-white text-black in Dark -> Deep Graphite #0f172a with #ffffff text in Light) */
+.theme-light button.bg-white.text-black,
+.theme-light a.bg-white.text-black,
+.theme-light span.bg-white.text-black,
+.theme-light div.bg-white.text-black {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #0f172a !important;
+}
+
+.theme-light button.bg-white.text-black:hover,
+.theme-light a.bg-white.text-black:hover {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+}
+
+/* Hover States on Rows & Buttons in Light Mode */
+.theme-light .hover\:bg-\[\#151518\]:hover,
+.theme-light .hover\:bg-\[\#161618\]:hover,
+.theme-light .hover\:bg-\[\#16161A\]:hover,
+.theme-light .hover\:bg-\[\#1C1C1F\]:hover,
+.theme-light .hover\:bg-\[\#1C1C20\]:hover,
+.theme-light .hover\:bg-\[\#1F1F26\]:hover,
+.theme-light .hover\:bg-zinc-800:hover,
+.theme-light .hover\:bg-zinc-900\/50:hover,
+.theme-light .hover\:bg-white\/\[0\.04\]:hover,
+.theme-light .hover\:bg-white\/\[0\.06\]:hover,
+.theme-light .hover\:bg-white\/\[0\.08\]:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Status Badges Contrast in Light Mode */
+.theme-light .text-emerald-300,
+.theme-light .text-emerald-400 {
+  color: #059669 !important;
+}
+
+.theme-light .bg-emerald-950\/30 {
+  background-color: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+}
+
+.theme-light .text-amber-200,
+.theme-light .text-amber-300,
+.theme-light .text-amber-400 {
+  color: #d97706 !important;
+}
+
+.theme-light .text-red-300,
+.theme-light .text-red-400 {
+  color: #dc2626 !important;
+}
+
+.theme-light .text-indigo-300,
+.theme-light .text-indigo-400 {
+  color: #4f46e5 !important;
+}
+
+.theme-light .text-sky-400,
+.theme-light .text-blue-400 {
+  color: #0284c7 !important;
 }
