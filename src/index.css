@@ -100,13 +100,27 @@
    ============================================================================ */
 
 /* Page & Root Backgrounds */
+html.theme-light,
+body.theme-light,
 .theme-light.bg-\[\#070709\],
 .theme-light .bg-\[\#070709\],
 .theme-light.bg-\[\#09090B\],
 .theme-light .bg-\[\#09090B\],
 .theme-light .bg-zinc-950 {
-  background-color: #f1f5f9 !important;
+  background-color: #f8fafc !important;
   color: #0f172a !important;
+}
+
+.theme-light .tc-nav-active-light,
+.theme-light .bg-slate-900 {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+}
+
+.theme-light .tc-nav-active-light span,
+.theme-light .tc-nav-active-light .tc-nav-active-icon,
+.theme-light .bg-slate-900 span {
+  color: #ffffff !important;
 }
 
 .theme-light .bg-\[\#0c0c10\],
@@ -351,7 +365,14 @@
   background-color: #f1f5f9 !important;
 }
 
-/* Status Badges Contrast in Light Mode */
+/* Status & Avatar Badges Contrast in Light Mode */
+.theme-light .bg-\[\#16161B\],
+.theme-light .bg-\[\#17171C\],
+.theme-light .bg-\[\#1A1A20\] {
+  background-color: #f1f5f9 !important;
+}
+
+.theme-light .text-emerald-200,
 .theme-light .text-emerald-300,
 .theme-light .text-emerald-400 {
   color: #059669 !important;
@@ -369,16 +390,25 @@
 }
 
 .theme-light .text-red-300,
-.theme-light .text-red-400 {
+.theme-light .text-red-400,
+.theme-light .text-rose-200 {
   color: #dc2626 !important;
 }
 
+.theme-light .text-indigo-200,
 .theme-light .text-indigo-300,
 .theme-light .text-indigo-400 {
   color: #4f46e5 !important;
 }
 
+.theme-light .text-fuchsia-200,
+.theme-light .text-purple-300 {
+  color: #7e22ce !important;
+}
+
+.theme-light .text-sky-200,
 .theme-light .text-sky-400,
 .theme-light .text-blue-400 {
   color: #0284c7 !important;
 }
+

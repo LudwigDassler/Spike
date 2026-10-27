@@ -2,7 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-function parseTelegramUrgentMessage(rawText: string): {
+export function parseTelegramUrgentMessage(rawText: string): {
   isUrgent: boolean;
   cleanText: string;
 } {
@@ -17,6 +17,60 @@ function parseTelegramUrgentMessage(rawText: string): {
     isUrgent: false,
     cleanText: trimmed,
   };
+}
+
+function escapeHtmlBasic(text: string): string {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function formatCompactIncomingTelegramMessage(params: {
+  senderName: string;
+  senderRole: string;
+  messageText: string;
+  targetType?: 'direct' | 'department' | 'broadcast' | string;
+  targetLabel?: string | null;
+}): string {
+  const name = escapeHtmlBasic(params.senderName || 'Сотрудник');
+  const role = escapeHtmlBasic(params.senderRole || 'Специалист');
+  const body = escapeHtmlBasic(params.messageText || '');
+  const tType = String(params.targetType || 'direct').toLowerCase();
+  const label = String(params.targetLabel || '').trim();
+
+  const tagPart =
+    tType !== 'direct' && label ? ` [${escapeHtmlBasic(label)}]` : '';
+
+  return `<b>${name}</b> · <i>${role}</i>${tagPart}\n${body}`;
+}
+
+export function extractColleagueNameFromReplyText(quotedText?: string | null): string | null {
+  const raw = String(quotedText || '').trim();
+  if (!raw) return null;
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+
+  const firstLine = lines[0];
+  // Формат Блока 1: "Имя Фамилия · Должность" или "Имя Фамилия · Должность [Отдел]"
+  if (firstLine.includes('·')) {
+    const beforeDot = firstLine.split('·')[0].replace(/<[^>]+>/g, '').trim();
+    if (beforeDot) return beforeDot;
+  }
+
+  // Поддержка старого формата: "От: Имя Фамилия (Должность)"
+  for (const line of lines) {
+    if (line.startsWith('От:')) {
+      const afterFrom = line.slice(3).trim();
+      const withoutRole = afterFrom.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      if (withoutRole) return withoutRole;
+    }
+  }
+
+  return null;
 }
 
 function runBuiltInAiAssistant(params: {
@@ -821,7 +875,7 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
 
       const user = await findOrCreateUserByChatId(cbChatId, cbFirstName);
 
-      // 1. Смена статуса задачи
+      // 1. Смена статуса задачи (В работу / Выполнено)
       if (cbData.startsWith('task_progress:') || cbData.startsWith('task_done:')) {
         const [action, taskId] = cbData.split(':');
         const nextStatus = action === 'task_done' ? 'Done' : 'In Progress';
@@ -832,22 +886,167 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         }
 
         if (cbId) {
-          await answerCallbackQuery(cbId, `Статус задачи обновлен: ${statusLabel}`);
+          await answerCallbackQuery(cbId, `Статус задачи: ${statusLabel}`);
         }
 
         await sendTelegramMessage(
           cbChatId,
-          `<b>СТАТУС ЗАДАЧИ ОБНОВЛЕН</b>\nНовое состояние: <b>${statusLabel}</b>`,
+          `✓ Статус задачи обновлен: <b>${statusLabel}</b>`,
           {
-            reply_markup: buildRoleCommandCenterKeyboard(siteUrl, cbChatId, user),
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+            },
           }
         );
 
         return res.status(200).send('OK');
       }
 
-      // 2. Главное меню
-      if (cbData === 'menu_home') {
+      // 1b. БЛОК 3: Согласование и Заявки в 1 клик (Утвердить / Отклонить)
+      if (cbData.startsWith('approve_task_') || cbData.startsWith('reject_task_')) {
+        const isApproved = cbData.startsWith('approve_task_');
+        const taskId = isApproved
+          ? cbData.slice('approve_task_'.length).trim()
+          : cbData.slice('reject_task_'.length).trim();
+        const nextStatus = isApproved ? 'Done' : 'Cancelled';
+
+        let taskRow: any = null;
+        if (taskId) {
+          const { data: existingTask } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('id', taskId)
+            .maybeSingle();
+          taskRow = existingTask;
+          await safeWebhookUpdate(supabase, 'tasks', taskId, { status: nextStatus });
+        }
+
+        const taskTitle = taskRow?.title || 'Заявка на согласование';
+
+        // Запись в журнал безопасности audit_logs
+        try {
+          await supabase.from('audit_logs').insert([
+            {
+              company_id: taskRow?.company_id || user?.company_id || null,
+              actor_id: user?.id || null,
+              actor_name: user?.name || 'Руководитель',
+              action_type: isApproved ? 'APPROVAL_APPROVED' : 'APPROVAL_REJECTED',
+              entity_type: 'tasks',
+              entity_id: taskId,
+              details: `${
+                isApproved ? 'Утверждена заявка' : 'Отклонена заявка'
+              } «${taskTitle}» руководителем ${user?.name || 'Руководитель'}`,
+            },
+          ]);
+        } catch {}
+
+        // Мгновенное уведомление автору заявки в Telegram
+        const authorId = taskRow?.created_by || taskRow?.owner_node_id;
+        if (authorId) {
+          const { data: authorNode } = await supabase
+            .from('organization_nodes')
+            .select('*')
+            .eq('id', authorId)
+            .maybeSingle();
+          const authorChatId = String(authorNode?.telegram_chat_id || '').trim();
+          if (authorChatId && authorChatId !== cbChatId) {
+            const decisionNotification = isApproved
+              ? `✓ Ваша заявка «<b>${escapeHtml(taskTitle)}</b>» утверждена руководителем <b>${escapeHtml(
+                  user?.name || 'Руководитель'
+                )}</b>`
+              : `✕ Ваша заявка «<b>${escapeHtml(taskTitle)}</b>» отклонена руководителем <b>${escapeHtml(
+                  user?.name || 'Руководитель'
+                )}</b>`;
+            await sendTelegramMessage(authorChatId, decisionNotification, {
+              reply_markup: {
+                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              },
+            });
+          }
+        }
+
+        if (cbId) {
+          await answerCallbackQuery(
+            cbId,
+            isApproved ? 'Заявка утверждена' : 'Заявка отклонена'
+          );
+        }
+
+        await sendTelegramMessage(
+          cbChatId,
+          `${isApproved ? '✓ Заявка утверждена' : '✕ Заявка отклонена'}: <b>${escapeHtml(
+            taskTitle
+          )}</b>`,
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+            },
+          }
+        );
+
+        return res.status(200).send('OK');
+      }
+
+      // 1c. БЛОК 1: Создание задачи из входящего сообщения (msg_to_task_<msgId>)
+      if (cbData.startsWith('msg_to_task_')) {
+        const msgId = cbData.slice('msg_to_task_'.length).trim();
+        let sourceText = '';
+
+        if (msgId) {
+          const { data: msgRecord } = await supabase
+            .from('workspace_messages')
+            .select('*')
+            .eq('id', msgId)
+            .maybeSingle();
+          sourceText = String(
+            msgRecord?.message_text || msgRecord?.text || ''
+          ).trim();
+        }
+
+        if (!sourceText && cb.message?.text) {
+          const lines = String(cb.message.text)
+            .split(/\r?\n/)
+            .map((l: string) => l.trim())
+            .filter(Boolean);
+          sourceText = lines.length > 1 ? lines.slice(1).join(' ') : lines[0] || '';
+        }
+
+        const taskTitle = (sourceText || 'Поручение из сообщения в чате').slice(0, 140);
+        const companyId = user?.company_id || (await resolveCompanyId());
+
+        await safeWebhookInsert(supabase, 'tasks', {
+          company_id: companyId,
+          title: taskTitle,
+          description: sourceText || null,
+          notes: sourceText || null,
+          type: 'Task',
+          priority: 'Medium',
+          status: 'Todo',
+          department: user?.department || null,
+          assigned_to: user?.id || null,
+          owner_node_id: user?.id || null,
+          created_by: user?.id || null,
+        });
+
+        if (cbId) {
+          await answerCallbackQuery(cbId, 'Задача создана');
+        }
+
+        await sendTelegramMessage(
+          cbChatId,
+          `✓ Задача создана: <b>${escapeHtml(taskTitle)}</b>`,
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+            },
+          }
+        );
+
+        return res.status(200).send('OK');
+      }
+
+      // 2. Главное меню (только по явному вызову)
+      if (cbData === 'menu_home' || cbData === 'open_main_menu') {
         await setPendingCommForUser(cbChatId, user, null);
         if (cbId) await answerCallbackQuery(cbId, 'Командный центр');
         await sendCommandCenterCard(cbChatId, user);
@@ -1008,7 +1207,7 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         return res.status(200).send('OK');
       }
 
-      // Обработка выбора сотрудника или кнопки «Ответить через бота» (reply_msg_<UUID>)
+      // Обработка выбора сотрудника или кнопки «Ответить» (reply_msg_<UUID>) — строго 1 строка с кнопкой [Отмена]
       if (cbData.startsWith('comm_to_node:') || cbData.startsWith('reply_msg_')) {
         const targetNodeId = cbData.startsWith('comm_to_node:')
           ? cbData.slice('comm_to_node:'.length)
@@ -1025,25 +1224,19 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           .maybeSingle();
 
         const targetName = targetNode?.name || 'Сотрудник';
-        const targetRole = targetNode?.role_type || 'Специалист';
 
         await setPendingCommForUser(cbChatId, user, {
           mode: 'direct',
           targetNodeId,
         });
 
-        if (cbId) await answerCallbackQuery(cbId, `Получатель: ${targetName}`);
+        if (cbId) await answerCallbackQuery(cbId, `Ответ для: ${targetName}`);
         await sendTelegramMessage(
           cbChatId,
-          [
-            '<b>ОТПРАВКА СООБЩЕНИЯ КОЛЛЕГЕ</b>',
-            `Получатель: <b>${escapeHtml(targetName)} (${escapeHtml(targetRole)})</b>`,
-            '',
-            'Введите текст ответа следующим сообщением в этот чат (для пометки «Срочно» начните с символа «!»).',
-          ].join('\n'),
+          `Ответ для <b>${escapeHtml(targetName)}</b> (отправьте текст):`,
           {
             reply_markup: {
-              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_comm' }]],
+              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_reply' }]],
             },
           }
         );
@@ -1060,25 +1253,24 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         if (cbId) await answerCallbackQuery(cbId, `Отдел: ${targetDept}`);
         await sendTelegramMessage(
           cbChatId,
-          [
-            '<b>ОТПРАВКА СООБЩЕНИЯ В ОТДЕЛ</b>',
-            `Подразделение: <b>${escapeHtml(targetDept)}</b>`,
-            '',
-            'Введите текст сообщения следующим ответом в чат (для пометки «Срочно» начните с символа «!»).',
-          ].join('\n'),
+          `Сообщение для отдела <b>${escapeHtml(targetDept)}</b> (отправьте текст):`,
           {
             reply_markup: {
-              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_comm' }]],
+              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_reply' }]],
             },
           }
         );
         return res.status(200).send('OK');
       }
 
-      if (cbData === 'cancel_comm') {
+      if (cbData === 'cancel_comm' || cbData === 'cancel_reply') {
         await setPendingCommForUser(cbChatId, user, null);
         if (cbId) await answerCallbackQuery(cbId, 'Отправка отменена');
-        await sendCommandCenterCard(cbChatId, user);
+        await sendTelegramMessage(cbChatId, 'Отправка сообщения отменена.', {
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+          },
+        });
         return res.status(200).send('OK');
       }
 
@@ -1265,24 +1457,54 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
       const companyId = user.company_id || (await resolveCompanyId());
       const { rawPerms, canAssignTasks } = resolveUserPermissions(user);
 
-      // Проверяем, находится ли пользователь в режиме отправки сообщения коллеге / отделу / компании
-      const activeCommState: PendingCommState | null =
+      // Проверяем, находится ли пользователь в режиме отправки сообщения ИЛИ сделал нативный свайп-Reply в Telegram
+      let activeCommState: PendingCommState | null =
         pendingCommMap.get(chatId) ||
         (rawPerms.pending_comm && typeof rawPerms.pending_comm === 'object'
           ? (rawPerms.pending_comm as PendingCommState)
           : null);
 
-      if (activeCommState && !rawText.startsWith('/')) {
-        await setPendingCommForUser(chatId, user, null);
-
+      let cachedCompanyNodes: any[] | null = null;
+      const loadCompanyNodes = async (): Promise<any[]> => {
+        if (cachedCompanyNodes) return cachedCompanyNodes;
         let allNodesQuery = supabase.from('organization_nodes').select('*');
         if (companyId) {
           allNodesQuery = allNodesQuery.eq('company_id', companyId);
         }
         const { data: allNodes } = await allNodesQuery;
-        const nodesList = (allNodes || []).filter(
+        cachedCompanyNodes = (allNodes || []).filter(
           (n: any) => !companyId || String(n.company_id || '') === String(companyId)
         );
+        return cachedCompanyNodes;
+      };
+
+      // Нативный Reply в Telegram: если сотрудник делает свайп-ответить на сообщение коллеги
+      const quotedMessageText = message?.reply_to_message?.text || message?.reply_to_message?.caption;
+      if (!activeCommState && !rawText.startsWith('/') && quotedMessageText) {
+        const extractedColleagueName = extractColleagueNameFromReplyText(quotedMessageText);
+        if (extractedColleagueName) {
+          const nodesList = await loadCompanyNodes();
+          const nameLower = extractedColleagueName.toLowerCase();
+          const matchedNode = nodesList.find((n: any) => {
+            const candidate = String(n.name || '').trim().toLowerCase();
+            return (
+              candidate === nameLower ||
+              candidate.includes(nameLower) ||
+              nameLower.includes(candidate)
+            );
+          });
+          if (matchedNode) {
+            activeCommState = {
+              mode: 'direct',
+              targetNodeId: String(matchedNode.id),
+            };
+          }
+        }
+      }
+
+      if (activeCommState && !rawText.startsWith('/')) {
+        await setPendingCommForUser(chatId, user, null);
+        const nodesList = await loadCompanyNodes();
 
         // БЛОК 1: is_urgent ставится ТОЛЬКО если сообщение начинается с "!" (символ "!" убирается)
         const { isUrgent: isUrgentMsg, cleanText: msgBody } =
@@ -1291,17 +1513,18 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         if (!msgBody) {
           await sendTelegramMessage(
             chatId,
-            '<b>ОШИБКА</b>\nТекст сообщения не может быть пустым.',
+            'Текст сообщения не может быть пустым.',
             {
-              reply_markup: buildRoleCommandCenterKeyboard(siteUrl, chatId, user),
+              reply_markup: {
+                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              },
             }
           );
           return res.status(200).send('OK');
         }
 
         let targetNodes: any[] = [];
-        let contourLabel = 'Общее оповещение по компании';
-        let recipientLabel = 'Вся компания';
+        let recipientShortName = 'Вся компания';
 
         let resolvedTargetType: 'direct' | 'department' | 'broadcast' = 'broadcast';
         let resolvedTargetId: string | null = null;
@@ -1314,17 +1537,17 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           resolvedTargetType = 'direct';
           resolvedTargetId = String(recipientNode?.id || activeCommState.targetNodeId);
           resolvedTargetLabel = recipientNode?.name || 'Сотрудник';
+          recipientShortName = recipientNode?.name || 'Сотрудник';
 
           if (recipientNode) {
             targetNodes = [recipientNode];
-            recipientLabel = `${recipientNode.name} (${recipientNode.role_type || 'Специалист'})`;
           }
-          contourLabel = 'Личное сообщение';
         } else if (activeCommState.mode === 'department' && activeCommState.targetDepartment) {
           const deptClean = activeCommState.targetDepartment.trim();
           resolvedTargetType = 'department';
           resolvedTargetId = deptClean;
           resolvedTargetLabel = deptClean;
+          recipientShortName = deptClean;
 
           targetNodes = nodesList.filter(
             (n: any) =>
@@ -1333,16 +1556,15 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
                 .trim()
                 .toLowerCase() === deptClean.toLowerCase()
           );
-          contourLabel = `Отдел: ${deptClean}`;
-          recipientLabel = `Подразделение «${deptClean}»`;
         } else {
           resolvedTargetType = 'broadcast';
           resolvedTargetId = null;
           resolvedTargetLabel = 'Всем сотрудникам';
+          recipientShortName = 'Всем сотрудникам';
           targetNodes = nodesList.filter((n: any) => String(n.id) !== String(user.id));
         }
 
-        await safeWebhookInsert(supabase, 'workspace_messages', {
+        const { data: insertedMsg } = await safeWebhookInsert(supabase, 'workspace_messages', {
           company_id: companyId,
           sender_id: user.id,
           sender_name: user.name,
@@ -1356,54 +1578,50 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           is_read: false,
         });
 
-        const incomingHtml = [
-          '<b>ВХОДЯЩЕЕ СООБЩЕНИЕ TEDCLOUD</b>',
-          `От: ${escapeHtml(user.name)} (${escapeHtml(user.role_type || 'Специалист')})`,
-          `Контур: ${escapeHtml(contourLabel)}${isUrgentMsg ? ' | СРОЧНО' : ''}`,
-          '',
-          escapeHtml(msgBody),
-        ].join('\n');
+        const msgIdForTask = String(insertedMsg?.id || '');
 
-        let deliveredCount = 0;
+        // БЛОК 1: Форматируем входящее сообщение строго в 2 строки без шапок
+        const incomingHtml = formatCompactIncomingTelegramMessage({
+          senderName: user.name || 'Сотрудник',
+          senderRole: user.role_type || 'Специалист',
+          messageText: msgBody,
+          targetType: resolvedTargetType,
+          targetLabel: resolvedTargetType === 'direct' ? null : resolvedTargetLabel,
+        });
+
+        // Кнопки под входящим сообщением выстроены в один горизонтальный ряд (2 кнопки рядом)
+        const actionRow: any[] = [
+          {
+            text: 'Ответить',
+            callback_data: `reply_msg_${user.id}`,
+          },
+        ];
+        if (msgIdForTask) {
+          actionRow.push({
+            text: 'Создать задачу',
+            callback_data: `msg_to_task_${msgIdForTask}`,
+          });
+        }
+
         for (const recipient of targetNodes) {
           const recChatId = String(recipient?.telegram_chat_id || '').trim();
           if (!recChatId || recChatId === chatId) continue;
-          const recInviteQuery = recipient?.invite_code
-            ? `&invite=${encodeURIComponent(String(recipient.invite_code))}`
-            : '';
 
           await sendTelegramMessage(recChatId, incomingHtml, {
             reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: 'Ответить через бота',
-                    callback_data: `reply_msg_${user.id}`,
-                  },
-                ],
-                [
-                  {
-                    text: 'Открыть панель TedCloud',
-                    url: `${siteUrl}/?tg_id=${recChatId}${recInviteQuery}&chatId=${recChatId}`,
-                  },
-                ],
-              ],
+              inline_keyboard: [actionRow],
             },
           });
-          deliveredCount++;
         }
 
+        // БЛОК 1: Лаконичное подтверждение в 1 строку без спама главным меню
         await sendTelegramMessage(
           chatId,
-          [
-            '<b>СООБЩЕНИЕ ОТПРАВЛЕНО</b>',
-            `Адресат: ${escapeHtml(recipientLabel)}`,
-            `Статус: ${isUrgentMsg ? 'Срочное уведомление' : 'Стандартное сообщение'}`,
-            `Доставлено в Telegram: ${deliveredCount} сотр.`,
-            'Запись синхронизирована с вкладкой «Инфополе и Связь» в TedCloud.',
-          ].join('\n'),
+          `✓ Доставлено: <b>${escapeHtml(recipientShortName)}</b>`,
           {
-            reply_markup: buildRoleCommandCenterKeyboard(siteUrl, chatId, user),
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+            },
           }
         );
 
@@ -1417,14 +1635,15 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
       const isUrgent = strippedCommandText.startsWith('!');
       const cleanTitle = isUrgent ? strippedCommandText.slice(1).trim() : strippedCommandText;
       const taskPriority = isUrgent ? 'High' : 'Medium';
-      const priorityLabel = isUrgent ? 'Высокий' : 'Средний';
 
       if (!cleanTitle) {
         await sendTelegramMessage(
           chatId,
-          '<b>ОШИБКА ФОРМАТА</b>\nУкажите наименование задачи.',
+          'Укажите наименование задачи.',
           {
-            reply_markup: buildRoleCommandCenterKeyboard(siteUrl, chatId, user),
+            reply_markup: {
+              inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+            },
           }
         );
         return res.status(200).send('OK');
@@ -1478,11 +1697,11 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         throw new Error(`Ошибка записи задачи: ${taskInsertError.message}`);
       }
 
-      const extraRows: any[][] = [];
+      const taskActionRows: any[][] = [];
       if (createdTask?.id) {
-        extraRows.push([
-          { text: 'Принять в работу', callback_data: `task_progress:${createdTask.id}` },
-          { text: 'Завершить задачу', callback_data: `task_done:${createdTask.id}` },
+        taskActionRows.push([
+          { text: 'В работу', callback_data: `task_progress:${createdTask.id}` },
+          { text: 'Выполнено', callback_data: `task_done:${createdTask.id}` },
         ]);
       }
 
@@ -1494,39 +1713,29 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         const colleagueChatId = String(targetAssigneeNode.telegram_chat_id).trim();
         await sendTelegramMessage(
           colleagueChatId,
-          [
-            '<b>НОВОЕ ПОРУЧЕНИЕ TEDCLOUD</b>',
-            `Постановщик: ${escapeHtml(user.name)} (${escapeHtml(user.role_type || 'Руководитель')})`,
-            `Исполнитель: ${escapeHtml(targetAssigneeNode.name)} (${escapeHtml(
-              targetAssigneeNode.role_type || 'Специалист'
-            )})`,
-            `Задача: <b>${escapeHtml(cleanTitle)}</b>`,
-            `Приоритет: ${priorityLabel}`,
-          ].join('\n'),
+          `<b>Поручение</b> · ${escapeHtml(user.name)} (<i>${escapeHtml(
+            user.role_type || 'Руководитель'
+          )}</i>)\n${escapeHtml(cleanTitle)}`,
           {
-            reply_markup: buildWebAppKeyboard(
-              siteUrl,
-              colleagueChatId,
-              extraRows,
-              targetAssigneeNode?.invite_code || null
-            ),
+            reply_markup: {
+              inline_keyboard: taskActionRows,
+            },
           }
         );
       }
 
       await sendTelegramMessage(
         chatId,
-        [
-          isDelegated ? '<b>ЗАДАЧА ПОРУЧЕНА КОЛЛЕГЕ</b>' : '<b>ЗАДАЧА СОЗДАНА</b>',
-          `Наименование: ${escapeHtml(cleanTitle)}`,
-          `Приоритет: ${priorityLabel}`,
-          'Статус: К выполнению',
-          `Исполнитель: ${escapeHtml(targetAssigneeNode.name || firstName)} (${escapeHtml(
-            targetAssigneeNode.role_type || 'Специалист'
-          )})`,
-        ].join('\n'),
+        isDelegated
+          ? `✓ Задача поручена (<b>${escapeHtml(targetAssigneeNode.name || firstName)}</b>): <b>${escapeHtml(cleanTitle)}</b>`
+          : `✓ Задача создана: <b>${escapeHtml(cleanTitle)}</b>`,
         {
-          reply_markup: buildWebAppKeyboard(siteUrl, chatId, extraRows, user?.invite_code || null),
+          reply_markup: {
+            inline_keyboard: [
+              ...taskActionRows,
+              [{ text: 'Командное меню', callback_data: 'open_main_menu' }],
+            ],
+          },
         }
       );
     }

@@ -119,6 +119,11 @@ import {
   filterMessagesForActiveThread,
   isDirectMessageBetweenUsers,
 } from '../utils/messengerLogic';
+import {
+  ApprovalDecisionBar,
+  RequestApprovalModal,
+  SmartDocumentVault,
+} from './ApprovalsAndVault';
 
 interface DashboardProps {
   company: Company | null;
@@ -278,8 +283,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  // Task & CRM View Modes
+  // Task & CRM View Modes + Approvals & Document Vault
   const [taskViewMode, setTaskViewMode] = useState<'list' | 'board'>('list');
+  const [taskCategoryFilter, setTaskCategoryFilter] = useState<'all' | 'approvals'>('all');
+  const [isRequestApprovalModalOpen, setIsRequestApprovalModalOpen] = useState(false);
+  const [commViewMode, setCommViewMode] = useState<'messenger' | 'vault'>('messenger');
   const [crmViewMode, setCrmViewMode] = useState<'board' | 'table'>('board');
   const [onlyMyTasks, setOnlyMyTasks] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'ALL'>('ALL');
@@ -832,6 +840,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   // Filtered Lists
+  const approvalsCount = useMemo(
+    () =>
+      visibleTasks.filter(
+        (tItem) =>
+          String(tItem?.type || '').toLowerCase() === 'approval' ||
+          (tItem?.title || '').startsWith('[СОГЛАСОВАНИЕ:')
+      ).length,
+    [visibleTasks]
+  );
+
   const filteredTasks = useMemo(() => {
     return visibleTasks.filter((item) => {
       if (!item) return false;
@@ -851,9 +869,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const matchesPriority =
         priorityFilter === 'ALL' || (item.priority || 'Medium') === priorityFilter;
 
-      return matchesQuery && matchesMyTasks && matchesPriority;
+      const isApproval =
+        String(item.type || '').toLowerCase() === 'approval' ||
+        (item.title || '').startsWith('[СОГЛАСОВАНИЕ:');
+      const matchesCategory = taskCategoryFilter === 'all' || isApproval;
+
+      return matchesQuery && matchesMyTasks && matchesPriority && matchesCategory;
     });
-  }, [visibleTasks, searchQuery, onlyMyTasks, currentProfile, priorityFilter]);
+  }, [visibleTasks, searchQuery, onlyMyTasks, currentProfile, priorityFilter, taskCategoryFilter]);
 
   const filteredNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -935,6 +958,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const res = await onPatchRecord('tasks', taskId, updates);
       if (res.pushSent) {
         showToast(t('toast.pushSent'));
+      }
+    } finally {
+      setBusyRecordId(null);
+    }
+  };
+
+  const handleApprovalDecision = async (taskId: string, decision: 'approve' | 'reject') => {
+    setBusyRecordId(taskId);
+    try {
+      const nextStatus: TaskStatus = decision === 'approve' ? 'Done' : 'Cancelled';
+      const res = await onPatchRecord('tasks', taskId, {
+        status: nextStatus,
+        decided_by_name: currentProfile?.name || 'Руководитель',
+      });
+      if (res.ok) {
+        showToast(
+          decision === 'approve'
+            ? isEn
+              ? 'Request approved & notification sent'
+              : 'Заявка утверждена, автору отправлено уведомление'
+            : isEn
+            ? 'Request rejected & notification sent'
+            : 'Заявка отклонена, автору отправлено уведомление'
+        );
       }
     } finally {
       setBusyRecordId(null);
@@ -1758,6 +1805,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               )}
 
+              {/* Switcher: Мессенджер и Каналы / Реестр документов и Регламенты on Communications */}
+              {activeSection === 'communications' && (
+                <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#141418] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setCommViewMode('messenger')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                      commViewMode === 'messenger'
+                        ? 'bg-zinc-800 text-white border border-white/10'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isEn ? 'Messenger & Channels' : 'Мессенджер и Каналы'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCommViewMode('vault')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                      commViewMode === 'vault'
+                        ? 'bg-zinc-800 text-white border border-white/10'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>
+                      {isEn
+                        ? 'Document Vault & Playbooks'
+                        : 'Реестр документов и Регламенты'}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {activeSection === 'tasks' && (
+                <button
+                  type="button"
+                  onClick={() => setIsRequestApprovalModalOpen(true)}
+                  className={SECONDARY_BTN_CLASS}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>{isEn ? '+ Request Approval' : '+ Запрос на согласование'}</span>
+                </button>
+              )}
+
               {(activeSection === 'overview' || activeSection === 'tasks') &&
                 canCreateOrEditTasks && (
                   <button
@@ -2573,6 +2665,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* БЛОК 3: Таб-переключатель «Все задачи» / «Согласования и Заявки (Approvals)» */}
+                    <div className="inline-flex rounded-lg border border-white/10 bg-[#16161A] p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setTaskCategoryFilter('all')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                          taskCategoryFilter === 'all'
+                            ? 'bg-zinc-800 text-white border border-white/10'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        <span>{isEn ? 'All Tasks' : 'Все задачи'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaskCategoryFilter('approvals')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                          taskCategoryFilter === 'approvals'
+                            ? 'bg-zinc-800 text-white border border-white/10'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>{isEn ? 'Approvals' : 'Согласования и Заявки'}</span>
+                        <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-semibold tabular-nums">
+                          {approvalsCount}
+                        </span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsRequestApprovalModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-xs font-medium text-indigo-300 transition-colors whitespace-nowrap"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isEn ? 'Request Approval' : 'Запрос на согласование'}</span>
+                    </button>
+
                     {perms.tasks_view_all && (
                       <button
                         onClick={() => setOnlyMyTasks((prev) => !prev)}
@@ -2761,6 +2892,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </span>
                                 )}
                               </div>
+                              {(String(task.type || '').toLowerCase() === 'approval' ||
+                                (task.title || '').startsWith('[СОГЛАСОВАНИЕ:')) && (
+                                <ApprovalDecisionBar
+                                  task={task}
+                                  currentProfile={currentProfile}
+                                  isBusy={isBusy}
+                                  onDecision={handleApprovalDecision}
+                                />
+                              )}
                             </div>
                           </div>
 
@@ -2837,6 +2977,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               <option value="Todo">{t('status.Todo')}</option>
                               <option value="In Progress">{t('status.In Progress')}</option>
                               <option value="Done">{t('status.Done')}</option>
+                              <option value="Cancelled">{t('status.Cancelled')}</option>
                             </select>
 
                             {canCreateOrEditTasks && (
@@ -2976,6 +3117,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       </span>
                                     )}
                                   </div>
+
+                                  {(String(task.type || '').toLowerCase() === 'approval' ||
+                                    (task.title || '').startsWith('[СОГЛАСОВАНИЕ:')) && (
+                                    <ApprovalDecisionBar
+                                      task={task}
+                                      currentProfile={currentProfile}
+                                      isBusy={busyRecordId === task.id}
+                                      onDecision={handleApprovalDecision}
+                                    />
+                                  )}
 
                                   <div
                                     className="pt-2 flex items-center justify-between gap-1.5 border-t border-white/[0.06]"
@@ -3398,9 +3549,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
-              TAB 4: ИНФОПОЛЕ И СВЯЗЬ / SPLIT-VIEW CORPORATE MESSENGER (БЛОК 4: Mobile Master-Detail)
+              TAB 4: ИНФОПОЛЕ И СВЯЗЬ / SPLIT-VIEW CORPORATE MESSENGER + SMART DOCUMENT VAULT (БЛОК 4)
           ================================================================== */}
-          {activeSection === 'communications' && (
+          {activeSection === 'communications' &&
+            (commViewMode === 'vault' ? (
+              <SmartDocumentVault
+                company={company}
+                currentProfile={currentProfile}
+                nodes={safeNodes}
+                tasks={visibleTasks}
+                leads={visibleLeads}
+                messages={safeMessages}
+                onOpenTaskDrawer={(taskId) => setDrawerSelection({ kind: 'task', id: taskId })}
+                onOpenDealDrawer={(dealId) => setDrawerSelection({ kind: 'deal', id: dealId })}
+                onUpdateCompanyBillingDetails={
+                  perms.workspace_billing && company
+                    ? async (nextDetails) => {
+                        await onPatchRecord('companies', company.id, {
+                          billing_details: nextDetails,
+                        });
+                      }
+                    : undefined
+                }
+              />
+            ) : (
             <div className="rounded-xl border border-white/[0.08] bg-[#111114] overflow-hidden flex flex-col lg:flex-row min-h-[560px] lg:min-h-[640px] shadow-2xl">
               {/* ЛЕВАЯ ПАНЕЛЬ (Ширина 300px на десктопе, 100% на мобильных при !mobileChatOpen): Каналы и Личные диалоги */}
               <aside
@@ -3952,7 +4124,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </form>
               </section>
             </div>
-          )}
+            ))}
 
           {/* =================================================================
               TAB 5: ШТАТ И ДОСТУПЫ / TEAM & ACCESS (БЛОК 2: Конструктор отделов + таблица штата / Карта связей)
@@ -5537,6 +5709,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onClose={() => setIsSecurityAuditModalOpen(false)}
         companyName={companyName}
         auditLogs={safeAuditLogs}
+      />
+
+      <RequestApprovalModal
+        isOpen={isRequestApprovalModalOpen}
+        onClose={() => setIsRequestApprovalModalOpen(false)}
+        nodes={safeNodes}
+        currentProfile={currentProfile}
+        companyId={companyId}
+        onSubmitApproval={async (payload) => {
+          const res = await onCreateRecord('tasks', payload);
+          if (res.ok) {
+            showToast(
+              isEn
+                ? 'Approval request sent to manager & Telegram'
+                : 'Запрос на согласование отправлен руководителю и в Telegram'
+            );
+          }
+        }}
       />
 
       {/* Custom Enterprise Confirmation Dialog */}

@@ -112,9 +112,12 @@ const ru: Dictionary = {
   'status.Todo': 'К выполнению',
   'status.In Progress': 'В работе',
   'status.Done': 'Выполнено',
+  'status.Cancelled': 'Отклонено',
   'type.Task': 'Поручение',
   'type.Bug': 'Инцидент',
   'type.Epic': 'Проект',
+  'type.approval': 'Согласование',
+  'type.Approval': 'Согласование',
 
   // Access Levels
   'access.root': 'Суперадмин / Владелец',
@@ -526,9 +529,12 @@ const en: Dictionary = {
   'status.Todo': 'To Do',
   'status.In Progress': 'In Progress',
   'status.Done': 'Completed',
+  'status.Cancelled': 'Rejected',
   'type.Task': 'Task',
   'type.Bug': 'Issue',
   'type.Epic': 'Initiative',
+  'type.approval': 'Approval',
+  'type.Approval': 'Approval',
 
   // Access Levels
   'access.root': 'Superadmin / Owner',
@@ -906,11 +912,15 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         root.classList.remove('theme-dark');
         body.classList.add('theme-light');
         body.classList.remove('theme-dark');
+        root.style.backgroundColor = '#f8fafc';
+        body.style.backgroundColor = '#f8fafc';
       } else {
         root.classList.add('theme-dark');
         root.classList.remove('theme-light');
         body.classList.add('theme-dark');
         body.classList.remove('theme-light');
+        root.style.backgroundColor = '#070709';
+        body.style.backgroundColor = '#070709';
       }
     } catch {}
   }, [theme]);

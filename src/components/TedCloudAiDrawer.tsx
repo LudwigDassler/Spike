@@ -365,70 +365,68 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           </button>
         </div>
 
-        {/* Compact Horizontal Carousel of Quick Prompts */}
-        <div className="px-4 border-b border-white/[0.06] bg-[#0F0F14] shrink-0">
-          <div className="overflow-x-auto whitespace-nowrap no-scrollbar flex items-center gap-2 py-2.5">
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() =>
-                void triggerAiAction('daily_brief', isEn ? 'Daily Brief' : 'Сводка дня')
-              }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-[#15151B] hover:bg-zinc-800 hover:border-white/20 text-xs font-medium text-zinc-100 transition-colors shrink-0"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-              <span>{isEn ? 'Daily Brief' : 'Сводка дня'}</span>
-            </button>
+        {/* 2x2 Grid of Quick Scenarios (Block 2) */}
+        <div className="grid grid-cols-2 gap-2 p-3 border-b border-white/[0.07] bg-[#0F0F14] shrink-0">
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() =>
+              void triggerAiAction('daily_brief', isEn ? 'Daily Brief' : 'Сводка дня')
+            }
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-indigo-400" />
+            <span className="truncate">{isEn ? 'Daily Brief' : 'Сводка дня'}</span>
+          </button>
 
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() =>
-                void triggerAiAction(
-                  'workload_analysis',
-                  isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'
-                )
-              }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-[#15151B] hover:bg-zinc-800 hover:border-white/20 text-xs font-medium text-zinc-100 transition-colors shrink-0"
-            >
-              <BarChart3 className="w-3.5 h-3.5 text-sky-400" />
-              <span>{isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'}</span>
-            </button>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() =>
+              void triggerAiAction(
+                'workload_analysis',
+                isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'
+              )
+            }
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+          >
+            <BarChart3 className="w-4 h-4 shrink-0 text-sky-400" />
+            <span className="truncate">{isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'}</span>
+          </button>
 
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() =>
-                void triggerAiAction(
-                  'workload_analysis',
-                  isEn ? 'CRM Pipeline Audit' : 'Аудит сделок CRM',
-                  isEn
-                    ? 'Audit CRM pipeline and deal conversion across the organization'
-                    : 'Аудит сделок CRM и конверсии воронки компании'
-                )
-              }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-[#15151B] hover:bg-zinc-800 hover:border-white/20 text-xs font-medium text-zinc-100 transition-colors shrink-0"
-            >
-              <Briefcase className="w-3.5 h-3.5 text-amber-400" />
-              <span>{isEn ? 'CRM Pipeline Audit' : 'Аудит сделок CRM'}</span>
-            </button>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() =>
+              void triggerAiAction(
+                'workload_analysis',
+                isEn ? 'CRM Pipeline Audit' : 'Аудит сделок CRM',
+                isEn
+                  ? 'Audit CRM pipeline and deal conversion across the organization'
+                  : 'Аудит сделок CRM и конверсии воронки компании'
+              )
+            }
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+          >
+            <Briefcase className="w-4 h-4 shrink-0 text-amber-400" />
+            <span className="truncate">{isEn ? 'CRM Pipeline Audit' : 'Аудит сделок CRM'}</span>
+          </button>
 
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() =>
-                void triggerAiAction(
-                  'decompose_task',
-                  isEn ? 'Create Task Plan' : 'Создать план задач',
-                  tasks[0]?.title || (isEn ? 'Q4 Operational Execution Plan' : 'Операционный план квартала')
-                )
-              }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-[#15151B] hover:bg-zinc-800 hover:border-white/20 text-xs font-medium text-zinc-100 transition-colors shrink-0"
-            >
-              <ListChecks className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{isEn ? 'Create Task Plan' : 'Создать план задач'}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() =>
+              void triggerAiAction(
+                'decompose_task',
+                isEn ? 'Task Plan' : 'План задач',
+                tasks[0]?.title || (isEn ? 'Q4 Operational Execution Plan' : 'Операционный план квартала')
+              )
+            }
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+          >
+            <ListChecks className="w-4 h-4 shrink-0 text-emerald-400" />
+            <span className="truncate">{isEn ? 'Task Plan' : 'План задач'}</span>
+          </button>
         </div>
 
         {/* Conversational Stream */}
@@ -607,20 +605,6 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                           : 'Декомпозировать активные задачи'}
                       </span>
                     </button>
-
-                    {onNavigateToCrm && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          onNavigateToCrm();
-                        }}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-300 transition-colors"
-                      >
-                        <Briefcase className="w-3 h-3 text-amber-400" />
-                        <span>{isEn ? 'CRM Deals' : 'Сделки CRM'}</span>
-                      </button>
-                    )}
                   </div>
                 </div>
               )}

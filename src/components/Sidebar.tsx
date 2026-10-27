@@ -128,37 +128,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Navigation Links — Linear / Attio style with thin vertical pill and badge > 0 */}
-        <nav className="px-3 py-2 space-y-0.5">
-          <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6E6E77]">
+        {/* Navigation Links — Clean solid pill in Dark Mode and Slate-900 pill in Light Mode */}
+        <nav className="px-3 pt-2.5 pb-2 space-y-1">
+          <div className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6E6E77]">
             {t('nav.workspaceSection')}
           </div>
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
             const hasPositiveBadge = typeof item.badge === 'number' && item.badge > 0;
+            const isLight = theme === 'light';
 
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onSelectSection(item.id)}
-                className={`relative w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 ${
+                className={`tc-nav-item relative w-full flex items-center justify-between px-3 py-2 text-xs transition-all duration-150 ${
                   isActive
-                    ? 'bg-white/[0.05] text-white'
-                    : 'text-[#8E8E93] hover:text-zinc-200 hover:bg-white/[0.03]'
+                    ? isLight
+                      ? 'tc-nav-active-light bg-slate-900 text-white font-medium rounded-xl shadow-sm'
+                      : 'bg-white/[0.08] text-white font-medium rounded-xl'
+                    : 'rounded-xl text-[#8E8E93] font-medium hover:text-zinc-200 hover:bg-white/[0.04]'
                 }`}
               >
-                {isActive && (
-                  <span
-                    aria-hidden="true"
-                    className="w-1 h-4 rounded-full bg-indigo-400 absolute left-0.5 top-1/2 -translate-y-1/2 shadow-[0_0_8px_rgba(129,140,248,0.6)]"
-                  />
-                )}
-                <div className="flex items-center gap-2.5 min-w-0 pl-1">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <Icon
                     className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive ? 'text-indigo-400' : 'text-[#71717A]'
+                      isActive
+                        ? 'tc-nav-active-icon text-white'
+                        : 'text-[#71717A]'
                     }`}
                   />
                   <span className="truncate">{item.label}</span>
@@ -167,7 +166,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded-md tabular-nums font-medium ${
                       isActive
-                        ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/25'
+                        ? isLight
+                          ? 'bg-white/20 text-white'
+                          : 'bg-white/[0.12] text-white'
                         : 'text-[#71717A]'
                     }`}
                   >

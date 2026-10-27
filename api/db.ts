@@ -784,6 +784,7 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'phone',
     'stage',
     'source',
+    'attachments',
   ],
   workspace_messages: [
     'company_id',
@@ -1365,9 +1366,11 @@ async function sendTelegramTaskOrDepartmentPush(params: {
   supabase: SupabaseClient | null;
   companyId?: string | null;
   assignedToId?: string | null;
+  createdById?: string | null;
   department?: string | null;
   taskId?: string;
   taskTitle: string;
+  taskDescription?: string | null;
   taskPriority: string;
   taskType?: string;
 }): Promise<{ pushed: boolean; count?: number; reason?: string }> {
@@ -1375,9 +1378,11 @@ async function sendTelegramTaskOrDepartmentPush(params: {
     supabase,
     companyId,
     assignedToId,
+    createdById,
     department,
     taskId,
     taskTitle,
+    taskDescription,
     taskPriority,
     taskType,
   } = params;
@@ -1410,11 +1415,8 @@ async function sendTelegramTaskOrDepartmentPush(params: {
     return { pushed: false, reason: 'no_recipients_with_telegram' };
   }
 
-  const siteUrl = (
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.APP_URL ||
-    'https://tedcloud.vercel.app'
-  ).replace(/\/$/, '');
+  const authorNode = createdById ? allNodes.find((n) => String(n.id) === String(createdById)) : null;
+  const isApproval = String(taskType || '').trim().toLowerCase() === 'approval';
 
   let pushedCount = 0;
 
@@ -1422,38 +1424,40 @@ async function sendTelegramTaskOrDepartmentPush(params: {
     const telegramChatId = String(node.telegram_chat_id || '').trim();
     if (!telegramChatId) continue;
 
-    const employeeName = escapeHtml(node.name || 'Сотрудник');
-    const employeeRole = node.role_type ? ` (${escapeHtml(node.role_type)})` : '';
-    const deptLine = department ? `\n<b>Подразделение:</b> ${escapeHtml(department)}` : '';
-
-    const notificationHtml = [
-      '<b>УВЕДОМЛЕНИЕ TEDCLOUD</b>',
-      assignedToId
-        ? 'Назначена новая корпоративная задача.'
-        : `Новое поручение на подразделение «${escapeHtml(department || '')}».`,
-      '',
-      `<b>Получатель:</b> ${employeeName}${employeeRole}${deptLine}`,
-      `<b>Задача:</b> ${escapeHtml(taskTitle)}`,
-      `<b>Категория:</b> ${escapeHtml(taskType || 'Task')}`,
-      `<b>Приоритет:</b> ${escapeHtml(taskPriority || 'Medium')}`,
-    ].join('\n');
-
+    let notificationHtml = '';
     const inlineKeyboard: any[][] = [];
-    if (taskId) {
-      inlineKeyboard.push([
-        { text: 'Принять в работу', callback_data: `task_progress:${taskId}` },
-        { text: 'Завершить задачу', callback_data: `task_done:${taskId}` },
-      ]);
+
+    if (isApproval) {
+      const authorName = escapeHtml(authorNode?.name || 'Сотрудник');
+      const authorRole = escapeHtml(authorNode?.role_type || 'Специалист');
+      const descLine = taskDescription ? `\n${escapeHtml(taskDescription)}` : '';
+      notificationHtml = [
+        `<b>Запрос на согласование</b> · ${authorName} (<i>${authorRole}</i>)`,
+        `<b>${escapeHtml(taskTitle)}</b>${descLine}`,
+      ].join('\n');
+
+      if (taskId) {
+        inlineKeyboard.push([
+          { text: 'Утвердить', callback_data: `approve_task_${taskId}` },
+          { text: 'Отклонить', callback_data: `reject_task_${taskId}` },
+        ]);
+      }
+    } else {
+      const authorName = escapeHtml(authorNode?.name || 'TedCloud');
+      const deptTag = department ? ` [${escapeHtml(department)}]` : '';
+      const prioTag = taskPriority === 'High' ? ' · <b>Срочно</b>' : '';
+      notificationHtml = [
+        `<b>Поручение</b> · ${authorName}${deptTag}${prioTag}`,
+        escapeHtml(taskTitle),
+      ].join('\n');
+
+      if (taskId) {
+        inlineKeyboard.push([
+          { text: 'В работу', callback_data: `task_progress:${taskId}` },
+          { text: 'Выполнено', callback_data: `task_done:${taskId}` },
+        ]);
+      }
     }
-    const inviteParam = node.invite_code
-      ? `&invite=${encodeURIComponent(String(node.invite_code))}`
-      : '';
-    inlineKeyboard.push([
-      {
-        text: 'Открыть панель TedCloud',
-        url: `${siteUrl}/?tg_id=${telegramChatId}${inviteParam}&chatId=${telegramChatId}`,
-      },
-    ]);
 
     try {
       const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1463,7 +1467,7 @@ async function sendTelegramTaskOrDepartmentPush(params: {
           chat_id: telegramChatId,
           text: notificationHtml,
           parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: inlineKeyboard },
+          ...(inlineKeyboard.length > 0 ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {}),
         }),
       });
       if (tgRes.ok) {
@@ -1477,7 +1481,62 @@ async function sendTelegramTaskOrDepartmentPush(params: {
   return { pushed: pushedCount > 0, count: pushedCount };
 }
 
-// Мгновенная доставка сообщения из единого инфополя (workspace_messages) в Telegram
+// БЛОК 3: Уведомление автора заявки в Telegram о решении руководителя (Утвердить / Отклонить)
+async function sendTelegramApprovalDecisionNotification(params: {
+  supabase: SupabaseClient | null;
+  companyId?: string | null;
+  taskRecord: Record<string, any>;
+  approved: boolean;
+  managerName?: string | null;
+}): Promise<boolean> {
+  const { supabase, companyId, taskRecord, approved, managerName } = params;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return false;
+
+  const allNodes = await fetchAllCompanyNodes(supabase, companyId || taskRecord.company_id);
+  const authorId = taskRecord.created_by || taskRecord.owner_node_id;
+  const authorNode = authorId
+    ? allNodes.find((n) => String(n.id) === String(authorId))
+    : null;
+
+  const approverNode = taskRecord.assigned_to
+    ? allNodes.find((n) => String(n.id) === String(taskRecord.assigned_to))
+    : null;
+
+  const resolvedManagerName =
+    managerName || approverNode?.name || 'Руководитель';
+
+  // Если у автора нет telegram_chat_id или автор не найден, попробуем найти любого привязанного сотрудника
+  const targetChatId = String(authorNode?.telegram_chat_id || '').trim();
+  if (!targetChatId) return false;
+
+  const titleClean = escapeHtml(taskRecord.title || 'Заявка');
+  const mgrClean = escapeHtml(resolvedManagerName);
+  const decisionText = approved
+    ? `✓ Ваша заявка «<b>${titleClean}</b>» утверждена руководителем <b>${mgrClean}</b>`
+    : `✕ Ваша заявка «<b>${titleClean}</b>» отклонена руководителем <b>${mgrClean}</b>`;
+
+  try {
+    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: targetChatId,
+        text: decisionText,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+        },
+      }),
+    });
+    return tgRes.ok;
+  } catch (err) {
+    console.warn('[API /api/db] Approval decision notification warning:', err);
+    return false;
+  }
+}
+
+// Мгновенная доставка сообщения из единого инфополя (workspace_messages) в Telegram (БЛОК 1: 2 строки + 1 ряд из 2 кнопок)
 async function sendTelegramWorkspaceMessagePush(params: {
   supabase: SupabaseClient | null;
   messageRecord: Record<string, any>;
@@ -1519,17 +1578,17 @@ async function sendTelegramWorkspaceMessagePush(params: {
   ).trim();
 
   let targetNodes: any[] = [];
-  let contourLabel = 'Общее оповещение по компании';
+  let compactTag = '';
 
-  if (rawTargetType === 'task' || messageRecord.task_id) {
-    contourLabel = targetLabel ? `Задача: ${escapeHtml(targetLabel)}` : 'Задача';
+  if (rawTargetType === 'department' || messageRecord.target_department) {
+    const deptName = targetLabel || targetId || messageRecord.target_department || 'Отдел';
+    compactTag = ` [${escapeHtml(deptName)}]`;
+  } else if (rawTargetType === 'task' || messageRecord.task_id) {
+    compactTag = targetLabel ? ` [${escapeHtml(targetLabel)}]` : ' [Задача]';
   } else if (rawTargetType === 'deal' || rawTargetType === 'lead' || messageRecord.lead_id) {
-    contourLabel = targetLabel ? `Сделка: ${escapeHtml(targetLabel)}` : 'Сделка CRM';
-  } else if (rawTargetType === 'department' || messageRecord.target_department) {
-    const deptName = targetLabel || targetId || messageRecord.target_department || '';
-    contourLabel = `Отдел: ${escapeHtml(deptName)}`;
-  } else if (rawTargetType === 'direct' || messageRecord.recipient_id) {
-    contourLabel = 'Личное сообщение';
+    compactTag = targetLabel ? ` [${escapeHtml(targetLabel)}]` : ' [Сделка]';
+  } else if (rawTargetType !== 'direct' && !messageRecord.recipient_id) {
+    compactTag = ` [${escapeHtml(targetLabel || 'Всем сотрудникам')}]`;
   }
 
   if (rawTargetType === 'direct' || messageRecord.recipient_id) {
@@ -1575,12 +1634,6 @@ async function sendTelegramWorkspaceMessagePush(params: {
     return { pushed: false, count: 0, reason: 'no_recipients_with_telegram' };
   }
 
-  const siteUrl = (
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.APP_URL ||
-    'https://tedcloud.vercel.app'
-  ).replace(/\/$/, '');
-
   const msgBody = String(
     messageRecord.message_text ||
       messageRecord.text ||
@@ -1589,38 +1642,34 @@ async function sendTelegramWorkspaceMessagePush(params: {
       ''
   ).trim();
 
-  const htmlText = [
-    '<b>ВХОДЯЩЕЕ СООБЩЕНИЕ TEDCLOUD</b>',
-    `От: ${senderName} (${senderRole})`,
-    `Контур: ${contourLabel}`,
-    '',
-    escapeHtml(msgBody),
-  ].join('\n');
+  // БЛОК 1: Строго в 2 строки без бюрократических шапок
+  const htmlText = `<b>${senderName}</b> · <i>${senderRole}</i>${compactTag}\n${escapeHtml(msgBody)}`;
+
+  const senderIdForReply = String(messageRecord.sender_id || senderNode?.id || '');
+  const msgIdForTask = String(messageRecord.id || '');
+
+  // Кнопки под входящим сообщением выстроены в один горизонтальный ряд (2 кнопки рядом)
+  const rowButtons: any[] = [];
+  if (senderIdForReply) {
+    rowButtons.push({
+      text: 'Ответить',
+      callback_data: `reply_msg_${senderIdForReply}`,
+    });
+  }
+  if (msgIdForTask) {
+    rowButtons.push({
+      text: 'Создать задачу',
+      callback_data: `msg_to_task_${msgIdForTask}`,
+    });
+  }
+
+  const inlineKeyboard: any[][] = rowButtons.length > 0 ? [rowButtons] : [];
 
   let pushedCount = 0;
 
   for (const recipient of targetNodes) {
     const tgChatId = String(recipient.telegram_chat_id || '').trim();
     if (!tgChatId) continue;
-
-    const inlineKeyboard: any[][] = [];
-    if (messageRecord.sender_id) {
-      inlineKeyboard.push([
-        {
-          text: 'Ответить через бота',
-          callback_data: `reply_msg_${messageRecord.sender_id}`,
-        },
-      ]);
-    }
-    const inviteParam = recipient.invite_code
-      ? `&invite=${encodeURIComponent(String(recipient.invite_code))}`
-      : '';
-    inlineKeyboard.push([
-      {
-        text: 'Открыть панель TedCloud',
-        url: `${siteUrl}/?tg_id=${tgChatId}${inviteParam}&chatId=${tgChatId}`,
-      },
-    ]);
 
     try {
       const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1630,7 +1679,7 @@ async function sendTelegramWorkspaceMessagePush(params: {
           chat_id: tgChatId,
           text: htmlText,
           parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: inlineKeyboard },
+          ...(inlineKeyboard.length > 0 ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {}),
         }),
       });
       if (tgRes.ok) {
@@ -1855,6 +1904,7 @@ function normalizeLeadRow(row: any) {
     tax_id: row.tax_id ?? extras?.tax_id ?? null,
     reg_number: row.reg_number ?? extras?.reg_number ?? null,
     contract_number: row.contract_number ?? extras?.contract_number ?? null,
+    attachments: normalizeAttachmentsServer(row.attachments ?? extras?.attachments),
   };
 }
 
@@ -2888,9 +2938,11 @@ ${builtInResult.reply}
           supabase,
           companyId,
           assignedToId: explicitAssignee || null,
+          createdById: payload.created_by || resolvedOwnerNodeId || null,
           department: taskDept,
           taskId: savedTask.id,
           taskTitle: savedTask.title,
+          taskDescription: savedTask.description || savedTask.notes || null,
           taskPriority: savedTask.priority || rawInsertPayload.priority,
           taskType: savedTask.type || rawInsertPayload.type,
         });
@@ -3612,6 +3664,37 @@ ${builtInResult.reply}
             taskTitle: updatedTask.title,
             taskPriority: updatedTask.priority || 'Medium',
             taskType: updatedTask.type || 'Task',
+          });
+        }
+
+        // БЛОК 3: Если это заявка на согласование (type === 'approval') и статус изменен на Done (Утвердить) или Cancelled (Отклонить), уведомляем автора в Telegram и пишем в audit_logs
+        const isApprovalTask =
+          String(updatedTask?.type || '').trim().toLowerCase() === 'approval';
+        if (
+          isApprovalTask &&
+          rawUpdates.status &&
+          (rawUpdates.status === 'Done' || rawUpdates.status === 'Cancelled')
+        ) {
+          const isApproved = rawUpdates.status === 'Done';
+          const managerName = body.actor_name || 'Руководитель';
+          await sendTelegramApprovalDecisionNotification({
+            supabase,
+            companyId: updatedTask.company_id || null,
+            taskRecord: updatedTask,
+            approved: isApproved,
+            managerName,
+          });
+          await recordAuditLog({
+            supabase,
+            companyId: updatedTask.company_id || '',
+            actorId: body.actor_id || updatedTask.assigned_to || null,
+            actorName: managerName,
+            actionType: isApproved ? 'APPROVAL_APPROVED' : 'APPROVAL_REJECTED',
+            entityType: 'tasks',
+            entityId: updatedTask.id,
+            details: `${
+              isApproved ? 'Утверждена заявка' : 'Отклонена заявка'
+            } «${updatedTask.title}»`,
           });
         }
 

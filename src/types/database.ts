@@ -22,7 +22,7 @@ export const PERMISSION_KEYS: readonly (keyof EmployeePermissions)[] = [
 
 export type TaskPriority = 'Low' | 'Medium' | 'High';
 
-export type TaskStatus = 'Todo' | 'In Progress' | 'Done';
+export type TaskStatus = 'Todo' | 'In Progress' | 'Done' | 'Cancelled';
 
 export type CrmLeadStatus = 'New' | 'Negotiation' | 'Won' | 'Lost';
 
@@ -46,6 +46,17 @@ export type DashboardSection =
   | 'profile'
   | 'workspace';
 
+export interface PinnedPlaybookItem {
+  id: string;
+  title: string;
+  category: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  pinned_at: string;
+  pinned_by?: string;
+}
+
 export interface CompanyBillingDetails {
   region?: PaymentGatewayRegion;
   legal_name?: string;
@@ -57,6 +68,7 @@ export interface CompanyBillingDetails {
   iban_swift?: string;
   wallet_network?: string;
   wallet_address?: string;
+  pinned_playbooks?: PinnedPlaybookItem[];
 }
 
 export interface Company {
