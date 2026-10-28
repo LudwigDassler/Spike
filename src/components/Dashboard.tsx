@@ -54,6 +54,9 @@ import {
   Paperclip,
   Link2,
   ExternalLink,
+  Smile,
+  Reply,
+  CheckCheck,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -367,6 +370,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [commText, setCommText] = useState<string>('');
   const [commUrgent, setCommUrgent] = useState<boolean>(false);
   const [commAttachments, setCommAttachments] = useState<AttachmentItem[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
+  const [replyingToMessage, setReplyingToMessage] = useState<{
+    id: string;
+    sender_name: string;
+    text: string;
+  } | null>(null);
   const [isProcessingCommAttachment, setIsProcessingCommAttachment] = useState<boolean>(false);
   const [isSendingComm, setIsSendingComm] = useState<boolean>(false);
   const [initialTaskDraft, setInitialTaskDraft] = useState<InitialTaskDraft | null>(null);
@@ -1227,6 +1236,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const handleToggleMessageReaction = async (
+    msg: WorkspaceMessageRecord,
+    emoji: string
+  ) => {
+    const actorId = String(currentProfile?.id || 'root');
+    const currentReactions =
+      msg.reactions && typeof msg.reactions === 'object' ? { ...msg.reactions } : {};
+    const existingList = Array.isArray(currentReactions[emoji])
+      ? [...currentReactions[emoji]]
+      : [];
+    const hasReacted = existingList.includes(actorId);
+    const nextList = hasReacted
+      ? existingList.filter((id) => id !== actorId)
+      : [...existingList, actorId];
+
+    if (nextList.length > 0) {
+      currentReactions[emoji] = nextList;
+    } else {
+      delete currentReactions[emoji];
+    }
+
+    await onPatchRecord('workspace_messages', msg.id, {
+      reactions: currentReactions,
+    });
+  };
+
   // Send Corporate Message from Split-View Messenger (Инфополе и Связь)
   const submitCurrentCommMessage = async () => {
     const msgBody = commText.trim();
@@ -1237,6 +1272,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
       (isEn
         ? `📎 Attached: ${commAttachments.map((a) => a.name).join(', ')}`
         : `📎 Вложение: ${commAttachments.map((a) => a.name).join(', ')}`);
+
+    const pendingReply = replyingToMessage;
+    const pendingFiles = [...commAttachments];
+    const pendingUrgent = commUrgent;
+
+    // Instant UI reset (0ms latency feel)
+    setCommText('');
+    setCommAttachments([]);
+    setCommUrgent(false);
+    setReplyingToMessage(null);
+    setShowEmojiPicker(false);
 
     setIsSendingComm(true);
     try {
@@ -1274,16 +1320,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
         target_department: targetDepartment,
         message_text: finalText,
         text: finalText,
-        is_urgent: commUrgent,
+        is_urgent: pendingUrgent,
         is_read: false,
-        attachments: commAttachments,
+        attachments: pendingFiles,
+        reply_to: pendingReply || null,
       };
 
       const res = await onSendMessage(payload);
       if (res.ok) {
-        setCommText('');
-        setCommAttachments([]);
-        setCommUrgent(false);
         showToast(t('comm.sentToast'));
       }
     } finally {
@@ -4243,8 +4287,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                {/* Поток сообщений (flex-1 overflow-y-auto без max-h, чтобы Composer всегда был прибит к низу) */}
-                <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-5 space-y-3">
+                {/* Поток сообщений (БЛОК 2: pt-6 pb-4 px-5 space-y-1.5, чтобы верхнее сообщение никогда не обрезалось шапкой) */}
+                <div className="flex-1 overflow-y-auto no-scrollbar pt-6 pb-4 px-5 space-y-1.5">
                   {activeThreadMessages.length === 0 ? (
                     <RichEmptyState
                       variant="chat"
@@ -4269,17 +4313,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       }
                     />
                   ) : (
-                    activeThreadMessages.map((msg) => {
+                    activeThreadMessages.map((msg, idx) => {
                       const isOutgoing =
                         Boolean(currentProfile?.id) &&
                         String(msg.sender_id || '') === String(currentProfile?.id || '');
                       const senderNode = msg.sender_id
                         ? nodeMap.get(String(msg.sender_id))
-                        : null;
-                      const recipientNode = msg.target_id
-                        ? nodeMap.get(String(msg.target_id))
-                        : msg.recipient_id
-                        ? nodeMap.get(String(msg.recipient_id))
                         : null;
 
                       const senderName =
@@ -4293,16 +4332,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         senderNode?.avatar_url ||
                         (isOutgoing ? currentProfile?.avatar_url : null);
 
-                      const isDirectMsg =
-                        activeCommThread.type === 'direct' ||
-                        msg.target_type === 'direct' ||
-                        msg.scope_type === 'direct';
-
-                      const recipientLabel =
-                        msg.target_label ||
-                        recipientNode?.name ||
-                        msg.target_department ||
-                        (isEn ? 'All' : 'Всем');
+                      const isDirectThread = activeCommThread.type === 'direct';
+                      const prevMsg = idx > 0 ? activeThreadMessages[idx - 1] : null;
+                      const isFirstInSequence =
+                        !prevMsg ||
+                        String(prevMsg.sender_id || prevMsg.sender_name || '') !==
+                          String(msg.sender_id || msg.sender_name || '');
 
                       const messageBody =
                         msg.message_text || msg.text || msg.content || '';
@@ -4318,97 +4353,172 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           )
                         : '';
 
+                      const reactionEntries =
+                        msg.reactions && typeof msg.reactions === 'object'
+                          ? Object.entries(msg.reactions).filter(
+                              ([, users]) => Array.isArray(users) && users.length > 0
+                            )
+                          : [];
+
                       return (
                         <div
                           key={msg.id}
-                          className={`group flex items-end gap-2.5 ${
-                            isOutgoing ? 'justify-end' : 'justify-start'
-                          }`}
+                          className={`group relative flex flex-col ${
+                            isOutgoing ? 'items-end' : 'items-start'
+                          } ${isFirstInSequence && idx > 0 ? 'mt-3' : 'mt-1'}`}
                         >
-                          {!isOutgoing && (
-                            <UserAvatar
-                              name={senderName}
-                              avatarUrl={senderAvatarUrl}
-                              size="sm"
-                              className="mb-0.5"
-                            />
-                          )}
-
                           <div
-                            className={`w-fit max-w-[85%] sm:max-w-[75%] min-w-[160px] rounded-2xl border px-3.5 py-2.5 space-y-1 transition-colors ${
-                              isOutgoing
-                                ? 'bg-emerald-950/30 border-emerald-500/30 rounded-br-sm'
-                                : 'bg-[#16161A] border-[#26262C] rounded-bl-sm'
+                            className={`relative flex items-end gap-2 max-w-full ${
+                              isOutgoing ? 'justify-end' : 'justify-start'
                             }`}
                           >
-                            {/* Компактная шапка внутри бабла */}
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                                <span className="text-xs font-semibold text-white truncate">
-                                  {senderName}
-                                </span>
-                                {senderRole && (
-                                  <span className="text-[11px] text-[#8E8E93] truncate">
-                                    · {senderRole}
-                                  </span>
-                                )}
-                                {!isDirectMsg &&
-                                  activeCommThread.type === 'broadcast' &&
-                                  recipientLabel &&
-                                  recipientLabel !== 'Всем сотрудникам' &&
-                                  recipientLabel !== 'Циркуляр по компании' && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#1F1F26] border border-[#2E2E38] text-[10px] font-medium text-[#A1A1AA]">
-                                      {formatRole(recipientLabel)}
-                                    </span>
-                                  )}
-                                {msg.is_urgent && (
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/15 border border-red-500/30 text-[10px] font-semibold text-red-300">
-                                    <AlertCircle className="w-2.5 h-2.5" />
-                                    <span>{isEn ? 'Urgent' : 'Срочно'}</span>
-                                  </span>
-                                )}
+                            {/* В групповых каналах аватар только у первого сообщения в серии от автора; в личных 1-на-1 чатах аватар внутри баблов убран */}
+                            {!isDirectThread && !isOutgoing && (
+                              <div className="w-7 shrink-0 flex justify-center">
+                                {isFirstInSequence ? (
+                                  <UserAvatar
+                                    name={senderName}
+                                    avatarUrl={senderAvatarUrl}
+                                    size="sm"
+                                    className="mb-0.5"
+                                  />
+                                ) : null}
                               </div>
+                            )}
+
+                            {/* Всплывающая панель быстрых реакций, Reply и Поручения при наведении (group-hover) */}
+                            <div
+                              className={`opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-20 absolute -top-7 ${
+                                isOutgoing ? 'right-1' : isDirectThread ? 'left-1' : 'left-9'
+                              } inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[#18181F]/95 border border-white/10 shadow-lg backdrop-blur-md`}
+                            >
+                              {(['👍', '🔥', '❤️', '✅'] as const).map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => void handleToggleMessageReaction(msg, emoji)}
+                                  className="w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center text-xs transition-transform hover:scale-110"
+                                  title={emoji}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+
+                              <span className="w-px h-3.5 bg-white/10 mx-0.5" />
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setReplyingToMessage({
+                                    id: msg.id,
+                                    sender_name: senderName,
+                                    text: messageBody.slice(0, 140),
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full hover:bg-white/10 text-[10px] font-medium text-zinc-200 transition-colors"
+                                title={isEn ? 'Reply to message' : 'Ответить на сообщение'}
+                              >
+                                <Reply className="w-3 h-3" />
+                                <span className="hidden sm:inline">
+                                  {isEn ? 'Reply' : 'Ответить'}
+                                </span>
+                              </button>
 
                               {canCreateOrEditTasks && (
                                 <button
                                   type="button"
                                   onClick={() => handleConvertMessageToTask(msg)}
-                                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#202026]/90 hover:bg-white hover:text-black text-[10px] font-medium text-[#D4D4D8] border border-[#32323A] transition-all shrink-0"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full hover:bg-indigo-500/20 text-[10px] font-medium text-indigo-300 transition-colors"
                                   title={
                                     isEn
                                       ? 'Convert message into task'
-                                      : 'Создать поручение на основе этого сообщения'
+                                      : 'Создать задачу из сообщения'
                                   }
                                 >
-                                  <Plus className="w-2.5 h-2.5" />
-                                  <span>{isEn ? 'To Task' : 'В задачу'}</span>
+                                  <Plus className="w-3 h-3" />
+                                  <span className="hidden sm:inline">
+                                    {isEn ? 'Task' : 'В задачу'}
+                                  </span>
                                 </button>
                               )}
                             </div>
 
-                            {/* Текст сообщения + вложения + аккуратное время в правом нижнем углу бабла */}
-                            <div className="space-y-1.5 pt-0.5">
-                              <div className="flex items-end justify-between gap-3">
-                                <div className="text-sm text-zinc-100 leading-relaxed whitespace-pre-wrap break-words">
-                                  {messageBody}
-                                </div>
-                                {shortTime && (
-                                  <span className="text-[10px] tabular-nums text-zinc-400/75 shrink-0 select-none leading-none pb-0.5">
-                                    {shortTime}
+                            {/* Обтекаемый бабл сообщения (Telegram Desktop / iMessage style) */}
+                            <div
+                              className={`relative w-fit max-w-[78%] sm:max-w-[72%] px-4 py-2.5 text-[14px] leading-snug shadow-sm transition-colors ${
+                                isOutgoing
+                                  ? 'rounded-[20px] rounded-br-[5px] bg-indigo-600/90 text-white'
+                                  : 'rounded-[20px] rounded-bl-[5px] bg-zinc-800/90 text-zinc-100'
+                              }`}
+                            >
+                              {/* В групповых каналах имя автора рендерится только на первом сообщении в серии */}
+                              {!isDirectThread && !isOutgoing && isFirstInSequence && (
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-xs font-semibold text-indigo-300 truncate">
+                                    {senderName}
                                   </span>
-                                )}
+                                  {senderRole && (
+                                    <span className="text-[10px] text-zinc-400 truncate">
+                                      · {senderRole}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {msg.is_urgent && (
+                                <div className="mb-1">
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-500/20 border border-red-400/30 text-[10px] font-semibold text-red-200">
+                                    <AlertCircle className="w-2.5 h-2.5" />
+                                    <span>{isEn ? 'Urgent' : 'Срочно'}</span>
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Цитируемое сообщение (Reply Quote) */}
+                              {msg.reply_to && msg.reply_to.text && (
+                                <div
+                                  className={`mb-1.5 pl-2.5 py-1 rounded-r-lg border-l-2 text-xs ${
+                                    isOutgoing
+                                      ? 'border-white/60 bg-black/15 text-indigo-100'
+                                      : 'border-indigo-400 bg-white/[0.05] text-zinc-300'
+                                  }`}
+                                >
+                                  <div className="font-semibold text-[11px] truncate">
+                                    {msg.reply_to.sender_name}
+                                  </div>
+                                  <div className="truncate opacity-85 text-[11px]">
+                                    {msg.reply_to.text}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Текст сообщения + встроенное время и галочки доставки справа внизу */}
+                              <div className="whitespace-pre-wrap break-words">
+                                <span>{messageBody}</span>
+                                <span
+                                  className={`float-right ml-3 mt-1.5 inline-flex items-center gap-1 text-[11px] leading-none select-none ${
+                                    isOutgoing ? 'text-indigo-100/80' : 'text-zinc-400/80'
+                                  }`}
+                                >
+                                  {shortTime && <span className="tabular-nums">{shortTime}</span>}
+                                  {isOutgoing && (
+                                    <CheckCheck className="w-3.5 h-3.5 text-indigo-100/90 shrink-0" />
+                                  )}
+                                </span>
                               </div>
 
                               {msgAttachments.length > 0 && (
-                                <AttachmentListRenderer
-                                  attachments={msgAttachments}
-                                  compact
-                                />
+                                <div className="pt-2 clear-both">
+                                  <AttachmentListRenderer
+                                    attachments={msgAttachments}
+                                    compact
+                                  />
+                                </div>
                               )}
 
                               {/* Кнопка подтверждения ознакомления для циркуляров (Broadcast Read Receipts) */}
-                              {!isDirectMsg && activeCommThread.type === 'broadcast' && (
-                                <div className="pt-1.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
+                              {!isDirectThread && activeCommThread.type === 'broadcast' && (
+                                <div className="pt-2 mt-1.5 border-t border-white/10 flex items-center justify-between gap-2 clear-both">
                                   {(() => {
                                     const ackList = Array.isArray(msg.acknowledged_by)
                                       ? msg.acknowledged_by
@@ -4427,13 +4537,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                               acknowledged_by: nextAck,
                                             });
                                           }}
-                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
                                             isAcked
-                                              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                                              : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:text-white'
+                                              ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+                                              : 'bg-black/20 border-white/15 text-white/80 hover:text-white'
                                           }`}
                                         >
-                                          <Check className="w-2.5 h-2.5 text-emerald-400" />
+                                          <Check className="w-2.5 h-2.5 text-emerald-300" />
                                           <span>
                                             {isAcked
                                               ? isEn
@@ -4445,7 +4555,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                           </span>
                                         </button>
                                         {ackList.length > 0 && (
-                                          <span className="text-[10px] text-zinc-400 tabular-nums">
+                                          <span className="text-[10px] opacity-75 tabular-nums">
                                             {isEn
                                               ? `Read by: ${ackList.length}`
                                               : `Ознакомились: ${ackList.length} сотр.`}
@@ -4459,13 +4569,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             </div>
                           </div>
 
-                          {isOutgoing && (
-                            <UserAvatar
-                              name={senderName}
-                              avatarUrl={senderAvatarUrl}
-                              size="sm"
-                              className="mb-0.5"
-                            />
+                          {/* Пилюли поставленных реакций под баблом */}
+                          {reactionEntries.length > 0 && (
+                            <div
+                              className={`flex flex-wrap items-center gap-1 mt-1 ${
+                                isOutgoing ? 'justify-end' : isDirectThread ? 'justify-start' : 'pl-9'
+                              }`}
+                            >
+                              {reactionEntries.map(([emoji, userIds]) => {
+                                const myId = String(currentProfile?.id || 'root');
+                                const isMine =
+                                  Array.isArray(userIds) && userIds.includes(myId);
+                                return (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    onClick={() => void handleToggleMessageReaction(msg, emoji)}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                                      isMine
+                                        ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200'
+                                        : 'bg-zinc-900/90 border-white/10 text-zinc-300 hover:bg-zinc-800'
+                                    }`}
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="tabular-nums text-[10px]">
+                                      {Array.isArray(userIds) ? userIds.length : 1}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           )}
                         </div>
                       );
@@ -4473,9 +4606,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   )}
                 </div>
 
+                {/* Плашка цитируемого сообщения (Reply Banner) над полем ввода */}
+                {replyingToMessage && (
+                  <div className="shrink-0 px-4 py-2 border-t border-white/[0.07] bg-[#14141A] flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Reply className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <div className="min-w-0 border-l-2 border-indigo-500 pl-2">
+                        <div className="text-[11px] font-semibold text-indigo-300 truncate">
+                          {isEn ? 'Reply to' : 'В ответ'} {replyingToMessage.sender_name}
+                        </div>
+                        <div className="text-xs text-zinc-400 truncate">
+                          {replyingToMessage.text}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingToMessage(null)}
+                      className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+                      aria-label={isEn ? 'Cancel reply' : 'Отменить ответ'}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 {/* Превью выбранных вложений перед отправкой */}
                 {commAttachments.length > 0 && (
-                  <div className="shrink-0 px-3 pt-2.5 pb-1 border-t border-white/[0.06] bg-zinc-950/90">
+                  <div className="shrink-0 px-4 pt-2.5 pb-1 border-t border-white/[0.06] bg-zinc-950/90">
                     <PendingAttachmentsStrip
                       attachments={commAttachments}
                       onRemove={(id) =>
@@ -4485,83 +4643,131 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
 
-                {/* Современная 1-строчная панель ввода (Composer), жестко прибитая к низу (shrink-0 sticky bottom-0) */}
-                <form
-                  onSubmit={handleSendCorporateMessage}
-                  className="shrink-0 sticky bottom-0 flex items-center gap-2 p-2.5 border-t border-white/[0.08] bg-[#121216]"
-                >
-                  <input
-                    ref={commFileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
-                    onChange={handleCommFilesSelected}
-                    className="hidden"
-                  />
+                {/* Современная капсула ввода (Composer) с Emoji Picker, Paperclip, Input, Urgent и круглой кнопкой Send */}
+                <div className="relative shrink-0 sticky bottom-0 p-3 border-t border-white/[0.07] bg-[#111115]">
+                  {showEmojiPicker && (
+                    <div className="absolute bottom-16 left-4 z-30 p-2 rounded-2xl bg-[#18181F] border border-white/10 shadow-2xl grid grid-cols-8 gap-1">
+                      {[
+                        '👍',
+                        '🔥',
+                        '❤️',
+                        '😂',
+                        '🤝',
+                        '✅',
+                        '⚡',
+                        '🚀',
+                        '👏',
+                        '👀',
+                        '🤔',
+                        '🎯',
+                        '💼',
+                        '📊',
+                        '🎉',
+                        '🙏',
+                      ].map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            setCommText((prev) => `${prev}${emoji}`);
+                            setShowEmojiPicker(false);
+                          }}
+                          className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-base transition-transform hover:scale-110"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                  <button
-                    type="button"
-                    disabled={isProcessingCommAttachment || isSendingComm}
-                    onClick={() => commFileInputRef.current?.click()}
-                    title={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
-                    aria-label={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
-                    className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-white/[0.08] bg-[#16161A] text-zinc-400 hover:text-white hover:border-white/20 transition-colors shrink-0"
+                  <form
+                    onSubmit={handleSendCorporateMessage}
+                    className="flex items-center gap-1.5 rounded-full bg-zinc-900/90 border border-white/10 px-2 py-1.5 shadow-lg"
                   >
-                    {isProcessingCommAttachment ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Paperclip className="w-4 h-4" />
-                    )}
-                  </button>
+                    <input
+                      ref={commFileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                      onChange={handleCommFilesSelected}
+                      className="hidden"
+                    />
 
-                  <input
-                    type="text"
-                    value={commText}
-                    onChange={(e) => setCommText(e.target.value)}
-                    placeholder={isEn ? 'Message...' : 'Сообщение...'}
-                    className="flex-1 min-w-0 h-10 rounded-xl border border-white/[0.08] bg-[#16161A] px-3.5 text-sm text-white placeholder:text-zinc-500 focus:border-white/30 focus:outline-none"
-                  />
+                    <button
+                      type="button"
+                      disabled={isProcessingCommAttachment || isSendingComm}
+                      onClick={() => commFileInputRef.current?.click()}
+                      title={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
+                      aria-label={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-full text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors shrink-0"
+                    >
+                      {isProcessingCommAttachment ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Paperclip className="w-4 h-4" />
+                      )}
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setCommUrgent((prev) => !prev)}
-                    aria-label={isEn ? 'Urgent Telegram Push' : 'Срочный Push в Telegram'}
-                    title={
-                      commUrgent
-                        ? isEn
-                          ? 'Urgent push enabled (click to make normal)'
-                          : 'Срочный Push-статус включен (отметить как обычное)'
-                        : isEn
-                        ? 'Mark message as Urgent'
-                        : 'Отметить сообщение как «Срочно»'
-                    }
-                    className={`inline-flex items-center justify-center w-9 h-9 rounded-xl border transition-colors shrink-0 ${
-                      commUrgent
-                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
-                        : 'bg-[#16161A] border-white/[0.08] text-zinc-400 hover:text-white hover:border-white/20'
-                    }`}
-                  >
-                    <Zap className="w-4 h-4" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker((prev) => !prev)}
+                      title={isEn ? 'Insert emoji' : 'Добавить эмодзи'}
+                      aria-label={isEn ? 'Insert emoji' : 'Добавить эмодзи'}
+                      className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors shrink-0 ${
+                        showEmojiPicker
+                          ? 'bg-indigo-500/20 text-indigo-300'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      <Smile className="w-4 h-4" />
+                    </button>
 
-                  <button
-                    type="submit"
-                    disabled={
-                      isSendingComm || (!commText.trim() && commAttachments.length === 0)
-                    }
-                    aria-label={isEn ? 'Send message' : 'Отправить сообщение'}
-                    className="inline-flex items-center justify-center gap-1.5 h-9 w-9 sm:w-auto sm:px-3.5 rounded-xl bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-40 text-xs font-semibold transition-colors shrink-0"
-                  >
-                    {isSendingComm ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5" />
-                    )}
-                    <span className="hidden sm:inline">
-                      {isSendingComm ? t('comm.sendingBtn') : isEn ? 'Send' : 'Отправить'}
-                    </span>
-                  </button>
-                </form>
+                    <input
+                      type="text"
+                      value={commText}
+                      onChange={(e) => setCommText(e.target.value)}
+                      placeholder={isEn ? 'Write a message...' : 'Написать сообщение...'}
+                      className="flex-1 min-w-0 h-8 bg-transparent px-2 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setCommUrgent((prev) => !prev)}
+                      aria-label={isEn ? 'Urgent Telegram Push' : 'Срочный Push в Telegram'}
+                      title={
+                        commUrgent
+                          ? isEn
+                            ? 'Urgent push enabled'
+                            : 'Срочный Push-статус включен'
+                          : isEn
+                          ? 'Mark message as Urgent'
+                          : 'Отметить сообщение как «Срочно»'
+                      }
+                      className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors shrink-0 ${
+                        commUrgent
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      <Zap className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={
+                        isSendingComm || (!commText.trim() && commAttachments.length === 0)
+                      }
+                      aria-label={isEn ? 'Send message' : 'Отправить сообщение'}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors shrink-0 shadow-sm"
+                    >
+                      {isSendingComm ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </form>
+                </div>
               </section>
             </div>
             ))}

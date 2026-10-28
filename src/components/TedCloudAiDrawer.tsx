@@ -11,6 +11,9 @@ import {
   Check,
   Paperclip,
   ListChecks,
+  Sparkles,
+  MessageSquare,
+  ArrowUpRight,
 } from 'lucide-react';
 import {
   AiAssistantMode,
@@ -35,12 +38,20 @@ import {
   processFilesToAttachments,
 } from './AttachmentSystem';
 
+interface ExecutedAiActionItem {
+  type: 'task_created' | 'deal_created' | 'message_sent';
+  record: Record<string, any>;
+  targetName?: string;
+  summary: string;
+}
+
 interface AiChatEntry {
   id: string;
   role: 'user' | 'assistant';
   headline?: string;
   metrics?: AiAssistantMetric[];
   sections?: AiAssistantSection[];
+  executedActions?: ExecutedAiActionItem[];
   suggestedTaskTitle?: string;
   attachments?: AttachmentItem[];
   text: string;
@@ -72,9 +83,10 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   leads,
   messages,
   onNavigateToCrm,
+  onNavigateToTasks,
   onRefreshWorkspace,
 }) => {
-  const { language } = useLocale();
+  const { language, formatMoney } = useLocale();
   const isEn = language === 'en';
   const [entries, setEntries] = useState<AiChatEntry[]>([]);
   const [question, setQuestion] = useState('');
@@ -181,6 +193,14 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
       const payload = await response.json();
       if (response.ok && payload?.reply) {
+        const executedActions: ExecutedAiActionItem[] = Array.isArray(payload.executedActions)
+          ? payload.executedActions
+          : [];
+
+        if (executedActions.length > 0 && onRefreshWorkspace) {
+          void onRefreshWorkspace();
+        }
+
         setEntries((prev) => [
           ...prev,
           {
@@ -195,6 +215,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               Array.isArray(payload.sections) && payload.sections.length > 0
                 ? payload.sections
                 : localBaseline.sections,
+            executedActions: executedActions.length > 0 ? executedActions : undefined,
             suggestedTaskTitle,
             text: payload.reply,
             timestamp: new Date().toLocaleTimeString(isEn ? 'en-US' : 'ru-RU', {
@@ -345,7 +366,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   TedCloud Intelligence
                 </h2>
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                  Online
+                  Action Engine
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 truncate">
@@ -365,7 +386,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           </button>
         </div>
 
-        {/* 2x2 Grid of Quick Scenarios (Block 2) */}
+        {/* 2x2 Grid of Quick Scenarios */}
         <div className="grid grid-cols-2 gap-2 p-3 border-b border-white/[0.07] bg-[#0F0F14] shrink-0">
           <button
             type="button"
@@ -432,21 +453,66 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         {/* Conversational Stream */}
         <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3.5">
           {entries.length === 0 && (
-            <div className="rounded-xl border border-white/[0.08] bg-[#131319] p-3.5 space-y-2.5 text-zinc-200">
+            <div className="rounded-xl border border-white/[0.08] bg-[#131319] p-3.5 space-y-3 text-zinc-200">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-white flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-                  TedCloud Copilot
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  TedCloud Action Engine
                 </span>
-                <span className="text-[10px] text-zinc-500">
-                  {isEn ? 'Ready' : 'Готов к работе'}
+                <span className="text-[10px] text-emerald-400 font-medium">
+                  {isEn ? 'Direct DB Execution' : 'Прямое управление БД'}
                 </span>
               </div>
               <p className="text-xs text-zinc-300 leading-relaxed">
                 {isEn
-                  ? `Select a quick scenario above, attach a document or screenshot via the paperclip icon, or ask any question about "${companyName}".`
-                  : `Выберите быстрый сценарий сверху, прикрепите документ/скриншот через скрепку или задайте вопрос по данным «${companyName}».`}
+                  ? `Give direct natural commands to create tasks, add CRM deals, or message colleagues in "${companyName}".`
+                  : `Отдавайте прямые команды естественным языком: создавайте задачи, сделки в CRM или отправляйте сообщения коллегам в «${companyName}».`}
               </p>
+
+              {/* Quick Natural Command Chips (Block 3) */}
+              <div className="pt-1 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => {
+                    const targetColleague =
+                      nodes.find((n) => n.id !== currentProfile?.id)?.name ||
+                      currentProfile?.name ||
+                      'команды';
+                    const cmd = isEn
+                      ? `Create task Prepare Q4 financial audit for ${targetColleague}`
+                      : `Создай задачу Подготовить финансовый отчет для ${targetColleague}`;
+                    void triggerAiAction('custom', cmd, cmd);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-[11px] font-medium text-indigo-300 transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>
+                    {isEn
+                      ? 'Create task via AI'
+                      : '«Создай задачу подготовить отчет...»'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => {
+                    const cmd = isEn
+                      ? 'Create deal Enterprise Cloud License for 1500000'
+                      : 'Создай сделку Северсталь Логистика на 1.5 млн';
+                    void triggerAiAction('custom', cmd, cmd);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-[11px] font-medium text-emerald-300 transition-colors"
+                >
+                  <Briefcase className="w-3 h-3" />
+                  <span>
+                    {isEn
+                      ? 'Create CRM deal via AI'
+                      : '«Создай сделку Северсталь на 1.5 млн»'}
+                  </span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -458,9 +524,9 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               }`}
             >
               {entry.role === 'user' ? (
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm border border-white/15 bg-zinc-800/90 px-3.5 py-2.5 text-white space-y-1">
-                  <div className="flex items-center justify-between gap-3 text-[10px] text-zinc-400">
-                    <span className="font-semibold text-zinc-200">
+                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600/90 px-3.5 py-2.5 text-white space-y-1 shadow-sm">
+                  <div className="flex items-center justify-between gap-3 text-[10px] text-indigo-100/80">
+                    <span className="font-semibold text-white">
                       {currentProfile?.name || (isEn ? 'You' : 'Вы')}
                     </span>
                     <span className="tabular-nums">{entry.timestamp}</span>
@@ -488,6 +554,84 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                       {entry.timestamp}
                     </span>
                   </div>
+
+                  {/* Interactive Executed DB Action Cards (Block 3) */}
+                  {entry.executedActions && entry.executedActions.length > 0 && (
+                    <div className="space-y-2">
+                      {entry.executedActions.map((act, aIdx) => (
+                        <div
+                          key={aIdx}
+                          className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span>
+                                {act.type === 'task_created'
+                                  ? isEn
+                                    ? 'Task Created in DB'
+                                    : 'Задача записана в БД'
+                                  : act.type === 'deal_created'
+                                  ? isEn
+                                    ? 'CRM Deal Created in DB'
+                                    : 'Сделка записана в CRM'
+                                  : isEn
+                                  ? 'Message Sent'
+                                  : 'Сообщение доставлено'}
+                              </span>
+                            </span>
+
+                            {act.type === 'task_created' && onNavigateToTasks && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onNavigateToTasks();
+                                  onClose();
+                                }}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
+                              >
+                                <span>{isEn ? 'Open Tasks' : 'В задачи'}</span>
+                                <ArrowUpRight className="w-3 h-3" />
+                              </button>
+                            )}
+
+                            {act.type === 'deal_created' && onNavigateToCrm && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onNavigateToCrm();
+                                  onClose();
+                                }}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
+                              >
+                                <span>{isEn ? 'Open CRM' : 'В воронку'}</span>
+                                <ArrowUpRight className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="text-xs font-medium text-white">
+                            {act.record?.title ||
+                              act.record?.client_name ||
+                              act.summary}
+                          </div>
+
+                          {act.type === 'deal_created' && act.record?.amount !== undefined && (
+                            <div className="text-[11px] text-emerald-200 font-semibold tabular-nums">
+                              {formatMoney(Number(act.record.amount) || 0)}
+                            </div>
+                          )}
+
+                          {act.targetName && (
+                            <div className="text-[11px] text-zinc-300">
+                              {isEn ? 'Assignee / Recipient:' : 'Исполнитель / Адресат:'}{' '}
+                              <span className="font-medium text-white">{act.targetName}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Mini-Grid of Key Metrics */}
                   {entry.metrics && entry.metrics.length > 0 && (
@@ -545,67 +689,69 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   )}
 
                   {/* Interactive Direct DB Action Buttons inside AI Response */}
-                  <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={
-                        creatingTaskEntryId === entry.id || Boolean(createdTaskIds[entry.id])
-                      }
-                      onClick={() => void handleDirectCreateSuggestedTask(entry)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-colors ${
-                        createdTaskIds[entry.id]
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : 'bg-white text-black hover:bg-zinc-200'
-                      }`}
-                    >
-                      {creatingTaskEntryId === entry.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : createdTaskIds[entry.id] ? (
-                        <Check className="w-3 h-3" />
-                      ) : (
-                        <Plus className="w-3 h-3" />
-                      )}
-                      <span>
-                        {createdTaskIds[entry.id]
-                          ? isEn
-                            ? 'Task Created in Registry'
-                            : 'Задача создана в реестре'
-                          : isEn
-                          ? '+ Create Suggested Task'
-                          : '+ Создать предложенную задачу'}
-                      </span>
-                    </button>
+                  {(!entry.executedActions || entry.executedActions.length === 0) && (
+                    <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={
+                          creatingTaskEntryId === entry.id || Boolean(createdTaskIds[entry.id])
+                        }
+                        onClick={() => void handleDirectCreateSuggestedTask(entry)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-colors ${
+                          createdTaskIds[entry.id]
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-white text-black hover:bg-zinc-200'
+                        }`}
+                      >
+                        {creatingTaskEntryId === entry.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : createdTaskIds[entry.id] ? (
+                          <Check className="w-3 h-3" />
+                        ) : (
+                          <Plus className="w-3 h-3" />
+                        )}
+                        <span>
+                          {createdTaskIds[entry.id]
+                            ? isEn
+                              ? 'Task Created in Registry'
+                              : 'Задача создана в реестре'
+                            : isEn
+                            ? '+ Create Suggested Task'
+                            : '+ Создать предложенную задачу'}
+                        </span>
+                      </button>
 
-                    <button
-                      type="button"
-                      disabled={
-                        decomposingEntryId === entry.id || Boolean(decomposedEntryIds[entry.id])
-                      }
-                      onClick={() => void handleDirectDecomposeActiveTasks(entry.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-medium transition-colors ${
-                        decomposedEntryIds[entry.id]
-                          ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
-                          : 'border-white/10 bg-zinc-900 hover:bg-zinc-800 text-zinc-200'
-                      }`}
-                    >
-                      {decomposingEntryId === entry.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : decomposedEntryIds[entry.id] ? (
-                        <Check className="w-3 h-3 text-emerald-400" />
-                      ) : (
-                        <ListChecks className="w-3 h-3 text-indigo-400" />
-                      )}
-                      <span>
-                        {decomposedEntryIds[entry.id]
-                          ? isEn
-                            ? 'Active Tasks Decomposed'
-                            : 'Чек-листы сформированы'
-                          : isEn
-                          ? 'Decompose Active Tasks'
-                          : 'Декомпозировать активные задачи'}
-                      </span>
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        disabled={
+                          decomposingEntryId === entry.id || Boolean(decomposedEntryIds[entry.id])
+                        }
+                        onClick={() => void handleDirectDecomposeActiveTasks(entry.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-medium transition-colors ${
+                          decomposedEntryIds[entry.id]
+                            ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                            : 'border-white/10 bg-zinc-900 hover:bg-zinc-800 text-zinc-200'
+                        }`}
+                      >
+                        {decomposingEntryId === entry.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : decomposedEntryIds[entry.id] ? (
+                          <Check className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <ListChecks className="w-3 h-3 text-indigo-400" />
+                        )}
+                        <span>
+                          {decomposedEntryIds[entry.id]
+                            ? isEn
+                              ? 'Active Tasks Decomposed'
+                              : 'Чек-листы сформированы'
+                            : isEn
+                            ? 'Decompose Active Tasks'
+                            : 'Декомпозировать активные задачи'}
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -616,8 +762,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
               <span>
                 {isEn
-                  ? 'TedCloud Intelligence is analyzing workspace data...'
-                  : 'TedCloud Intelligence анализирует данные...'}
+                  ? 'TedCloud Intelligence is executing request...'
+                  : 'TedCloud Intelligence выполняет команду...'}
               </span>
             </div>
           )}
@@ -659,8 +805,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={
                 isEn
-                  ? 'Ask Copilot about tasks, CRM deals, or team...'
-                  : 'Спросите Copilot о задачах, сделках или команде...'
+                  ? 'Command: "Create task...", "Create deal...", or ask...'
+                  : 'Команда: «Создай задачу...», «Создай сделку...» или вопрос...'
               }
               className="flex-1 h-10 rounded-xl border border-white/10 bg-[#17171F] px-3.5 text-sm text-white placeholder:text-zinc-500 focus:border-white/30 focus:outline-none min-w-0"
             />
@@ -668,7 +814,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             <button
               type="submit"
               disabled={isLoading || (!question.trim() && pendingAttachments.length === 0)}
-              className="w-9 h-9 rounded-xl bg-white text-black hover:bg-zinc-200 disabled:opacity-40 flex items-center justify-center shrink-0 transition-colors"
+              className="w-9 h-9 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 flex items-center justify-center shrink-0 transition-colors"
               title={isEn ? 'Send' : 'Отправить'}
             >
               {isLoading ? (
@@ -683,3 +829,4 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     </div>
   );
 };
+

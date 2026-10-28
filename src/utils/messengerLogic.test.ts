@@ -195,7 +195,7 @@ test('filterMessagesForActiveThread isolates 1-on-1 dialogs and channels accurat
   assert.equal(isDirectMessageBetweenUsers(messages[0], me, lytnev), false);
 });
 
-test('formatCompactIncomingTelegramMessage formats strictly 2 lines without bureaucratic headers and extractColleagueNameFromReplyText parses swipe-reply', async () => {
+test('formatCompactIncomingTelegramMessage formats natural live message without bureaucratic headers and extractColleagueNameFromReplyText parses swipe-reply', async () => {
   const { formatCompactIncomingTelegramMessage, extractColleagueNameFromReplyText } = await import(
     '../../api/telegram/webhook'
   );
@@ -206,11 +206,11 @@ test('formatCompactIncomingTelegramMessage formats strictly 2 lines without bure
     targetType: 'direct',
     messageText: 'Пошли обедать в 13:00',
   });
-  const lines = dmText.split('\n');
-  assert.equal(lines.length, 2);
-  assert.equal(lines[0], '<b>Шмаков Н.В.</b> · <i>Генеральный директор</i>');
-  assert.equal(lines[1], 'Пошли обедать в 13:00');
+  assert.equal(dmText, '💬 <b>Шмаков Н.В.:</b> Пошли обедать в 13:00');
   assert.equal(dmText.includes('ВХОДЯЩЕЕ СООБЩЕНИЕ'), false);
+
+  const liveQuoted = '💬 Шмаков Н.В.: Пошли обедать в 13:00';
+  assert.equal(extractColleagueNameFromReplyText(liveQuoted), 'Шмаков Н.В.');
 
   const plainQuoted = 'Шмаков Н.В. · Генеральный директор\nПошли обедать в 13:00';
   assert.equal(extractColleagueNameFromReplyText(plainQuoted), 'Шмаков Н.В.');

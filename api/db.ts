@@ -797,6 +797,9 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'message_text',
     'text',
     'attachments',
+    'reactions',
+    'reply_to',
+    'acknowledged_by',
     'is_urgent',
     'is_read',
     'created_at',
@@ -1642,48 +1645,46 @@ async function sendTelegramWorkspaceMessagePush(params: {
       ''
   ).trim();
 
-  // БЛОК 1: Строго в 2 строки без бюрократических шапок
-  const htmlText = `<b>${senderName}</b> · <i>${senderRole}</i>${compactTag}\n${escapeHtml(msgBody)}`;
+  // БЛОК 1 (Silent Live Bridge): Живой формат сообщения без бюрократии и без кнопок под каждой фразой
+  const htmlText = compactTag
+    ? `💬 <b>${senderName}</b>${compactTag}: ${escapeHtml(msgBody)}`
+    : `💬 <b>${senderName}:</b> ${escapeHtml(msgBody)}`;
 
   const senderIdForReply = String(messageRecord.sender_id || senderNode?.id || '');
-  const msgIdForTask = String(messageRecord.id || '');
-
-  // 2 ряда живых кнопок под входящим сообщением (БЛОК 3.2)
-  const inlineKeyboard: any[][] = [];
-  if (senderIdForReply) {
-    inlineKeyboard.push([
-      {
-        text: 'Принято, сделаю',
-        callback_data: `quick_ack_${senderIdForReply}`,
-      },
-      {
-        text: 'На связи через 10 мин',
-        callback_data: `quick_wait_${senderIdForReply}`,
-      },
-    ]);
-  }
-  const secondRow: any[] = [];
-  if (senderIdForReply) {
-    secondRow.push({
-      text: 'Написать ответ',
-      callback_data: `reply_msg_${senderIdForReply}`,
-    });
-  }
-  if (msgIdForTask) {
-    secondRow.push({
-      text: 'В задачу',
-      callback_data: `msg_to_task_${msgIdForTask}`,
-    });
-  }
-  if (secondRow.length > 0) {
-    inlineKeyboard.push(secondRow);
-  }
+  const isDirectPush = Boolean(rawTargetType === 'direct' || messageRecord.recipient_id);
 
   let pushedCount = 0;
 
   for (const recipient of targetNodes) {
     const tgChatId = String(recipient.telegram_chat_id || '').trim();
     if (!tgChatId) continue;
+
+    // Автоматически запоминаем отправителя как активного собеседника для получателя в Telegram
+    if (isDirectPush && senderIdForReply && recipient.id) {
+      try {
+        const nextPerms = {
+          ...(recipient.permissions && typeof recipient.permissions === 'object'
+            ? recipient.permissions
+            : {}),
+          pending_comm: {
+            mode: 'direct',
+            targetNodeId: senderIdForReply,
+          },
+        };
+        if (supabase) {
+          await safeSupabaseUpdate(supabase, 'organization_nodes', String(recipient.id), {
+            permissions: nextPerms,
+          });
+        } else {
+          const idx = localStore.organization_nodes.findIndex(
+            (n) => String(n.id) === String(recipient.id)
+          );
+          if (idx !== -1) {
+            localStore.organization_nodes[idx].permissions = nextPerms;
+          }
+        }
+      } catch {}
+    }
 
     try {
       const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1693,7 +1694,6 @@ async function sendTelegramWorkspaceMessagePush(params: {
           chat_id: tgChatId,
           text: htmlText,
           parse_mode: 'HTML',
-          ...(inlineKeyboard.length > 0 ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {}),
         }),
       });
       if (tgRes.ok) {
@@ -1991,12 +1991,46 @@ function normalizeMessageRow(row: any) {
 
   const attachments = normalizeAttachmentsServer(row.attachments ?? extras?.attachments);
 
+  let rawReactions = row.reactions ?? extras?.reactions ?? null;
+  if (typeof rawReactions === 'string') {
+    try {
+      rawReactions = JSON.parse(rawReactions);
+    } catch {
+      rawReactions = null;
+    }
+  }
+  const reactions: Record<string, string[]> =
+    rawReactions && typeof rawReactions === 'object' && !Array.isArray(rawReactions)
+      ? rawReactions
+      : {};
+
+  let rawReplyTo = row.reply_to ?? extras?.reply_to ?? null;
+  if (typeof rawReplyTo === 'string') {
+    try {
+      rawReplyTo = JSON.parse(rawReplyTo);
+    } catch {
+      rawReplyTo = null;
+    }
+  }
+  const replyTo =
+    rawReplyTo &&
+    typeof rawReplyTo === 'object' &&
+    (rawReplyTo.text || rawReplyTo.sender_name)
+      ? {
+          id: String(rawReplyTo.id || ''),
+          sender_name: String(rawReplyTo.sender_name || ''),
+          text: String(rawReplyTo.text || ''),
+        }
+      : null;
+
   return {
     ...merged,
     message_text: msgBody,
     text: msgBody,
     content: msgBody,
     attachments,
+    reactions,
+    reply_to: replyTo,
     target_type: targetType,
     target_id: targetId,
     target_label: targetLabel,
@@ -2428,6 +2462,373 @@ export default async function handler(req: any, res: any) {
           taskDescription || targetTaskRecord?.description || targetTaskRecord?.notes || '';
 
         const aiLang: 'ru' | 'en' = body.lang === 'en' ? 'en' : 'ru';
+        const isEn = aiLang === 'en';
+        const effectiveCompanyId =
+          requestedCompanyId ||
+          currentUser?.company_id ||
+          (await resolveDefaultCompanyId(supabase));
+
+        // =========================================================================
+        // БЛОК 3: РЕАЛЬНЫЙ ИСПОЛНИТЕЛЬНЫЙ ДВИЖОК TEDCLOUD INTELLIGENCE (ACTION ENGINE)
+        // Прямое распознавание команд пользователя и запись в БД (tasks, crm_leads, workspace_messages)
+        // =========================================================================
+        const executedActions: Array<{
+          type: 'task_created' | 'deal_created' | 'message_sent';
+          record: any;
+          targetName?: string;
+          summary: string;
+        }> = [];
+
+        const escapeRegExp = (str: string) =>
+          str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        const matchEmployeeFuzzy = (queryText: string): any | null => {
+          const qLower = queryText.toLowerCase();
+          for (const emp of companyNodes) {
+            const fullName = String(emp.name || '').trim();
+            if (!fullName) continue;
+            const tokens = fullName
+              .toLowerCase()
+              .replace(/[.,]/g, ' ')
+              .split(/\s+/)
+              .filter((tok) => tok.length >= 3);
+            for (const tok of tokens) {
+              // Stem for Russian declensions (e.g., "Фролова" / "Фролову" -> stem "фролов")
+              const stem =
+                tok.length >= 6
+                  ? tok.slice(0, -2)
+                  : tok.length >= 4
+                  ? tok.slice(0, -1)
+                  : tok;
+              if (stem.length >= 3 && qLower.includes(stem)) {
+                return emp;
+              }
+            }
+          }
+          return null;
+        };
+
+        if (mode === 'custom' && promptText.length > 0) {
+          const cleanPrompt = promptText.replace(/\[Attached files:[^\]]*\]/gi, '').trim();
+          const lowerPrompt = cleanPrompt.toLowerCase();
+
+          // 1. Распознавание команды СОЗДАНИЯ СДЕЛКИ CRM:
+          // "Создай сделку Северсталь на 1500000", "Добавь сделку Газпром 500 тыс", "Create deal Acme Corp for 250000"
+          const isDealIntent =
+            /(?:создай|создать|добавь|добавить|открой|заведи|create|add|new)\s+(?:новую\s+)?(?:сделк[уи]|лид|контракт|deal|lead)(?=\s|$|[:,.!?])/i.test(
+              cleanPrompt
+            );
+
+          // 2. Распознавание команды ОТПРАВКИ СООБЩЕНИЯ КОЛЛЕГЕ:
+          // "Напиши Фролову что отчет готов", "Отправь сообщение Лытневу: ждем баланс", "Message Ivan that..."
+          const isMessageIntent =
+            /^(?:напиши|отправь\s+сообщение|передай|сообщи|message|send\s+message\s+to)(?=\s|$|[:,.!?])/i.test(
+              cleanPrompt
+            );
+
+          // 3. Распознавание команды СОЗДАНИЯ ЗАДАЧИ / ПОРУЧЕНИЯ:
+          // "Создай задачу подготовить отчет для Фролова", "Поставь задачу Лытневу закрыть смету", "Create task..."
+          const isTaskIntent =
+            /(?:создай|создать|поставь|поставить|назначь|назначить|делегируй|добавь|create|assign|add)\s+(?:новую\s+|срочную\s+)?(?:задач[уи]|поручение|тикет|task|assignment)(?=\s|$|[:,.!?])/i.test(
+              cleanPrompt
+            );
+
+          if (isDealIntent) {
+            let afterCmd = cleanPrompt
+              .replace(
+                /^.*?(?:создай|создать|добавь|добавить|открой|заведи|create|add|new)\s+(?:новую\s+)?(?:сделк[уи]|лид|контракт|deal|lead)\s*(?:с\s+|по\s+|для\s+|with\s+|for\s+)?/i,
+                ''
+              )
+              .trim();
+
+            let parsedAmount = 0;
+            const amountMatch = afterCmd.match(
+              /(?:на\s+сумму|на|сумма|бюджет|for|worth|amount)?\s*(\d+(?:[\s.,]\d+)*)\s*(млн|миллион\w*|тыс\w*|к|k|m|руб\w*|₽|\$|usd|eur)?/i
+            );
+            if (amountMatch && amountMatch[1]) {
+              const rawNum = Number(
+                amountMatch[1].replace(/\s+/g, '').replace(',', '.')
+              );
+              const unit = String(amountMatch[2] || '').toLowerCase();
+              if (!Number.isNaN(rawNum) && rawNum > 0) {
+                if (unit.startsWith('млн') || unit.startsWith('миллион') || unit === 'm') {
+                  parsedAmount = Math.round(rawNum * 1_000_000);
+                } else if (unit.startsWith('тыс') || unit === 'к' || unit === 'k') {
+                  parsedAmount = Math.round(rawNum * 1_000);
+                } else {
+                  parsedAmount = Math.round(rawNum);
+                }
+              }
+              afterCmd = afterCmd.replace(amountMatch[0], ' ').trim();
+            }
+
+            const clientName =
+              afterCmd
+                .replace(/^[«"']|[»"']$/g, '')
+                .replace(/\s+(?:на|в|по|for|with)\s*$/i, '')
+                .trim() || (isEn ? 'New Enterprise Client' : 'Новый корпоративный клиент');
+
+            const assigneeNode = matchEmployeeFuzzy(cleanPrompt) || currentUser || companyNodes[0] || null;
+            const rawLeadPayload: Record<string, any> = {
+              company_id: effectiveCompanyId,
+              client_name: clientName,
+              full_name: clientName,
+              title: clientName,
+              amount: parsedAmount,
+              deal_value: parsedAmount,
+              status: 'New',
+              stage: 'New',
+              department: assigneeNode?.department || currentUser?.department || null,
+              assigned_to: assigneeNode?.id || null,
+              owner_node_id: assigneeNode?.id || null,
+              jurisdiction: 'RU',
+              source: 'TedCloud Intelligence',
+            };
+
+            let savedLead: any = {
+              id: crypto.randomUUID(),
+              ...rawLeadPayload,
+              created_at: new Date().toISOString(),
+            };
+            if (!supabase) {
+              localStore.crm_leads.unshift(savedLead);
+            } else {
+              const { data } = await safeSupabaseInsert(supabase, 'crm_leads', rawLeadPayload);
+              if (data) savedLead = { ...rawLeadPayload, ...data };
+              localStore.crm_leads.unshift(savedLead);
+            }
+            const normLead = normalizeLeadRow(savedLead);
+            companyLeads.unshift(normLead);
+
+            await recordAuditLog({
+              supabase,
+              companyId: effectiveCompanyId,
+              actorId: currentUser?.id || null,
+              actorName: currentUser?.name || 'TedCloud Intelligence',
+              actionType: 'AI_DEAL_CREATED',
+              entityType: 'crm_leads',
+              entityId: normLead.id,
+              details: `ИИ-ассистент создал сделку CRM «${clientName}» на сумму ${parsedAmount.toLocaleString('ru-RU')} RUB`,
+            });
+
+            executedActions.push({
+              type: 'deal_created',
+              record: normLead,
+              targetName: assigneeNode?.name || undefined,
+              summary: isEn
+                ? `Created CRM deal "${clientName}" (${parsedAmount.toLocaleString('en-US')} RUB)`
+                : `Создана сделка CRM «${clientName}» на сумму ${parsedAmount.toLocaleString('ru-RU')} ₽`,
+            });
+          } else if (isMessageIntent) {
+            const afterCmd = cleanPrompt
+              .replace(
+                /^(?:напиши|отправь\s+сообщение|передай|сообщи|message|send\s+message\s+to)\s+/i,
+                ''
+              )
+              .trim();
+
+            const targetColleague = matchEmployeeFuzzy(afterCmd);
+            let messageBody = afterCmd;
+            if (targetColleague) {
+              const nameParts = String(targetColleague.name || '')
+                .split(/\s+/)
+                .filter(Boolean);
+              for (const part of nameParts) {
+                const rawStem = part.length >= 5 ? part.slice(0, -1) : part;
+                const stem = escapeRegExp(rawStem);
+                const reg = new RegExp(`^\\s*${stem}\\S*\\s*`, 'i');
+                messageBody = messageBody.replace(reg, '');
+              }
+            }
+            messageBody = messageBody
+              .replace(/^(?:что|чтобы|о\s+том\s+что|то\s+что|that|:|-|—)\s*/i, '')
+              .trim();
+            if (!messageBody) {
+              messageBody = afterCmd;
+            }
+
+            const resolvedType = targetColleague ? 'direct' : 'broadcast';
+            const resolvedTargetId = targetColleague ? String(targetColleague.id) : null;
+            const resolvedTargetLabel = targetColleague
+              ? String(targetColleague.name)
+              : 'Всем сотрудникам';
+
+            const rawMsgPayload: Record<string, any> = {
+              company_id: effectiveCompanyId,
+              sender_id: currentUser?.id || companyNodes[0]?.id || null,
+              sender_name: currentUser?.name || 'Руководитель',
+              sender_role: currentUser?.role_type || 'Руководитель',
+              target_type: resolvedType,
+              target_id: resolvedTargetId,
+              target_label: resolvedTargetLabel,
+              message_text: messageBody,
+              text: messageBody,
+              is_urgent: lowerPrompt.includes('срочно') || lowerPrompt.includes('urgent'),
+              is_read: false,
+            };
+
+            let savedMsg: any = {
+              id: crypto.randomUUID(),
+              ...rawMsgPayload,
+              created_at: new Date().toISOString(),
+            };
+            if (supabase) {
+              const { data } = await safeSupabaseInsert(
+                supabase,
+                'workspace_messages',
+                rawMsgPayload
+              );
+              if (data) savedMsg = { ...rawMsgPayload, ...data };
+            }
+            localStore.workspace_messages.unshift(savedMsg);
+            const normMsg = normalizeMessageRow(savedMsg);
+            companyMessages.unshift(normMsg);
+
+            await sendTelegramWorkspaceMessagePush({
+              supabase,
+              messageRecord: savedMsg,
+            });
+
+            executedActions.push({
+              type: 'message_sent',
+              record: normMsg,
+              targetName: resolvedTargetLabel,
+              summary: isEn
+                ? `Sent message to ${resolvedTargetLabel}: "${messageBody}"`
+                : `Отправлено сообщение (${resolvedTargetLabel}): «${messageBody}»`,
+            });
+          } else if (isTaskIntent) {
+            const targetColleague = matchEmployeeFuzzy(cleanPrompt);
+            const assigneeNode = targetColleague || currentUser || companyNodes[0] || null;
+
+            let extractedTitle = cleanPrompt
+              .replace(
+                /^.*?(?:создай|создать|поставь|поставить|назначь|назначить|делегируй|добавь|create|assign|add)\s+(?:новую\s+|срочную\s+)?(?:задач[уи]|поручение|тикет|task|assignment)\s*(?::|-|—)?\s*/i,
+                ''
+              )
+              .trim();
+
+            if (targetColleague) {
+              const fullEscaped = escapeRegExp(String(targetColleague.name || '').trim());
+              if (fullEscaped) {
+                extractedTitle = extractedTitle.replace(
+                  new RegExp(`\\s+(?:для|сотруднику|исполнителю|коллеге|на|for|to)\\s+${fullEscaped}`, 'gi'),
+                  ''
+                );
+              }
+              const nameParts = String(targetColleague.name || '')
+                .split(/\s+/)
+                .filter((p) => p.length >= 3);
+              for (const part of nameParts) {
+                const rawStem = part.length >= 5 ? part.slice(0, -1) : part;
+                const stem = escapeRegExp(rawStem);
+                const forRegex = new RegExp(
+                  `\\s+(?:для|сотруднику|исполнителю|коллеге|на|for|to)\\s+${stem}\\S*`,
+                  'gi'
+                );
+                extractedTitle = extractedTitle.replace(forRegex, '');
+                const leadRegex = new RegExp(`^${stem}\\S*\\s+`, 'i');
+                extractedTitle = extractedTitle.replace(leadRegex, '');
+              }
+            }
+
+            extractedTitle =
+              extractedTitle.replace(/^[«"']|[»"']$/g, '').trim() ||
+              cleanPrompt;
+
+            const isHighPriority =
+              lowerPrompt.includes('срочн') ||
+              lowerPrompt.includes('важн') ||
+              lowerPrompt.includes('high') ||
+              lowerPrompt.includes('urgent') ||
+              extractedTitle.startsWith('!');
+            const cleanTaskTitle = extractedTitle.replace(/^!\s*/, '').trim();
+            const { checklist, summary } = buildBuiltInChecklistForTask(
+              cleanTaskTitle,
+              null,
+              aiLang
+            );
+
+            const rawTaskPayload: Record<string, any> = {
+              company_id: effectiveCompanyId,
+              title: cleanTaskTitle,
+              description: summary,
+              notes: summary,
+              type: 'Task',
+              priority: isHighPriority ? 'High' : 'Medium',
+              status: 'Todo',
+              department: assigneeNode?.department || currentUser?.department || null,
+              assigned_to: assigneeNode?.id || null,
+              owner_node_id: assigneeNode?.id || null,
+              created_by: currentUser?.id || assigneeNode?.id || null,
+              checklist,
+              ai_summary: summary,
+            };
+
+            let savedTask: any = {
+              id: crypto.randomUUID(),
+              ...rawTaskPayload,
+              created_at: new Date().toISOString(),
+            };
+            if (!supabase) {
+              localStore.tasks.unshift(savedTask);
+            } else {
+              const { data } = await safeSupabaseInsert(supabase, 'tasks', rawTaskPayload);
+              if (data) savedTask = { ...rawTaskPayload, ...data };
+              localStore.tasks.unshift(savedTask);
+            }
+            if (savedTask?.id) {
+              recordExtrasOverlay.set(`tasks:${savedTask.id}`, {
+                department: rawTaskPayload.department,
+                assigned_to: rawTaskPayload.assigned_to,
+                checklist,
+                ai_summary: summary,
+              });
+            }
+            const normTask = normalizeTaskRow(savedTask);
+            companyTasks.unshift(normTask);
+
+            await sendTelegramTaskOrDepartmentPush({
+              supabase,
+              companyId: effectiveCompanyId,
+              assignedToId: assigneeNode?.id || null,
+              createdById: currentUser?.id || null,
+              department: rawTaskPayload.department,
+              taskId: normTask.id,
+              taskTitle: normTask.title,
+              taskDescription: summary,
+              taskPriority: normTask.priority,
+              taskType: 'Task',
+            });
+
+            await recordAuditLog({
+              supabase,
+              companyId: effectiveCompanyId,
+              actorId: currentUser?.id || null,
+              actorName: currentUser?.name || 'TedCloud Intelligence',
+              actionType: 'AI_TASK_CREATED',
+              entityType: 'tasks',
+              entityId: normTask.id,
+              details: `ИИ-ассистент создал задачу «${cleanTaskTitle}» (Исполнитель: ${
+                assigneeNode?.name || 'Не назначен'
+              })`,
+            });
+
+            executedActions.push({
+              type: 'task_created',
+              record: normTask,
+              targetName: assigneeNode?.name || undefined,
+              summary: isEn
+                ? `Created task "${cleanTaskTitle}" assigned to ${
+                    assigneeNode?.name || 'General Queue'
+                  }`
+                : `Поручение «${cleanTaskTitle}» создано и назначено на ${
+                    assigneeNode?.name || 'общую очередь'
+                  }`,
+            });
+          }
+        }
+
         // First compute deterministic analysis & checklist as baseline / fallback
         const builtInResult = runBuiltInAiAssistant({
           mode,
@@ -2445,11 +2846,23 @@ export default async function handler(req: any, res: any) {
 
         let finalResult = builtInResult;
 
-        // If GEMINI_API_KEY is configured, enhance response via native fetch (zero external SDK dependency)
+        if (executedActions.length > 0) {
+          const actionSummaryLines = executedActions.map((act) => act.summary);
+          finalResult = {
+            ...builtInResult,
+            headline: isEn ? 'Action Executed in Workspace' : 'Команда выполнена в базе данных',
+            sections: [],
+            reply: isEn
+              ? `Done! ${actionSummaryLines.join(' ')} The workspace registry and Telegram notifications have been updated.`
+              : `Готово! ${actionSummaryLines.join('. ')}. Запись сохранена в реестре компании, уведомление отправлено.`,
+          };
+        }
+
+        // If GEMINI_API_KEY is configured, enhance response via Gemini 3.8 Flash
         const geminiApiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
-        if (geminiApiKey) {
+        if (geminiApiKey && executedActions.length === 0) {
           try {
-            const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
+            const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(
               geminiApiKey
             )}`;
 
@@ -2467,12 +2880,12 @@ export default async function handler(req: any, res: any) {
                     {
                       parts: [
                         {
-                          text: `Ты — корпоративный аналитический движок TedCloud Intelligence (Linear / Attio / Stripe standard).
-Декомпозируй корпоративную задачу «${targetTitle}» ${
+                          text: `Ты — корпоративный ассистент руководителя TedCloud Intelligence (Claude / Linear Ask standard).
+Декомпозируй задачу «${targetTitle}» ${
                             resolvedTaskDescription
                               ? `(Описание: ${resolvedTaskDescription})`
                               : ''
-                          } на 4–5 конкретных, деловых подзадач для чек-листа и напиши краткое резюме (1 предложение). Отвечай строго в формате JSON {"subtasks": ["..."], "summary": "..."} на русском языке без эмодзи.`,
+                          } на 4–5 конкретных подзадач для чек-листа и напиши краткое резюме (1 предложение). Отвечай строго в формате JSON {"subtasks": ["..."], "summary": "..."} без КАПСЛОКА.`,
                         },
                       ],
                     },
@@ -2561,10 +2974,10 @@ export default async function handler(req: any, res: any) {
 
               const systemTaskInstruction =
                 mode === 'daily_brief'
-                  ? 'Сформируй деловую персональную сводку дня для текущего сотрудника по его активным задачам, срочным поручениям и сделкам компании без КАПСЛОКА.'
+                  ? 'Сформируй живую, лаконичную сводку дня для текущего сотрудника по его активным задачам и сделкам компании (как личный бизнес-ассистент уровня Claude / Linear Ask, без бюрократических штампов и без КАПСЛОКА).'
                   : mode === 'workload_analysis'
-                  ? 'Проведи управленческий анализ распределения задач по сотрудникам/отделам и конверсии сделок CRM, дай 2–3 конкретные рекомендации без КАПСЛОКА.'
-                  : `Ответь на вопрос сотрудника: «${promptText}» строго на основе данных компании без КАПСЛОКА.`;
+                  ? 'Проведи живой управленческий анализ распределения задач по сотрудникам и конверсии сделок CRM, дай 2–3 точные рекомендации без КАПСЛОКА.'
+                  : `Ответь на запрос сотрудника: «${promptText}» живо, по делу и на основе реальных данных компании без КАПСЛОКА.`;
 
               const geminiRes = await fetch(geminiEndpoint, {
                 method: 'POST',
@@ -2577,7 +2990,7 @@ export default async function handler(req: any, res: any) {
                     {
                       parts: [
                         {
-                          text: `Ты — корпоративный аналитический движок TedCloud Intelligence (Linear / Attio / Stripe standard). Отвечай емко, структурно, деловым русским языком без КАПСЛОКА и без лишней воды.
+                          text: `Ты — интеллектуальный бизнес-ассистент TedCloud Intelligence (Claude / Linear Ask standard). Отвечай живо, лаконично и по существу, без КАПСЛОКА и без канцелярита.
 Контекст компании (JSON): ${contextDigest}
 Базовая аналитическая выжимка:
 ${builtInResult.reply}
@@ -2650,6 +3063,7 @@ ${builtInResult.reply}
         return res.status(200).json({
           ok: true,
           ...finalResult,
+          executedActions,
           updatedTask: updatedTaskRecord,
         });
       }
@@ -3362,6 +3776,24 @@ ${builtInResult.reply}
           resolvedTargetLabel = String(payload.target_label || 'Всем сотрудникам').trim();
         }
 
+        const replyToPayload =
+          payload.reply_to &&
+          typeof payload.reply_to === 'object' &&
+          (payload.reply_to.text || payload.reply_to.sender_name)
+            ? {
+                id: String(payload.reply_to.id || ''),
+                sender_name: String(payload.reply_to.sender_name || ''),
+                text: String(payload.reply_to.text || ''),
+              }
+            : null;
+
+        const reactionsPayload =
+          payload.reactions &&
+          typeof payload.reactions === 'object' &&
+          !Array.isArray(payload.reactions)
+            ? payload.reactions
+            : {};
+
         const rawMsgPayload: Record<string, any> = {
           company_id: companyId,
           sender_id: payload.sender_id || null,
@@ -3373,6 +3805,8 @@ ${builtInResult.reply}
           message_text: msgBody,
           text: msgBody,
           attachments,
+          reactions: reactionsPayload,
+          reply_to: replyToPayload,
           is_urgent: Boolean(payload.is_urgent),
           is_read: Boolean(payload.is_read ?? false),
         };
@@ -3381,6 +3815,8 @@ ${builtInResult.reply}
           ...rawMsgPayload,
           content: msgBody,
           attachments,
+          reactions: reactionsPayload,
+          reply_to: replyToPayload,
           scope_type: resolvedTargetType === 'general' ? 'broadcast' : resolvedTargetType,
           recipient_id:
             resolvedTargetType === 'direct'
@@ -3429,6 +3865,8 @@ ${builtInResult.reply}
               text: msgBody,
               content: msgBody,
               attachments,
+              reactions: data.reactions ?? reactionsPayload,
+              reply_to: data.reply_to ?? replyToPayload,
             };
           }
         }
@@ -3439,6 +3877,8 @@ ${builtInResult.reply}
             message_text: msgBody,
             text: msgBody,
             attachments,
+            reactions: reactionsPayload,
+            reply_to: replyToPayload,
             target_type: resolvedTargetType,
             target_id: resolvedTargetId,
             target_label: resolvedTargetLabel,
@@ -3944,6 +4384,13 @@ ${builtInResult.reply}
           rawUpdates.acknowledged_by = Array.isArray(updates.acknowledged_by)
             ? updates.acknowledged_by
             : [];
+        }
+        if (updates.reactions !== undefined) {
+          rawUpdates.reactions =
+            updates.reactions && typeof updates.reactions === 'object' ? updates.reactions : {};
+        }
+        if (updates.reply_to !== undefined) {
+          rawUpdates.reply_to = updates.reply_to || null;
         }
         if (updates.message_text !== undefined || updates.text !== undefined) {
           const nextText = String(updates.message_text ?? updates.text ?? '').trim();

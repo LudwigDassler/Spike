@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Loader2, AlertTriangle, RefreshCw, LogOut } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { AuthGate } from './components/AuthGate';
@@ -114,7 +114,34 @@ function AppContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [serverBotUsername, setServerBotUsername] = useState<string>('');
 
+  const isFetchingRef = useRef<boolean>(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Global crash protection for unhandled promise rejections (Block 4)
+  useEffect(() => {
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.warn('[TedCloud CrashGuard] Handled background rejection:', event.reason);
+      event.preventDefault();
+    };
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+  }, []);
+
   const loadWorkspaceData = useCallback(async (isInitial = false, silent = false) => {
+    // Prevent overlapping background polls (Block 4)
+    if (silent && isFetchingRef.current) {
+      return;
+    }
+    isFetchingRef.current = true;
+
+    if (!silent && abortControllerRef.current) {
+      try {
+        abortControllerRef.current.abort();
+      } catch {}
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     if (isInitial) setIsLoading(true);
     if (!silent) {
       setIsSyncing(true);
@@ -139,7 +166,9 @@ function AppContent() {
 
       const resolvedChatId = urlTgId || urlChatId || storedChatId || null;
       if (urlTgId || urlChatId) {
-        localStorage.setItem(SESSION_CHAT_ID_KEY, urlTgId || urlChatId || '');
+        try {
+          localStorage.setItem(SESSION_CHAT_ID_KEY, urlTgId || urlChatId || '');
+        } catch {}
       }
       setActiveChatId(resolvedChatId);
 
@@ -157,6 +186,7 @@ function AppContent() {
         method: 'GET',
         headers: { Accept: 'application/json' },
         cache: 'no-store',
+        signal: controller.signal,
       });
 
       const payload = await safeParseJson(response);
@@ -172,30 +202,44 @@ function AppContent() {
       setNodes(loadedNodes);
       setTasks(Array.isArray(payload.tasks) ? payload.tasks : []);
       setLeads(Array.isArray(payload.leads) ? payload.leads : []);
-      setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+      setMessages((prev) => {
+        const serverList: WorkspaceMessageRecord[] = Array.isArray(payload.messages)
+          ? payload.messages
+          : [];
+        const optimisticItems = (Array.isArray(prev) ? prev : []).filter((m) =>
+          String(m.id || '').startsWith('optimistic_')
+        );
+        return optimisticItems.length > 0
+          ? [...optimisticItems, ...serverList]
+          : serverList;
+      });
       setInvoices(Array.isArray(payload.invoices) ? payload.invoices : []);
       setAuditLogs(Array.isArray(payload.auditLogs) ? payload.auditLogs : []);
 
       if (typeof payload.botUsername === 'string' && payload.botUsername.trim()) {
         const cleanBot = payload.botUsername.replace(/^@/, '').trim();
         setServerBotUsername(cleanBot);
-        localStorage.setItem('tedcloud_bot_username', cleanBot);
+        try {
+          localStorage.setItem('tedcloud_bot_username', cleanBot);
+        } catch {}
       }
 
       if (payload.currentProfile) {
         setCurrentProfile(payload.currentProfile);
-        localStorage.setItem(SESSION_PROFILE_ID_KEY, payload.currentProfile.id);
-        if (payload.currentProfile.company_id) {
-          localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.currentProfile.company_id);
-        } else if (payload.company?.id) {
-          localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.company.id);
-        }
-        if (payload.currentProfile.telegram_chat_id) {
-          localStorage.setItem(
-            SESSION_CHAT_ID_KEY,
-            String(payload.currentProfile.telegram_chat_id)
-          );
-        }
+        try {
+          localStorage.setItem(SESSION_PROFILE_ID_KEY, payload.currentProfile.id);
+          if (payload.currentProfile.company_id) {
+            localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.currentProfile.company_id);
+          } else if (payload.company?.id) {
+            localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.company.id);
+          }
+          if (payload.currentProfile.telegram_chat_id) {
+            localStorage.setItem(
+              SESSION_CHAT_ID_KEY,
+              String(payload.currentProfile.telegram_chat_id)
+            );
+          }
+        } catch {}
         if (hasUrlAutoAuth) {
           const cleanUrl = new URL(window.location.href);
           cleanUrl.searchParams.delete('invite');
@@ -207,25 +251,31 @@ function AppContent() {
         const matched = loadedNodes.find((n) => n.id === storedProfileId) || null;
         setCurrentProfile(matched);
         if (!matched) {
-          localStorage.removeItem(SESSION_PROFILE_ID_KEY);
-          localStorage.removeItem(SESSION_COMPANY_ID_KEY);
+          try {
+            localStorage.removeItem(SESSION_PROFILE_ID_KEY);
+            localStorage.removeItem(SESSION_COMPANY_ID_KEY);
+          } catch {}
         }
       } else if (params.get('autostart') === '1' && loadedNodes.length > 0) {
         const autoNode = loadedNodes[0];
         setCurrentProfile(autoNode);
-        localStorage.setItem(SESSION_PROFILE_ID_KEY, autoNode.id);
-        if (autoNode.company_id) {
-          localStorage.setItem(SESSION_COMPANY_ID_KEY, autoNode.company_id);
-        }
+        try {
+          localStorage.setItem(SESSION_PROFILE_ID_KEY, autoNode.id);
+          if (autoNode.company_id) {
+            localStorage.setItem(SESSION_COMPANY_ID_KEY, autoNode.company_id);
+          }
+        } catch {}
       } else {
         setCurrentProfile(null);
       }
     } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       if (!silent) {
         console.error('[App] Failed to fetch workspace data from /api/db:', err);
         setErrorMessage(formatError(err));
       }
     } finally {
+      isFetchingRef.current = false;
       if (isInitial) setIsLoading(false);
       if (!silent) setIsSyncing(false);
     }
@@ -245,17 +295,19 @@ function AppContent() {
 
   const handleAuthenticated = useCallback(
     async (profile: OrganizationNode, authCompany: Company | null) => {
-      localStorage.setItem(SESSION_PROFILE_ID_KEY, profile.id);
-      if (profile.company_id) {
-        localStorage.setItem(SESSION_COMPANY_ID_KEY, profile.company_id);
-      } else if (authCompany?.id) {
-        localStorage.setItem(SESSION_COMPANY_ID_KEY, authCompany.id);
-      }
-      if (profile.telegram_chat_id) {
-        localStorage.setItem(SESSION_CHAT_ID_KEY, String(profile.telegram_chat_id));
-      } else {
-        localStorage.removeItem(SESSION_CHAT_ID_KEY);
-      }
+      try {
+        localStorage.setItem(SESSION_PROFILE_ID_KEY, profile.id);
+        if (profile.company_id) {
+          localStorage.setItem(SESSION_COMPANY_ID_KEY, profile.company_id);
+        } else if (authCompany?.id) {
+          localStorage.setItem(SESSION_COMPANY_ID_KEY, authCompany.id);
+        }
+        if (profile.telegram_chat_id) {
+          localStorage.setItem(SESSION_CHAT_ID_KEY, String(profile.telegram_chat_id));
+        } else {
+          localStorage.removeItem(SESSION_CHAT_ID_KEY);
+        }
+      } catch {}
       // Clear stale state before loading the newly authenticated workspace
       setNodes([profile]);
       setTasks([]);
@@ -282,6 +334,42 @@ function AppContent() {
       id: string,
       updates: Record<string, any>
     ): Promise<{ ok: boolean; pushSent?: boolean }> => {
+      // Optimistic UI (0ms instant update — Block 4)
+      if (table === 'tasks') {
+        setTasks((prev) =>
+          (Array.isArray(prev) ? prev : []).map((item) =>
+            item.id === id ? { ...item, ...updates } : item
+          )
+        );
+      } else if (table === 'crm_leads') {
+        setLeads((prev) =>
+          (Array.isArray(prev) ? prev : []).map((item) =>
+            item.id === id ? { ...item, ...updates } : item
+          )
+        );
+      } else if (table === 'organization_nodes') {
+        setNodes((prev) =>
+          (Array.isArray(prev) ? prev : []).map((item) =>
+            item.id === id ? { ...item, ...updates } : item
+          )
+        );
+        setCurrentProfile((prev) => (prev && prev.id === id ? { ...prev, ...updates } : prev));
+      } else if (table === 'companies') {
+        setCompany((prev) => (prev ? { ...prev, ...updates } : prev));
+      } else if (table === 'billing_invoices') {
+        setInvoices((prev) =>
+          (Array.isArray(prev) ? prev : []).map((item) =>
+            item.id === id ? { ...item, ...updates } : item
+          )
+        );
+      } else if (table === 'workspace_messages') {
+        setMessages((prev) =>
+          (Array.isArray(prev) ? prev : []).map((item) =>
+            item.id === id ? { ...item, ...updates } : item
+          )
+        );
+      }
+
       try {
         const response = await fetch('/api/db', {
           method: 'PATCH',
@@ -347,6 +435,7 @@ function AppContent() {
       } catch (err: any) {
         console.error(`[App] PATCH ${table} error:`, err);
         setErrorMessage(formatError(err));
+        void loadWorkspaceData(false, true);
         return { ok: false };
       }
     },
@@ -400,6 +489,34 @@ function AppContent() {
     async (
       messagePayload: Record<string, any>
     ): Promise<{ ok: boolean; pushSent?: boolean }> => {
+      // Optimistic UI (0ms instant bubble rendering — Block 4)
+      const tempId = `optimistic_${Date.now()}`;
+      const optimisticMessage: WorkspaceMessageRecord = {
+        id: tempId,
+        company_id: messagePayload.company_id || null,
+        sender_id: messagePayload.sender_id || null,
+        sender_name: messagePayload.sender_name || 'Сотрудник TedCloud',
+        sender_role: messagePayload.sender_role || '',
+        target_type: messagePayload.target_type || 'broadcast',
+        target_id: messagePayload.target_id || 'general',
+        target_label: messagePayload.target_label || 'Циркуляр по компании',
+        scope_type: messagePayload.scope_type || messagePayload.target_type || 'broadcast',
+        recipient_id: messagePayload.recipient_id || null,
+        target_department: messagePayload.target_department || null,
+        message_text: messagePayload.message_text || messagePayload.text || '',
+        text: messagePayload.text || messagePayload.message_text || '',
+        is_urgent: Boolean(messagePayload.is_urgent),
+        is_read: false,
+        attachments: Array.isArray(messagePayload.attachments)
+          ? messagePayload.attachments
+          : [],
+        reactions: {},
+        reply_to: messagePayload.reply_to || null,
+        created_at: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [optimisticMessage, ...(Array.isArray(prev) ? prev : [])]);
+
       try {
         const response = await fetch('/api/db', {
           method: 'POST',
@@ -413,7 +530,11 @@ function AppContent() {
         }
 
         if (result.data) {
-          setMessages((prev) => [result.data, ...(Array.isArray(prev) ? prev : [])]);
+          setMessages((prev) =>
+            (Array.isArray(prev) ? prev : []).map((m) =>
+              m.id === tempId ? result.data : m
+            )
+          );
         }
 
         return {
@@ -422,6 +543,9 @@ function AppContent() {
         };
       } catch (err: any) {
         console.error('[App] POST workspace_messages error:', err);
+        setMessages((prev) =>
+          (Array.isArray(prev) ? prev : []).filter((m) => m.id !== tempId)
+        );
         setErrorMessage(formatError(err));
         return { ok: false };
       }

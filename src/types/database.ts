@@ -200,6 +200,12 @@ export interface WorkspaceMessageRecord {
   is_urgent?: boolean;
   is_read?: boolean;
   acknowledged_by?: string[] | null;
+  reactions?: Record<string, string[]> | null;
+  reply_to?: {
+    id: string;
+    sender_name: string;
+    text: string;
+  } | null;
   created_at?: string;
 }
 

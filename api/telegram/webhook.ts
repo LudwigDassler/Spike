@@ -26,23 +26,31 @@ function escapeHtmlBasic(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
+export function formatMoscowTime(date = new Date()): string {
+  return date.toLocaleTimeString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function formatCompactIncomingTelegramMessage(params: {
   senderName: string;
-  senderRole: string;
+  senderRole?: string;
   messageText: string;
   targetType?: 'direct' | 'department' | 'broadcast' | string;
   targetLabel?: string | null;
 }): string {
   const name = escapeHtmlBasic(params.senderName || 'Сотрудник');
-  const role = escapeHtmlBasic(params.senderRole || 'Специалист');
   const body = escapeHtmlBasic(params.messageText || '');
   const tType = String(params.targetType || 'direct').toLowerCase();
   const label = String(params.targetLabel || '').trim();
 
-  const tagPart =
-    tType !== 'direct' && label ? ` [${escapeHtmlBasic(label)}]` : '';
+  if (tType !== 'direct' && label) {
+    return `💬 <b>${name}</b> [${escapeHtmlBasic(label)}]: ${body}`;
+  }
 
-  return `<b>${name}</b> · <i>${role}</i>${tagPart}\n${body}`;
+  return `💬 <b>${name}:</b> ${body}`;
 }
 
 export function extractColleagueNameFromReplyText(quotedText?: string | null): string | null {
@@ -54,8 +62,22 @@ export function extractColleagueNameFromReplyText(quotedText?: string | null): s
     .filter(Boolean);
   if (lines.length === 0) return null;
 
-  const firstLine = lines[0];
-  // Формат Блока 1: "Имя Фамилия · Должность" или "Имя Фамилия · Должность [Отдел]"
+  const firstLine = lines[0].replace(/<[^>]+>/g, '').trim();
+
+  // Новый нативный формат Блока 1: "💬 Имя Фамилия: текст" или "💬 Имя Фамилия [Отдел]: текст"
+  if (firstLine.startsWith('💬')) {
+    const withoutIcon = firstLine.replace(/^💬\s*/, '').trim();
+    const colonIdx = withoutIcon.indexOf(':');
+    if (colonIdx > 0) {
+      const namePart = withoutIcon
+        .slice(0, colonIdx)
+        .replace(/\s*\[[^\]]*\]\s*$/, '')
+        .trim();
+      if (namePart) return namePart;
+    }
+  }
+
+  // Поддержка формата "Имя Фамилия · Должность"
   if (firstLine.includes('·')) {
     const beforeDot = firstLine.split('·')[0].replace(/<[^>]+>/g, '').trim();
     if (beforeDot) return beforeDot;
@@ -71,6 +93,131 @@ export function extractColleagueNameFromReplyText(quotedText?: string | null): s
   }
 
   return null;
+}
+
+export function extractMessageBodyFromQuotedReply(quotedText?: string | null): string {
+  const raw = String(quotedText || '').trim();
+  if (!raw) return '';
+  const clean = raw.replace(/<[^>]+>/g, '').trim();
+  if (clean.startsWith('💬')) {
+    const colonIdx = clean.indexOf(':');
+    if (colonIdx !== -1 && colonIdx + 1 < clean.length) {
+      return clean.slice(colonIdx + 1).trim();
+    }
+  }
+  const lines = clean
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length > 1 && lines[0].includes('·')) {
+    return lines.slice(1).join(' ').trim();
+  }
+  return clean;
+}
+
+async function reactToTelegramMessage(
+  chatId: string | number,
+  messageId?: number | null,
+  emoji = '⚡'
+): Promise<boolean> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !messageId) return false;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/setMessageReaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji }],
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function extractTelegramMediaAttachments(message: any): Promise<{
+  attachments: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    url: string;
+  }>;
+  photoFileId?: string;
+  documentFileId?: string;
+}> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !message) return { attachments: [] };
+
+  let fileId = '';
+  let fileName = '';
+  let mimeType = 'application/octet-stream';
+  let fileSize = 0;
+  let photoFileId: string | undefined;
+  let documentFileId: string | undefined;
+
+  if (Array.isArray(message.photo) && message.photo.length > 0) {
+    const largestPhoto = message.photo[message.photo.length - 1];
+    fileId = String(largestPhoto?.file_id || '');
+    photoFileId = fileId;
+    fileSize = Number(largestPhoto?.file_size || 0);
+    mimeType = 'image/jpeg';
+    fileName = `telegram_photo_${Date.now()}.jpg`;
+  } else if (message.document && message.document.file_id) {
+    fileId = String(message.document.file_id || '');
+    documentFileId = fileId;
+    fileSize = Number(message.document.file_size || 0);
+    mimeType = String(message.document.mime_type || 'application/octet-stream');
+    fileName = String(message.document.file_name || `telegram_file_${Date.now()}`);
+  }
+
+  if (!fileId) return { attachments: [] };
+
+  try {
+    const getFileRes = await fetch(
+      `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`
+    );
+    if (!getFileRes.ok) return { attachments: [], photoFileId, documentFileId };
+    const getFileJson: any = await getFileRes.json();
+    const filePath = getFileJson?.result?.file_path;
+    if (!filePath) return { attachments: [], photoFileId, documentFileId };
+
+    const directFileUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
+    let finalUrl = directFileUrl;
+
+    if (!fileSize || fileSize <= 2.5 * 1024 * 1024) {
+      try {
+        const binaryRes = await fetch(directFileUrl);
+        if (binaryRes.ok) {
+          const arrayBuffer = await binaryRes.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString('base64');
+          finalUrl = `data:${mimeType};base64,${base64}`;
+          if (!fileSize) fileSize = arrayBuffer.byteLength;
+        }
+      } catch {
+        finalUrl = directFileUrl;
+      }
+    }
+
+    return {
+      attachments: [
+        {
+          id: `tg_att_${Date.now()}`,
+          name: fileName,
+          mimeType,
+          size: fileSize,
+          url: finalUrl,
+        },
+      ],
+      photoFileId,
+      documentFileId,
+    };
+  } catch {
+    return { attachments: [], photoFileId, documentFileId };
+  }
 }
 
 function runBuiltInAiAssistant(params: {
@@ -160,6 +307,10 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'target_label',
     'message_text',
     'text',
+    'attachments',
+    'reactions',
+    'reply_to',
+    'acknowledged_by',
     'is_urgent',
     'is_read',
     'created_at',
@@ -681,7 +832,7 @@ export default async function handler(req: any, res: any) {
       const geminiApiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
       if (geminiApiKey) {
         try {
-          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
           const geminiRes = await fetch(geminiUrl, {
             method: 'POST',
             headers: {
@@ -1222,10 +1373,7 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         const { rawPerms } = resolveUserPermissions(user);
         const companyId = user.company_id || (await resolveCompanyId());
         const nowIso = new Date().toISOString();
-        const timeLabel = new Date().toLocaleTimeString('ru-RU', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
+        const timeLabel = formatMoscowTime();
 
         if (!rawPerms?.shift_started_at) {
           await safeWebhookUpdate(supabase, 'organization_nodes', user.id, {
@@ -1329,6 +1477,11 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         );
 
         if (targetNode?.telegram_chat_id && String(targetNode.telegram_chat_id).trim() !== cbChatId) {
+          const recChatId = String(targetNode.telegram_chat_id).trim();
+          await setPendingCommForUser(recChatId, targetNode, {
+            mode: 'direct',
+            targetNodeId: String(user.id),
+          });
           const incomingHtml = formatCompactIncomingTelegramMessage({
             senderName: user.name || 'Сотрудник',
             senderRole: user.role_type || 'Специалист',
@@ -1336,26 +1489,10 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
             targetType: 'direct',
             targetLabel: null,
           });
-          await sendTelegramMessage(String(targetNode.telegram_chat_id).trim(), incomingHtml, {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: 'Написать ответ', callback_data: `reply_msg_${user.id}` },
-                  ...(insertedQuickMsg?.id
-                    ? [{ text: 'В задачу', callback_data: `msg_to_task_${insertedQuickMsg.id}` }]
-                    : []),
-                ],
-              ],
-            },
-          });
+          await sendTelegramMessage(recChatId, incomingHtml);
         }
 
-        if (cbId) await answerCallbackQuery(cbId, 'Быстрый ответ отправлен');
-        await sendTelegramMessage(cbChatId, '✓ Быстрый ответ отправлен', {
-          reply_markup: {
-            inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
-          },
-        });
+        if (cbId) await answerCallbackQuery(cbId, 'Ответ отправлен');
         return res.status(200).send('OK');
       }
 
@@ -1381,7 +1518,7 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
             mode: 'direct',
             targetNodeId,
           });
-          const { data: insertedMsg } = await safeWebhookInsert(supabase, 'workspace_messages', {
+          await safeWebhookInsert(supabase, 'workspace_messages', {
             company_id: companyId,
             sender_id: user.id,
             sender_name: user.name,
@@ -1395,6 +1532,11 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
             is_read: false,
           });
           if (targetNode?.telegram_chat_id && String(targetNode.telegram_chat_id).trim() !== cbChatId) {
+            const recChatId = String(targetNode.telegram_chat_id).trim();
+            await setPendingCommForUser(recChatId, targetNode, {
+              mode: 'direct',
+              targetNodeId: String(user.id),
+            });
             const incomingHtml = formatCompactIncomingTelegramMessage({
               senderName: user.name || 'Сотрудник',
               senderRole: user.role_type || 'Специалист',
@@ -1402,44 +1544,9 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
               targetType: 'direct',
               targetLabel: null,
             });
-            await sendTelegramMessage(String(targetNode.telegram_chat_id).trim(), incomingHtml, {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    { text: 'Принято, сделаю', callback_data: `quick_ack_${user.id}` },
-                    { text: 'На связи через 10 мин', callback_data: `quick_wait_${user.id}` },
-                  ],
-                  [
-                    { text: 'Написать ответ', callback_data: `reply_msg_${user.id}` },
-                    ...(insertedMsg?.id
-                      ? [{ text: 'В задачу', callback_data: `msg_to_task_${insertedMsg.id}` }]
-                      : []),
-                  ],
-                ],
-              },
-            });
+            await sendTelegramMessage(recChatId, incomingHtml);
           }
-          const timeNow = new Date().toLocaleTimeString('ru-RU', {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
           if (cbId) await answerCallbackQuery(cbId, `Отправлено: ${targetName}`);
-          await sendTelegramMessage(
-            cbChatId,
-            `✓ Доставлено (${timeNow}) · Можете продолжить мысль или нажать «Командное меню»`,
-            {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    ...(insertedMsg?.id
-                      ? [{ text: 'Поставить как задачу', callback_data: `msg_to_task_${insertedMsg.id}` }]
-                      : []),
-                    { text: 'Меню', callback_data: 'open_main_menu' },
-                  ],
-                ],
-              },
-            }
-          );
           return res.status(200).send('OK');
         } else {
           const { data: createdTask } = await safeWebhookInsert(supabase, 'tasks', {
@@ -1730,7 +1837,10 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
     // =========================================================================
     const message = body?.message || body?.edited_message;
     const rawChatId = message?.chat?.id;
-    const rawText: string = (message?.text || '').trim();
+    const rawText: string = (message?.text || message?.caption || '').trim();
+    const hasMedia = Boolean(
+      (Array.isArray(message?.photo) && message.photo.length > 0) || message?.document
+    );
     const firstName: string = message?.from?.first_name || 'Сотрудник';
 
     if (!rawChatId) {
@@ -1792,7 +1902,53 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
       return res.status(200).send('OK');
     }
 
-    if (rawText.length > 0) {
+    // 5b. БЛОК 1: Превращение любого сообщения в задачу через свайп-Reply командами /task или +задача
+    const quotedMessageText =
+      message?.reply_to_message?.text || message?.reply_to_message?.caption || '';
+    const lowerRawCmd = rawText.toLowerCase();
+    if (
+      quotedMessageText &&
+      (lowerRawCmd === '/task' ||
+        lowerRawCmd.startsWith('/task ') ||
+        lowerRawCmd.startsWith('/task@') ||
+        lowerRawCmd === '+задача' ||
+        lowerRawCmd.startsWith('+задача ') ||
+        lowerRawCmd === 'в задачу')
+    ) {
+      const user = await findOrCreateUserByChatId(chatId, firstName);
+      const companyId = user.company_id || (await resolveCompanyId());
+      const customNote = rawText
+        .replace(/^(\/task(@\S+)?|\+задача|в задачу)\s*/i, '')
+        .trim();
+      const extractedBody = extractMessageBodyFromQuotedReply(quotedMessageText);
+      const taskTitle = (customNote || extractedBody || 'Поручение из сообщения в чате').slice(
+        0,
+        140
+      );
+
+      await safeWebhookInsert(supabase, 'tasks', {
+        company_id: companyId,
+        title: taskTitle,
+        description: extractedBody || taskTitle,
+        notes: extractedBody || taskTitle,
+        type: 'Task',
+        priority: taskTitle.startsWith('!') ? 'High' : 'Medium',
+        status: 'Todo',
+        department: user?.department || null,
+        assigned_to: user?.id || null,
+        owner_node_id: user?.id || null,
+        created_by: user?.id || null,
+      });
+
+      await reactToTelegramMessage(chatId, message?.message_id, '⚡');
+      await sendTelegramMessage(
+        chatId,
+        `✓ Задача создана: <b>${escapeHtml(taskTitle)}</b>`
+      );
+      return res.status(200).send('OK');
+    }
+
+    if (rawText.length > 0 || hasMedia) {
       const user = await findOrCreateUserByChatId(chatId, firstName);
       const companyId = user.company_id || (await resolveCompanyId());
       const { rawPerms, canAssignTasks } = resolveUserPermissions(user);
@@ -1819,7 +1975,6 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
       };
 
       // Нативный Reply в Telegram: если сотрудник делает свайп-ответить на сообщение коллеги
-      const quotedMessageText = message?.reply_to_message?.text || message?.reply_to_message?.caption;
       if (!activeCommState && !rawText.startsWith('/') && quotedMessageText) {
         const extractedColleagueName = extractColleagueNameFromReplyText(quotedMessageText);
         if (extractedColleagueName) {
@@ -1838,37 +1993,36 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
               mode: 'direct',
               targetNodeId: String(matchedNode.id),
             };
+            await setPendingCommForUser(chatId, user, activeCommState);
           }
         }
       }
 
       if (activeCommState && !rawText.startsWith('/')) {
-        // БЛОК 3.1: В режиме личного диалога ('direct') НЕ сбрасываем сессию, чтобы сотрудник мог писать сообщения подряд!
+        // В режиме личного диалога ('direct') сохраняем сессию, чтобы сотрудник мог писать сообщения подряд!
         if (activeCommState.mode !== 'direct') {
           await setPendingCommForUser(chatId, user, null);
         }
         const nodesList = await loadCompanyNodes();
 
-        // БЛОК 1: is_urgent ставится ТОЛЬКО если сообщение начинается с "!" (символ "!" убирается)
-        const { isUrgent: isUrgentMsg, cleanText: msgBody } =
-          parseTelegramUrgentMessage(rawText);
+        const mediaResult = hasMedia
+          ? await extractTelegramMediaAttachments(message)
+          : { attachments: [] };
 
-        if (!msgBody) {
-          await sendTelegramMessage(
-            chatId,
-            'Текст сообщения не может быть пустым.',
-            {
-              reply_markup: {
-                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
-              },
-            }
-          );
+        // БЛОК 1: is_urgent ставится ТОЛЬКО если сообщение начинается с "!" (символ "!" убирается)
+        const { isUrgent: isUrgentMsg, cleanText: parsedText } =
+          parseTelegramUrgentMessage(rawText);
+        const msgBody =
+          parsedText ||
+          (mediaResult.attachments.length > 0
+            ? `📎 ${mediaResult.attachments.map((a) => a.name).join(', ')}`
+            : '');
+
+        if (!msgBody && mediaResult.attachments.length === 0) {
           return res.status(200).send('OK');
         }
 
         let targetNodes: any[] = [];
-        let recipientShortName = 'Вся компания';
-
         let resolvedTargetType: 'direct' | 'department' | 'broadcast' = 'broadcast';
         let resolvedTargetId: string | null = null;
         let resolvedTargetLabel = 'Всем сотрудникам';
@@ -1880,7 +2034,6 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           resolvedTargetType = 'direct';
           resolvedTargetId = String(recipientNode?.id || activeCommState.targetNodeId);
           resolvedTargetLabel = recipientNode?.name || 'Сотрудник';
-          recipientShortName = recipientNode?.name || 'Сотрудник';
 
           if (recipientNode) {
             targetNodes = [recipientNode];
@@ -1890,7 +2043,6 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           resolvedTargetType = 'department';
           resolvedTargetId = deptClean;
           resolvedTargetLabel = deptClean;
-          recipientShortName = deptClean;
 
           targetNodes = nodesList.filter(
             (n: any) =>
@@ -1903,11 +2055,10 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           resolvedTargetType = 'broadcast';
           resolvedTargetId = null;
           resolvedTargetLabel = 'Всем сотрудникам';
-          recipientShortName = 'Всем сотрудникам';
           targetNodes = nodesList.filter((n: any) => String(n.id) !== String(user.id));
         }
 
-        const { data: insertedMsg } = await safeWebhookInsert(supabase, 'workspace_messages', {
+        await safeWebhookInsert(supabase, 'workspace_messages', {
           company_id: companyId,
           sender_id: user.id,
           sender_name: user.name,
@@ -1917,13 +2068,13 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           target_label: resolvedTargetLabel,
           message_text: msgBody,
           text: msgBody,
+          attachments: mediaResult.attachments,
           is_urgent: isUrgentMsg,
           is_read: false,
         });
 
-        const msgIdForTask = String(insertedMsg?.id || '');
-
-        // БЛОК 1: Форматируем входящее сообщение строго в 2 строки без шапок
+        // БЛОК 1: Живой формат входящего сообщения у получателя БЕЗ кнопок под каждой фразой:
+        // 💬 Имя Фамилия: Текст сообщения
         const incomingHtml = formatCompactIncomingTelegramMessage({
           senderName: user.name || 'Сотрудник',
           senderRole: user.role_type || 'Специалист',
@@ -1932,63 +2083,56 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           targetLabel: resolvedTargetType === 'direct' ? null : resolvedTargetLabel,
         });
 
-        // 2 ряда живых кнопок под входящим сообщением (БЛОК 3.2)
-        const quickReactionRow: any[] = [
-          {
-            text: 'Принято, сделаю',
-            callback_data: `quick_ack_${user.id}`,
-          },
-          {
-            text: 'На связи через 10 мин',
-            callback_data: `quick_wait_${user.id}`,
-          },
-        ];
-        const actionRow: any[] = [
-          {
-            text: 'Написать ответ',
-            callback_data: `reply_msg_${user.id}`,
-          },
-        ];
-        if (msgIdForTask) {
-          actionRow.push({
-            text: 'В задачу',
-            callback_data: `msg_to_task_${msgIdForTask}`,
-          });
-        }
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
         for (const recipient of targetNodes) {
           const recChatId = String(recipient?.telegram_chat_id || '').trim();
           if (!recChatId || recChatId === chatId) continue;
 
-          await sendTelegramMessage(recChatId, incomingHtml, {
-            reply_markup: {
-              inline_keyboard: [quickReactionRow, actionRow],
-            },
-          });
+          // Автоматически запоминаем отправителя как текущего активного собеседника для получателя!
+          if (resolvedTargetType === 'direct') {
+            await setPendingCommForUser(recChatId, recipient, {
+              mode: 'direct',
+              targetNodeId: String(user.id),
+            });
+          }
+
+          if (botToken && mediaResult.photoFileId) {
+            try {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: recChatId,
+                  photo: mediaResult.photoFileId,
+                  caption: incomingHtml,
+                  parse_mode: 'HTML',
+                }),
+              });
+              continue;
+            } catch {}
+          } else if (botToken && mediaResult.documentFileId) {
+            try {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: recChatId,
+                  document: mediaResult.documentFileId,
+                  caption: incomingHtml,
+                  parse_mode: 'HTML',
+                }),
+              });
+              continue;
+            } catch {}
+          }
+
+          await sendTelegramMessage(recChatId, incomingHtml);
         }
 
-        const timeStr = new Date().toLocaleTimeString('ru-RU', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-
-        // БЛОК 3.1: Подтверждение доставки с сохранением непрерывного диалога
-        await sendTelegramMessage(
-          chatId,
-          `✓ Доставлено (${timeStr}) · <b>${escapeHtml(recipientShortName)}</b> · Можете продолжить мысль или нажать «Меню»`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  ...(msgIdForTask
-                    ? [{ text: 'Поставить как задачу', callback_data: `msg_to_task_${msgIdForTask}` }]
-                    : []),
-                  { text: 'Меню', callback_data: 'open_main_menu' },
-                ],
-              ],
-            },
-          }
-        );
+        // БЛОК 1 (Silent Live Bridge): Никаких текстовых отписок «✓ Доставлено...»!
+        // Ставим нативную реакцию ⚡ на сообщение отправителя и держим чат идеально чистым.
+        await reactToTelegramMessage(chatId, message?.message_id, '⚡');
 
         return res.status(200).send('OK');
       }
