@@ -138,17 +138,47 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
     } catch {}
   };
 
+  const [autoSavedFlash, setAutoSavedFlash] = useState(false);
+
+  const triggerInstantRbacSave = async (
+    nextLevel: AccessLevel,
+    nextPermissions: EmployeePermissions
+  ) => {
+    setAutoSavedFlash(true);
+    try {
+      const resolvedDept = isCustomDept ? customDept.trim() : department.trim();
+      await onSave(
+        node.id,
+        nextLevel,
+        nextPermissions,
+        {
+          name: name.trim() || node.name,
+          role_type: roleType.trim() || node.role_type,
+          department: resolvedDept || null,
+          email: email.trim() || null,
+          telegram_chat_id: telegramChatId.trim() ? telegramChatId.trim() : null,
+        }
+      );
+    } finally {
+      setTimeout(() => setAutoSavedFlash(false), 1800);
+    }
+  };
+
   const handlePresetChange = (nextLevel: AccessLevel) => {
+    const nextPerms = getDefaultPermissionsForAccessLevel(nextLevel);
     setSelectedLevel(nextLevel);
-    setPermissions(getDefaultPermissionsForAccessLevel(nextLevel));
+    setPermissions(nextPerms);
+    void triggerInstantRbacSave(nextLevel, nextPerms);
   };
 
   const handleToggleKey = (key: keyof EmployeePermissions) => {
     if (isRootLocked) return;
-    setPermissions((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+    const nextPerms: EmployeePermissions = {
+      ...permissions,
+      [key]: !permissions[key],
+    };
+    setPermissions(nextPerms);
+    void triggerInstantRbacSave(selectedLevel, nextPerms);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -210,14 +240,22 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t('invite.close')}
-            className="text-zinc-400 hover:text-white p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {autoSavedFlash && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-medium text-emerald-300">
+                <Check className="w-3 h-3" />
+                <span>{isEn ? 'Saved' : 'Сохранено'}</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t('invite.close')}
+              className="text-zinc-400 hover:text-white p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* 3 Switchable Tabs */}

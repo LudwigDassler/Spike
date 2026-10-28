@@ -435,7 +435,7 @@ export const ApprovalDecisionBar: React.FC<ApprovalDecisionBarProps> = ({
       : Boolean(
           currentProfile &&
             (currentProfile.access_level === 'root' ||
-              currentProfile.access_level === 'lead' ||
+              currentProfile.access_level === 'manager' ||
               task.assigned_to === currentProfile.id)
         );
 
@@ -559,6 +559,7 @@ const DEFAULT_CORPORATE_PLAYBOOKS: PinnedPlaybookItem[] = [
     size: 4200,
     pinned_at: '2026-10-01T09:00:00.000Z',
     pinned_by: 'Администрация компании',
+    acknowledged_by: [],
   },
   {
     id: 'pb_default_2',
@@ -572,8 +573,37 @@ const DEFAULT_CORPORATE_PLAYBOOKS: PinnedPlaybookItem[] = [
     size: 3850,
     pinned_at: '2026-10-05T10:00:00.000Z',
     pinned_by: 'Служба безопасности',
+    acknowledged_by: [],
   },
 ];
+
+function getLocalizedPlaybookField(
+  pb: PinnedPlaybookItem,
+  isEn: boolean
+): { title: string; category: string; pinnedBy?: string } {
+  if (!isEn) {
+    return { title: pb.title, category: pb.category, pinnedBy: pb.pinned_by };
+  }
+  if (pb.id === 'pb_default_1' || pb.title.includes('Регламент согласования договоров')) {
+    return {
+      title: 'Contract, Invoice & Procurement Approval Policy (SLA 24h)',
+      category: 'Finance & Contracts',
+      pinnedBy: 'Company Administration',
+    };
+  }
+  if (pb.id === 'pb_default_2' || pb.title.includes('Стандарт информационной безопасности')) {
+    return {
+      title: 'Information Security & RBAC Matrix Standard (7 Scopes)',
+      category: 'Security (RBAC)',
+      pinnedBy: 'Security Department',
+    };
+  }
+  return {
+    title: pb.title,
+    category: pb.category === 'Регламент компании' ? 'Corporate Policy' : pb.category,
+    pinnedBy: pb.pinned_by === 'Суперадмин' ? 'Superadmin' : pb.pinned_by,
+  };
+}
 
 export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
   company,
@@ -647,7 +677,7 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
       localStorage.setItem(localStoragePlaybooksKey, JSON.stringify(nextList));
     } catch {}
 
-    if (company?.id) {
+    if (company?.id && onPatchRecord) {
       await onPatchRecord('companies', company.id, {
         billing_details: {
           ...(company.billing_details || {}),
@@ -772,7 +802,7 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
     if (!isRootAdmin) return;
     const exists = pinnedPlaybooks.some((p) => p.title === doc.name);
     if (exists) {
-      showToast(isEn ? 'Document is already pinned' : 'Документ уже закреплен в регламентах');
+      showToast?.(isEn ? 'Document is already pinned' : 'Документ уже закреплен в регламентах');
       return;
     }
     const newItem: PinnedPlaybookItem = {
@@ -786,7 +816,7 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
       pinned_by: currentProfile?.name || 'Суперадмин',
     };
     await persistPlaybooks([newItem, ...pinnedPlaybooks]);
-    showToast(
+    showToast?.(
       isEn
         ? 'Document pinned to Company Playbooks'
         : 'Документ закреплен в регламентах компании'
@@ -797,7 +827,28 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
     if (!isRootAdmin) return;
     const next = pinnedPlaybooks.filter((p) => p.id !== id);
     await persistPlaybooks(next);
-    showToast(isEn ? 'Playbook unpinned' : 'Регламент откреплен');
+    showToast?.(isEn ? 'Playbook unpinned' : 'Регламент откреплен');
+  };
+
+  const handleTogglePlaybookAck = async (pbId: string) => {
+    const actorId = currentProfile?.id || 'root';
+    const next = pinnedPlaybooks.map((item) => {
+      if (item.id !== pbId) return item;
+      const currentAck = Array.isArray(item.acknowledged_by) ? item.acknowledged_by : [];
+      const alreadyAcked = currentAck.includes(actorId);
+      return {
+        ...item,
+        acknowledged_by: alreadyAcked
+          ? currentAck.filter((id) => id !== actorId)
+          : [...currentAck, actorId],
+      };
+    });
+    await persistPlaybooks(next);
+    showToast?.(
+      isEn
+        ? 'Read receipt recorded in regulation registry'
+        : 'Отметка об ознакомлении с регламентом зафиксирована'
+    );
   };
 
   const handlePlaybookFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -810,7 +861,7 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
         setNewPlaybookTitle(uploaded[0].name);
       }
     } catch (err: any) {
-      showToast(err?.message || (isEn ? 'Error reading file' : 'Ошибка чтения файла'));
+      showToast?.(err?.message || (isEn ? 'Error reading file' : 'Ошибка чтения файла'));
     } finally {
       if (e.target) e.target.value = '';
     }
@@ -838,7 +889,7 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
       setNewPlaybookTitle('');
       setNewPlaybookAttachments([]);
       setIsAddPlaybookOpen(false);
-      showToast(
+      showToast?.(
         isEn
           ? 'Corporate playbook published for all employees'
           : 'Регламент закреплен для всех сотрудников компании'
@@ -878,7 +929,7 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
               className="tc-btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/10 bg-[#17171C] hover:bg-zinc-800 text-xs font-medium text-white transition-colors self-start sm:self-auto"
             >
               <Plus className="w-3.5 h-3.5 text-indigo-400" />
-              <span>{isEn ? '+ Pin Regulation' : '+ Закрепить регламент'}</span>
+              <span>{isEn ? 'Pin Regulation' : 'Закрепить регламент'}</span>
             </button>
           )}
         </div>
@@ -965,51 +1016,87 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {pinnedPlaybooks.map((pb) => (
-            <div
-              key={pb.id}
-              className="rounded-xl border border-white/[0.08] bg-[#15151A] p-3.5 flex items-center justify-between gap-3 hover:border-white/20 transition-colors"
-            >
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-4 h-4 text-indigo-400" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-white truncate">{pb.title}</div>
-                  <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-[#8E8E93]">
-                    <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-zinc-300">
-                      {pb.category}
-                    </span>
-                    <span className="tabular-nums">{formatAttachmentSize(pb.size)}</span>
-                    {pb.pinned_by && <span>· {pb.pinned_by}</span>}
+          {pinnedPlaybooks.map((pb) => {
+            const loc = getLocalizedPlaybookField(pb, isEn);
+            const ackList = Array.isArray(pb.acknowledged_by) ? pb.acknowledged_by : [];
+            const actorId = currentProfile?.id || 'root';
+            const isAcked = ackList.includes(actorId);
+            return (
+              <div
+                key={pb.id}
+                className="rounded-xl border border-white/[0.08] bg-[#15151A] p-3.5 flex items-center justify-between gap-3 hover:border-white/20 transition-colors"
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">{loc.title}</div>
+                    <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-[#8E8E93]">
+                      <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-zinc-300">
+                        {loc.category}
+                      </span>
+                      <span className="tabular-nums">{formatAttachmentSize(pb.size)}</span>
+                      {loc.pinnedBy && <span>· {loc.pinnedBy}</span>}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
-                <a
-                  href={pb.url}
-                  download={pb.title}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/10 bg-[#1C1C22] hover:bg-zinc-800 text-[11px] font-medium text-white transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 text-indigo-400" />
-                  <span className="hidden sm:inline">{isEn ? 'Open' : 'Открыть'}</span>
-                </a>
-                {isRootAdmin && (
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => void handleRemovePlaybook(pb.id)}
-                    title={isEn ? 'Unpin playbook' : 'Открепить регламент'}
-                    className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    onClick={() => void handleTogglePlaybookAck(pb.id)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors ${
+                      isAcked
+                        ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                        : 'border-white/10 bg-[#1C1C22] hover:bg-zinc-800 text-zinc-300'
+                    }`}
+                    title={
+                      isEn
+                        ? `Acknowledged by ${ackList.length} employee(s)`
+                        : `Ознакомились: ${ackList.length} сотр.`
+                    }
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>
+                      {isAcked
+                        ? isEn
+                          ? 'Acknowledged'
+                          : 'Ознакомлен'
+                        : isEn
+                        ? 'Acknowledge'
+                        : 'Ознакомиться'}
+                    </span>
+                    {ackList.length > 0 && (
+                      <span className="tabular-nums text-[10px] opacity-80">
+                        ({ackList.length})
+                      </span>
+                    )}
                   </button>
-                )}
+                  <a
+                    href={pb.url}
+                    download={loc.title}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/10 bg-[#1C1C22] hover:bg-zinc-800 text-[11px] font-medium text-white transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="hidden sm:inline">{isEn ? 'Open' : 'Открыть'}</span>
+                  </a>
+                  {isRootAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRemovePlaybook(pb.id)}
+                      title={isEn ? 'Unpin playbook' : 'Открепить регламент'}
+                      className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

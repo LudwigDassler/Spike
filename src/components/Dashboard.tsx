@@ -53,6 +53,7 @@ import {
   ChevronRight,
   Paperclip,
   Link2,
+  ExternalLink,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -124,6 +125,16 @@ import {
   RequestApprovalModal,
   SmartDocumentVault,
 } from './ApprovalsAndVault';
+import {
+  InlineEditableCell,
+  QuickInlineTaskBar,
+  QuickInlineDealBar,
+  QuickInlineEmployeeBar,
+  TaskTimelineView,
+  LegalDocumentGeneratorModal,
+  ClientDealRoomView,
+  ExecutiveUnitEconomicsRadar,
+} from './EnterpriseB2BFeatures';
 
 interface DashboardProps {
   company: Company | null;
@@ -139,7 +150,13 @@ interface DashboardProps {
   isSyncing: boolean;
   onRefresh: () => Promise<void> | void;
   onPatchRecord: (
-    table: 'tasks' | 'crm_leads' | 'organization_nodes' | 'companies' | 'billing_invoices',
+    table:
+      | 'tasks'
+      | 'crm_leads'
+      | 'organization_nodes'
+      | 'companies'
+      | 'billing_invoices'
+      | 'workspace_messages',
     id: string,
     updates: Record<string, any>
   ) => Promise<{ ok: boolean; pushSent?: boolean }>;
@@ -272,19 +289,44 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isLegalRequisitesModalOpen, setIsLegalRequisitesModalOpen] = useState(false);
   const [isSecurityAuditModalOpen, setIsSecurityAuditModalOpen] = useState(false);
 
+  const quickTaskInputRef = React.useRef<HTMLInputElement | null>(null);
+  const quickDealInputRef = React.useRef<HTMLInputElement | null>(null);
+  const quickEmployeeInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Task & CRM View Modes + Approvals & Document Vault + B2B Enterprise states
+  const [taskViewMode, setTaskViewMode] = useState<'list' | 'board' | 'timeline'>('list');
+  const [autoPipelineEnabled, setAutoPipelineEnabled] = useState<boolean>(true);
+  const [legalDocModalDeal, setLegalDocModalDeal] = useState<CrmLeadRecord | null>(null);
+  const [dealRoomPreviewId, setDealRoomPreviewId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('deal_room') || null;
+  });
+
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandBarOpen((prev) => !prev);
+      } else if (e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        if (activeSection === 'tasks') {
+          quickTaskInputRef.current?.focus();
+        } else if (activeSection === 'crm') {
+          quickDealInputRef.current?.focus();
+        } else if (activeSection === 'team') {
+          quickEmployeeInputRef.current?.focus();
+        }
+      } else if (e.key === 'Escape') {
+        setDrawerSelection(null);
+        setModalType(null);
+        setLegalDocModalDeal(null);
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+  }, [activeSection]);
 
-  // Task & CRM View Modes + Approvals & Document Vault
-  const [taskViewMode, setTaskViewMode] = useState<'list' | 'board'>('list');
   const [taskCategoryFilter, setTaskCategoryFilter] = useState<'all' | 'approvals'>('all');
   const [isRequestApprovalModalOpen, setIsRequestApprovalModalOpen] = useState(false);
   const [commViewMode, setCommViewMode] = useState<'messenger' | 'vault'>('messenger');
@@ -774,6 +816,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const onCreateRecord = async (
+    table: 'tasks' | 'crm_leads' | 'organization_nodes',
+    payload: Record<string, any>
+  ): Promise<{ ok: boolean; pushSent?: boolean }> => {
+    try {
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table,
+          payload: {
+            company_id: companyId,
+            actor_id: currentProfile?.id || undefined,
+            actor_name: currentProfile?.name || undefined,
+            ...payload,
+          },
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && !data?.error) {
+        await onRefresh();
+        return { ok: true, pushSent: Boolean(data?.pushSent) };
+      }
+      return { ok: false };
+    } catch {
+      return { ok: false };
+    }
+  };
+
   const handleQuickCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const title = quickTaskTitle.trim();
@@ -988,33 +1059,64 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleLeadStatusChange = (lead: CrmLeadRecord, nextStatus: CrmLeadStatus) => {
+  const handleLeadStatusChange = async (lead: CrmLeadRecord, nextStatus: CrmLeadStatus) => {
     if (!perms.crm_edit) return;
     const currentStatus = (lead.status || lead.stage || 'New') as CrmLeadStatus;
     if (currentStatus === nextStatus) return;
 
-    if (nextStatus === 'Lost') {
-      const dealName = lead.client_name || lead.full_name || lead.title || '';
-      setPendingConfirm({
-        title: t('confirm.criticalStatusTitle'),
-        description: `${t('confirm.criticalStatusDesc')} (${dealName} — ${t('stage.Lost')})`,
-        variant: 'warning',
-        execute: async () => {
-          setBusyRecordId(lead.id);
-          try {
-            await onPatchRecord('crm_leads', lead.id, { status: nextStatus });
-          } finally {
-            setBusyRecordId(null);
-          }
-        },
-      });
-      return;
-    }
-
     setBusyRecordId(lead.id);
-    onPatchRecord('crm_leads', lead.id, { status: nextStatus }).finally(() =>
-      setBusyRecordId(null)
-    );
+    try {
+      const res = await onPatchRecord('crm_leads', lead.id, { status: nextStatus });
+      if (res.ok && autoPipelineEnabled) {
+        const clientLabel = lead.client_name || lead.full_name || lead.title || 'Контрагент';
+        const managerId = lead.assigned_to || lead.owner_node_id || currentProfile?.id || null;
+        const tomorrowIso = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+        if (nextStatus === 'Negotiation') {
+          await onCreateRecord('tasks', {
+            company_id: companyId,
+            title: isEn
+              ? `Prepare Commercial Proposal & agree terms: ${clientLabel}`
+              : `Подготовить КП и согласовать условия: ${clientLabel}`,
+            type: 'Task',
+            priority: 'High',
+            status: 'Todo',
+            assigned_to: managerId,
+            owner_node_id: managerId,
+            department: lead.department || null,
+            lead_id: lead.id,
+            due_date: tomorrowIso,
+          });
+          showToast(
+            isEn
+              ? `Auto-Pipeline: Task created for "${clientLabel}"`
+              : `Авто-воронка: создана задача по сделке «${clientLabel}»`
+          );
+        } else if (nextStatus === 'Won') {
+          await onCreateRecord('tasks', {
+            company_id: companyId,
+            title: isEn
+              ? `Issue invoice & launch project: ${clientLabel}`
+              : `Выставить счет и запустить проект: ${clientLabel}`,
+            type: 'Task',
+            priority: 'High',
+            status: 'Todo',
+            assigned_to: managerId,
+            owner_node_id: managerId,
+            department: lead.department || null,
+            lead_id: lead.id,
+            due_date: tomorrowIso,
+          });
+          showToast(
+            isEn
+              ? `Auto-Pipeline: Onboarding task created for "${clientLabel}"`
+              : `Авто-воронка: назначена задача на запуск проекта «${clientLabel}»`
+          );
+        }
+      }
+    } finally {
+      setBusyRecordId(null);
+    }
   };
 
   const handleSaveNodePermissionsMatrix = async (
@@ -1656,6 +1758,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
     </div>
   );
 
+  if (dealRoomPreviewId) {
+    const dealForRoom =
+      safeLeads.find((l) => String(l.id) === String(dealRoomPreviewId)) || safeLeads[0];
+    if (dealForRoom) {
+      return (
+        <>
+          <ClientDealRoomView
+            deal={dealForRoom}
+            company={company}
+            tasks={safeTasks}
+            onCloseRoom={() => {
+              setDealRoomPreviewId(null);
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('deal_room');
+                window.history.replaceState({}, '', url.toString());
+              }
+            }}
+            onOpenLegalDocs={(d) => setLegalDocModalDeal(d)}
+          />
+          <LegalDocumentGeneratorModal
+            deal={legalDocModalDeal}
+            company={company}
+            onClose={() => setLegalDocModalDeal(null)}
+          />
+        </>
+      );
+    }
+  }
+
   return (
     <div
       className={`min-h-screen flex font-sans antialiased overflow-x-hidden ${
@@ -1680,6 +1812,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* БЛОК 2: Архитектура «Вложенного холста» (Inset Canvas) + Ambient Glow */}
       <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden lg:m-2.5 lg:rounded-2xl bg-[#0c0c10] border border-white/[0.07] shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-64 before:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(99,102,241,0.09),transparent)]">
         <TopBar
+          companyId={companyId}
           companyName={companyName}
           activeSection={activeSection}
           searchQuery={searchQuery}
@@ -1696,6 +1829,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
           onOpenCommandBar={() => setIsCommandBarOpen(true)}
           onOpenAiCopilot={() => setIsAiDrawerOpen(true)}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+          currentProfile={currentProfile}
+          tasks={visibleTasks}
+          onPostShiftSummary={async (summaryText) => {
+            if (onSendMessage) {
+              await onSendMessage({
+                company_id: companyId,
+                sender_id: currentProfile?.id || 'root',
+                sender_name: currentProfile?.name || 'Сотрудник',
+                sender_role: currentProfile?.role_type || 'Специалист',
+                target_type: 'broadcast',
+                target_label: 'Всем сотрудникам',
+                message_text: summaryText,
+                text: summaryText,
+                is_urgent: false,
+              });
+            }
+          }}
+          showToast={showToast}
         />
 
         {toastBanner && (
@@ -1713,15 +1864,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         )}
 
-        <main className="flex-1 px-4 sm:px-6 py-5 sm:py-6 pb-24 lg:pb-8 max-w-7xl w-full max-w-full overflow-x-hidden mx-auto space-y-6">
-          {/* Page Header & Contextual Controls */}
+        <main className="flex-1 px-4 sm:px-6 py-4 sm:py-5 pb-24 lg:pb-8 max-w-7xl w-full max-w-full overflow-x-hidden mx-auto space-y-5">
+          {/* Page Header & Contextual Controls (Zero Boilerplate Subtitles — Swiss / Linear Standard) */}
           <div
             className={`${
               activeSection === 'communications' && mobileChatOpen ? 'hidden lg:flex' : 'flex'
-            } flex-col sm:flex-row sm:items-center justify-between gap-4`}
+            } flex-col sm:flex-row sm:items-center justify-between gap-3`}
           >
             <div>
-              <h1 className="text-xl font-semibold text-white tracking-tight">
+              <h1 className="text-lg font-semibold text-white tracking-[-0.02em]">
                 {activeSection === 'overview' && t('header.overviewTitle')}
                 {activeSection === 'tasks' && t('header.tasksTitle')}
                 {activeSection === 'crm' && t('header.crmTitle')}
@@ -1730,18 +1881,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {activeSection === 'profile' && t('header.profileTitle')}
                 {activeSection === 'workspace' && t('header.workspaceTitle')}
               </h1>
-              <p className="hidden sm:block text-xs text-[#8E8E93] mt-1">
-                {activeSection === 'overview' && t('header.overviewSubtitle')}
-                {activeSection === 'tasks' && t('header.tasksSubtitle')}
-                {activeSection === 'crm' && t('header.crmSubtitle')}
-                {activeSection === 'communications' && t('header.communicationsSubtitle')}
-                {activeSection === 'team' && t('header.teamSubtitle')}
-                {activeSection === 'profile' &&
-                  (isEn
-                    ? 'Personal details, profile photo, Telegram synchronization, and active workspace capabilities'
-                    : 'Персональные реквизиты, фотография профиля, синхронизация с Telegram и рабочий контур')}
-                {activeSection === 'workspace' && t('header.workspaceSubtitle')}
-              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
@@ -2643,16 +2782,48 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* Виджет финансовой эффективности и SLA (Unit Economics & SLA Radar) */}
+                  <ExecutiveUnitEconomicsRadar
+                    leads={visibleLeads}
+                    tasks={visibleTasks}
+                    nodes={safeNodes}
+                    onOpenCrm={perms.crm_view ? () => setActiveSection('crm') : undefined}
+                    onOpenTasks={() => setActiveSection('tasks')}
+                  />
                 </>
               )}
             </div>
           )}
 
             {/* =================================================================
-                TAB 2: ЗАДАЧИ / TASKS (БЛОК 4: Полноценная Канбан-доска + Сроки due_date)
+                TAB 2: ЗАДАЧИ / TASKS (Inline Bar + Список / Канбан / Таймлайн сроков)
             ================================================================== */}
             {activeSection === 'tasks' && (
-              <section className="rounded-xl border border-white/[0.07] bg-[#111114] overflow-hidden shadow-2xl">
+              <div className="space-y-4">
+                {canCreateOrEditTasks && (
+                  <QuickInlineTaskBar
+                    nodes={safeNodes}
+                    leads={visibleLeads}
+                    defaultAssigneeId={currentProfile?.id || ''}
+                    inputRef={quickTaskInputRef}
+                    onCreateTask={async (payload) => {
+                      await onCreateRecord('tasks', {
+                        company_id: companyId,
+                        title: payload.title,
+                        type: 'Task',
+                        priority: payload.priority,
+                        status: 'Todo',
+                        assigned_to: payload.assigned_to || currentProfile?.id || null,
+                        owner_node_id: payload.assigned_to || currentProfile?.id || null,
+                        created_by: currentProfile?.id || null,
+                        due_date: payload.due_date,
+                        lead_id: payload.lead_id || null,
+                      });
+                    }}
+                  />
+                )}
+                <section className="rounded-xl border border-white/[0.07] bg-[#111114] overflow-hidden shadow-2xl">
                 <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     <CheckCircle2 className="w-4 h-4 text-[#A1A1AA]" />
@@ -2761,7 +2932,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         }`}
                       >
                         <Columns3 className="w-3.5 h-3.5" />
-                        <span>{isEn ? 'Kanban Board' : 'Канбан-доска'}</span>
+                        <span>{isEn ? 'Kanban' : 'Канбан'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaskViewMode('timeline')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                          taskViewMode === 'timeline'
+                            ? 'bg-zinc-800 text-white border border-white/10'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>{isEn ? 'Timeline' : 'Таймлайн сроков'}</span>
                       </button>
                     </div>
                   </div>
@@ -2843,15 +3026,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             </button>
 
                             <div className="min-w-0">
-                              <p
+                              <div
                                 className={`text-sm font-medium truncate ${
                                   task.status === 'Done'
                                     ? 'text-[#71717A] line-through'
                                     : 'text-white'
                                 }`}
                               >
-                                {task.title}
-                              </p>
+                                <InlineEditableCell
+                                  value={task.title}
+                                  disabled={!canCreateOrEditTasks}
+                                  onSave={(nextTitle) =>
+                                    handleTaskUpdate(task.id, { title: nextTitle })
+                                  }
+                                />
+                              </div>
                               <div className="flex flex-wrap items-center gap-2 mt-1">
                                 <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-[#1C1C1F] text-[#A1A1AA] border border-[#2C2C30] whitespace-nowrap">
                                   {t(`type.${task.type || 'Task'}`)}
@@ -2999,7 +3188,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       );
                     })}
                   </div>
-                ) : (
+                ) : taskViewMode === 'board' ? (
                   <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                     {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((columnStatus) => {
                       const colTasks = filteredTasks.filter(
@@ -3155,53 +3344,115 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       );
                     })}
                   </div>
+                ) : (
+                  <div className="p-5">
+                    <TaskTimelineView
+                      tasks={filteredTasks}
+                      nodes={safeNodes}
+                      leads={visibleLeads}
+                      onSelectTask={(tk) => setDrawerSelection({ kind: 'task', id: tk.id })}
+                      onStatusChange={async (taskId, nextStatus) => {
+                        await handleTaskUpdate(taskId, { status: nextStatus });
+                      }}
+                      onInlineTitleSave={async (taskId, newTitle) => {
+                        await handleTaskUpdate(taskId, { title: newTitle });
+                      }}
+                    />
+                  </div>
                 )}
               </section>
+              </div>
             )}
 
           {/* =================================================================
-              TAB 3: СДЕЛКИ / CRM DEALS (БЛОК 3: ИНН/КПП/VAT, Договор, Отдел, Менеджер)
+              TAB 3: СДЕЛКИ / CRM DEALS (Inline Deal Bar + Auto-Pipeline + Документы + Deal Room)
           ================================================================== */}
           {activeSection === 'crm' && perms.crm_view && (
-            <section className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <Briefcase className="w-4 h-4 text-[#A1A1AA]" />
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
-                    {t('crm.sectionTitle')}
-                  </h2>
-                  <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded whitespace-nowrap tabular-nums">
-                    {filteredLeads.length}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  {/* Переключатель режима отображения: Воронка (Канбан) | Реестр (Таблица) */}
-                  <div className="inline-flex items-center rounded-lg border border-white/[0.07] bg-[#0B0B0E] p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setCrmViewMode('board')}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                        crmViewMode === 'board'
-                          ? 'bg-white text-black'
-                          : 'text-[#8E8E93] hover:text-white'
-                      }`}
-                    >
-                      <Columns3 className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Pipeline (Kanban)' : 'Воронка (Канбан)'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCrmViewMode('table')}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                        crmViewMode === 'table'
-                          ? 'bg-white text-black'
-                          : 'text-[#8E8E93] hover:text-white'
-                      }`}
-                    >
-                      <LayoutList className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Registry (Table)' : 'Реестр (Таблица)'}</span>
-                    </button>
+            <div className="space-y-4">
+              {perms.crm_edit && (
+                <QuickInlineDealBar
+                  nodes={safeNodes}
+                  defaultAssigneeId={currentProfile?.id || ''}
+                  inputRef={quickDealInputRef}
+                  onCreateDeal={async (payload) => {
+                    await onCreateRecord('crm_leads', {
+                      company_id: companyId,
+                      client_name: payload.client_name,
+                      full_name: payload.client_name,
+                      title: payload.title,
+                      amount: payload.amount,
+                      deal_value: payload.amount,
+                      tax_id: payload.tax_id,
+                      status: 'New',
+                      stage: 'New',
+                      assigned_to: payload.assigned_to || currentProfile?.id || null,
+                      owner_node_id: payload.assigned_to || currentProfile?.id || null,
+                    });
+                  }}
+                />
+              )}
+              <section className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <Briefcase className="w-4 h-4 text-[#A1A1AA]" />
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
+                      {t('crm.sectionTitle')}
+                    </h2>
+                    <span className="text-[11px] font-medium text-[#71717A] bg-white/[0.04] px-2 py-0.5 rounded whitespace-nowrap tabular-nums">
+                      {filteredLeads.length}
+                    </span>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Переключатель Авто-задач воронки (CRM Pipeline Automation) */}
+                    <button
+                      type="button"
+                      onClick={() => setAutoPipelineEnabled((prev) => !prev)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+                        autoPipelineEnabled
+                          ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+                          : 'border-white/10 bg-[#16161A] text-zinc-400 hover:text-white'
+                      }`}
+                      title={
+                        isEn
+                          ? 'Automatically create follow-up tasks when moving deals to Negotiation or Won'
+                          : 'Автоматически создавать задачи менеджеру при переводе сделки в Переговоры или Выиграна'
+                      }
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>
+                        {isEn
+                          ? `Auto-Pipeline: ${autoPipelineEnabled ? 'ON' : 'OFF'}`
+                          : `Авто-задачи воронки: ${autoPipelineEnabled ? 'ВКЛ' : 'ВЫКЛ'}`}
+                      </span>
+                    </button>
+
+                    {/* Переключатель режима отображения: Воронка (Канбан) | Реестр (Таблица) */}
+                    <div className="inline-flex items-center rounded-lg border border-white/[0.07] bg-[#0B0B0E] p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setCrmViewMode('board')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                          crmViewMode === 'board'
+                            ? 'bg-white text-black'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        <Columns3 className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Pipeline (Kanban)' : 'Воронка (Канбан)'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCrmViewMode('table')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                          crmViewMode === 'table'
+                            ? 'bg-white text-black'
+                            : 'text-[#8E8E93] hover:text-white'
+                        }`}
+                      >
+                        <LayoutList className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Registry (Table)' : 'Реестр (Таблица)'}</span>
+                      </button>
+                    </div>
 
                   {/* Компактный переключатель валюты расчетов для сотрудников с доступом crm_view */}
                   <div
@@ -3383,25 +3634,103 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     )}
                                   </div>
 
-                                  {perms.crm_edit && (
-                                    <div
-                                      className="pt-2 border-t border-white/[0.05] flex items-center justify-between gap-1"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      {(['New', 'Negotiation', 'Won', 'Lost'] as CrmLeadStatus[])
-                                        .filter((s) => s !== col.status)
-                                        .map((targetStage) => (
+                                  {(() => {
+                                    const hasActiveStep = visibleTasks.some(
+                                      (tk) =>
+                                        tk.status !== 'Done' &&
+                                        ((tk.lead_id && String(tk.lead_id) === String(lead.id)) ||
+                                          tk.title
+                                            .toLowerCase()
+                                            .includes(displayName.toLowerCase()))
+                                    );
+                                    const isRotRisk =
+                                      (col.status === 'New' || col.status === 'Negotiation') &&
+                                      !hasActiveStep;
+
+                                    return (
+                                      <div
+                                        className="pt-2 border-t border-white/[0.05] space-y-2"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {isRotRisk && (
+                                          <div className="flex items-center justify-between gap-1.5 rounded-md bg-amber-500/10 border border-amber-500/25 px-2 py-1">
+                                            <span className="text-[10px] font-medium text-amber-300 truncate">
+                                              {isEn
+                                                ? 'Needs next step'
+                                                : 'Без движения (нет задачи)'}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                void onCreateRecord('tasks', {
+                                                  company_id: companyId,
+                                                  title: isEn
+                                                    ? `Follow up & next step: ${displayName}`
+                                                    : `Связаться и назначить следующий шаг: ${displayName}`,
+                                                  type: 'Task',
+                                                  priority: 'High',
+                                                  status: 'Todo',
+                                                  assigned_to:
+                                                    managerId || currentProfile?.id || null,
+                                                  owner_node_id:
+                                                    managerId || currentProfile?.id || null,
+                                                  lead_id: lead.id,
+                                                });
+                                              }}
+                                              className="text-[10px] font-semibold text-white bg-amber-500/25 hover:bg-amber-500/40 px-1.5 py-0.5 rounded shrink-0"
+                                            >
+                                              {isEn ? '+ Step' : '+ Шаг'}
+                                            </button>
+                                          </div>
+                                        )}
+
+                                        <div className="flex items-center gap-1.5">
                                           <button
-                                            key={targetStage}
                                             type="button"
-                                            onClick={() => handleLeadStatusChange(lead, targetStage)}
-                                            className="flex-1 py-1 px-1.5 rounded bg-white/[0.03] hover:bg-white/[0.09] border border-white/[0.06] text-[10px] font-medium text-[#A1A1AA] hover:text-white transition-colors truncate"
+                                            onClick={() => setLegalDocModalDeal(lead)}
+                                            className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-2 rounded bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.07] text-[10px] font-medium text-zinc-200 transition-colors"
                                           >
-                                            → {t(`stage.${targetStage}` as any)}
+                                            <FileText className="w-3 h-3 text-indigo-400" />
+                                            <span>{isEn ? 'Docs / PDF' : 'Документы'}</span>
                                           </button>
-                                        ))}
-                                    </div>
-                                  )}
+                                          <button
+                                            type="button"
+                                            onClick={() => setDealRoomPreviewId(lead.id)}
+                                            className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-2 rounded bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.07] text-[10px] font-medium text-emerald-300 transition-colors"
+                                          >
+                                            <ExternalLink className="w-3 h-3" />
+                                            <span>Deal Room</span>
+                                          </button>
+                                        </div>
+
+                                        {perms.crm_edit && (
+                                          <div className="flex items-center justify-between gap-1">
+                                            {(
+                                              [
+                                                'New',
+                                                'Negotiation',
+                                                'Won',
+                                                'Lost',
+                                              ] as CrmLeadStatus[]
+                                            )
+                                              .filter((s) => s !== col.status)
+                                              .map((targetStage) => (
+                                                <button
+                                                  key={targetStage}
+                                                  type="button"
+                                                  onClick={() =>
+                                                    void handleLeadStatusChange(lead, targetStage)
+                                                  }
+                                                  className="flex-1 py-1 px-1.5 rounded bg-white/[0.03] hover:bg-white/[0.09] border border-white/[0.06] text-[10px] font-medium text-[#A1A1AA] hover:text-white transition-colors truncate"
+                                                >
+                                                  → {t(`stage.${targetStage}` as any)}
+                                                </button>
+                                              ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               );
                             })
@@ -3445,7 +3774,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             className="hover:bg-[#16161A] transition-colors cursor-pointer"
                           >
                             <td className="py-3.5 px-5">
-                              <div className="font-medium text-white">{displayName}</div>
+                              <div className="font-medium text-white">
+                                <InlineEditableCell
+                                  value={displayName}
+                                  disabled={!perms.crm_edit}
+                                  onSave={(nextName) =>
+                                    onPatchRecord('crm_leads', lead.id, {
+                                      client_name: nextName,
+                                      full_name: nextName,
+                                    })
+                                  }
+                                />
+                              </div>
                               {lead.title && lead.title !== displayName && (
                                 <div className="text-[11px] text-[#71717A]">{lead.title}</div>
                               )}
@@ -3458,26 +3798,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                             {/* Юридические реквизиты контрагента и номер договора */}
                             <td className="py-3.5 px-5">
-                              {lead.tax_id || lead.contract_number || lead.reg_number ? (
-                                <div className="space-y-0.5">
-                                  {lead.tax_id && (
-                                    <div className="text-white tabular-nums text-[11px]">
-                                      <span className="text-[#71717A]">
-                                        {isGlobal ? 'VAT/Tax:' : 'ИНН:'}
-                                      </span>{' '}
-                                      {lead.tax_id}
-                                      {lead.reg_number ? ` · ${lead.reg_number}` : ''}
-                                    </div>
-                                  )}
-                                  {lead.contract_number && (
-                                    <div className="text-[11px] text-[#A1A1AA] tabular-nums">
-                                      № {lead.contract_number}
-                                    </div>
-                                  )}
+                              <div className="space-y-0.5">
+                                <div className="text-white tabular-nums text-[11px]">
+                                  <span className="text-[#71717A]">
+                                    {isGlobal ? 'VAT/Tax:' : 'ИНН:'}
+                                  </span>{' '}
+                                  <InlineEditableCell
+                                    value={lead.tax_id || ''}
+                                    placeholder="—"
+                                    disabled={!perms.crm_edit}
+                                    onSave={(nextTax) =>
+                                      onPatchRecord('crm_leads', lead.id, {
+                                        tax_id: nextTax || null,
+                                      })
+                                    }
+                                  />
                                 </div>
-                              ) : (
-                                <span className="text-[#52525B]">—</span>
-                              )}
+                                {lead.contract_number && (
+                                  <div className="text-[11px] text-[#A1A1AA] tabular-nums">
+                                    № {lead.contract_number}
+                                  </div>
+                                )}
+                              </div>
                             </td>
 
                             {/* Ответственный менеджер и Профильный отдел */}
@@ -3506,18 +3848,56 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             </td>
                             <td className="py-3.5 px-5">{renderLeadStatusBadge(displayStatus)}</td>
                             <td className="py-3.5 px-5 text-right text-white font-semibold whitespace-nowrap tabular-nums">
-                              {formatMoney(displayValue)}
+                              <InlineEditableCell
+                                value={displayValue}
+                                type="number"
+                                disabled={!perms.crm_edit}
+                                displayValue={formatMoney(displayValue)}
+                                onSave={(nextVal) =>
+                                  onPatchRecord('crm_leads', lead.id, {
+                                    amount: Number(nextVal) || 0,
+                                    deal_value: Number(nextVal) || 0,
+                                  })
+                                }
+                              />
                             </td>
                             {perms.crm_edit && (
                               <td
                                 className="py-3.5 px-5 text-right"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <div className="inline-flex items-center gap-2">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLegalDocModalDeal(lead)}
+                                    title={
+                                      isEn
+                                        ? 'Generate Contract / CP / Invoice (PDF)'
+                                        : 'Сформировать Договор / КП / Счет-Акт (PDF)'
+                                    }
+                                    className="px-2 py-1 rounded-md border border-white/10 bg-[#18181B] hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors"
+                                  >
+                                    {isEn ? 'Docs' : 'Документы'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDealRoomPreviewId(lead.id)}
+                                    title={
+                                      isEn
+                                        ? 'Open Shareable Client Deal Room'
+                                        : 'Открыть клиентский портал сделки (Deal Room)'
+                                    }
+                                    className="px-2 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-medium text-emerald-300 transition-colors whitespace-nowrap"
+                                  >
+                                    Deal Room
+                                  </button>
                                   <select
                                     value={displayStatus}
                                     onChange={(e) =>
-                                      handleLeadStatusChange(lead, e.target.value as CrmLeadStatus)
+                                      void handleLeadStatusChange(
+                                        lead,
+                                        e.target.value as CrmLeadStatus
+                                      )
                                     }
                                     className="rounded-md border border-white/[0.08] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
                                   >
@@ -3546,6 +3926,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               )}
             </section>
+            </div>
           )}
 
           {/* =================================================================
@@ -3560,10 +3941,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 tasks={visibleTasks}
                 leads={visibleLeads}
                 messages={safeMessages}
+                onPatchRecord={onPatchRecord as any}
+                showToast={showToast}
                 onOpenTaskDrawer={(taskId) => setDrawerSelection({ kind: 'task', id: taskId })}
-                onOpenDealDrawer={(dealId) => setDrawerSelection({ kind: 'deal', id: dealId })}
+                onOpenDealDrawer={(dealId) => setDrawerSelection({ kind: 'lead', id: dealId })}
                 onUpdateCompanyBillingDetails={
-                  perms.workspace_billing && company
+                  perms.billing_admin && company
                     ? async (nextDetails) => {
                         await onPatchRecord('companies', company.id, {
                           billing_details: nextDetails,
@@ -3573,14 +3956,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 }
               />
             ) : (
-            <div className="rounded-xl border border-white/[0.08] bg-[#111114] overflow-hidden flex flex-col lg:flex-row min-h-[560px] lg:min-h-[640px] shadow-2xl">
+            <div className="h-[calc(100dvh-210px)] min-h-[480px] max-h-[calc(100dvh-210px)] rounded-2xl border border-white/[0.08] bg-[#111114] overflow-hidden flex flex-col lg:flex-row shadow-2xl">
               {/* ЛЕВАЯ ПАНЕЛЬ (Ширина 300px на десктопе, 100% на мобильных при !mobileChatOpen): Каналы и Личные диалоги */}
               <aside
                 className={`${
                   mobileChatOpen ? 'hidden lg:flex' : 'flex'
-                } w-full lg:w-[300px] shrink-0 border-b lg:border-b-0 lg:border-r border-white/[0.07] bg-[#0D0D0F] flex-col`}
+                } w-full lg:w-[300px] h-full shrink-0 border-b lg:border-b-0 lg:border-r border-white/[0.07] bg-[#0D0D0F] flex-col overflow-hidden`}
               >
-                <div className="px-4 py-3.5 border-b border-white/[0.07] flex items-center justify-between">
+                <div className="px-4 py-3.5 border-b border-white/[0.07] flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span className="text-xs font-semibold uppercase tracking-wider text-white">
@@ -3623,9 +4006,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             : 'Общий поток (Циркуляры компании)'}
                         </span>
                       </div>
-                      <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
-                        {broadcastMessagesCount}
-                      </span>
+                      {broadcastMessagesCount > 0 && (
+                        <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                          {broadcastMessagesCount}
+                        </span>
+                      )}
                     </button>
 
                     {/* Список отделов компании */}
@@ -3663,9 +4048,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               {formatRole(dept)}
                             </span>
                           </div>
-                          <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
-                            {deptMsgCount}
-                          </span>
+                          {deptMsgCount > 0 && (
+                            <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                              {deptMsgCount}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -3753,9 +4140,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               </div>
                             </div>
 
-                            <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
-                              {dialogCount}
-                            </span>
+                            {dialogCount > 0 && (
+                              <span className="text-[10px] tabular-nums text-[#8E8E93] bg-[#18181C] px-1.5 py-0.5 rounded shrink-0">
+                                {dialogCount}
+                              </span>
+                            )}
                           </button>
                         );
                       })
@@ -3768,7 +4157,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <section
                 className={`${
                   mobileChatOpen ? 'flex' : 'hidden lg:flex'
-                } flex-1 flex-col min-w-0 bg-[#111113]`}
+                } flex-1 flex-col h-full min-w-0 overflow-hidden bg-[#111113]`}
               >
                 {/* Чистая 1-строчная шапка диалога (Linear / Telegram iOS standard) */}
                 {(() => {
@@ -3807,7 +4196,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       : safeNodes.some((n) => Boolean(n.telegram_chat_id));
 
                   return (
-                    <div className="px-3.5 sm:px-5 py-2.5 border-b border-white/[0.07] bg-[#131316] flex items-center justify-between gap-2.5">
+                    <div className="shrink-0 px-3.5 sm:px-5 py-2.5 border-b border-white/[0.07] bg-[#131316] flex items-center justify-between gap-2.5">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {/* Компактная круглая/квадратная иконка возврата ← (w-8 h-8) на мобильном */}
                         <button
@@ -3854,8 +4243,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                {/* Поток сообщений (Компактные баблы по тексту w-fit max-w-[85%] sm:max-w-[75%]) */}
-                <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-5 space-y-3 max-h-[520px]">
+                {/* Поток сообщений (flex-1 overflow-y-auto без max-h, чтобы Composer всегда был прибит к низу) */}
+                <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-5 space-y-3">
                   {activeThreadMessages.length === 0 ? (
                     <RichEmptyState
                       variant="chat"
@@ -4016,6 +4405,57 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   compact
                                 />
                               )}
+
+                              {/* Кнопка подтверждения ознакомления для циркуляров (Broadcast Read Receipts) */}
+                              {!isDirectMsg && activeCommThread.type === 'broadcast' && (
+                                <div className="pt-1.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
+                                  {(() => {
+                                    const ackList = Array.isArray(msg.acknowledged_by)
+                                      ? msg.acknowledged_by
+                                      : [];
+                                    const myId = currentProfile?.id || 'root';
+                                    const isAcked = ackList.includes(myId);
+                                    return (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            const nextAck = isAcked
+                                              ? ackList.filter((id) => id !== myId)
+                                              : [...ackList, myId];
+                                            await onPatchRecord('workspace_messages', msg.id, {
+                                              acknowledged_by: nextAck,
+                                            });
+                                          }}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                                            isAcked
+                                              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                              : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:text-white'
+                                          }`}
+                                        >
+                                          <Check className="w-2.5 h-2.5 text-emerald-400" />
+                                          <span>
+                                            {isAcked
+                                              ? isEn
+                                                ? 'Acknowledged'
+                                                : 'Ознакомлен'
+                                              : isEn
+                                              ? 'Acknowledge'
+                                              : 'Ознакомиться'}
+                                          </span>
+                                        </button>
+                                        {ackList.length > 0 && (
+                                          <span className="text-[10px] text-zinc-400 tabular-nums">
+                                            {isEn
+                                              ? `Read by: ${ackList.length}`
+                                              : `Ознакомились: ${ackList.length} сотр.`}
+                                          </span>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -4035,7 +4475,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 {/* Превью выбранных вложений перед отправкой */}
                 {commAttachments.length > 0 && (
-                  <div className="px-3 pt-2.5 pb-1 border-t border-white/[0.06] bg-zinc-950/90">
+                  <div className="shrink-0 px-3 pt-2.5 pb-1 border-t border-white/[0.06] bg-zinc-950/90">
                     <PendingAttachmentsStrip
                       attachments={commAttachments}
                       onRemove={(id) =>
@@ -4045,10 +4485,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
 
-                {/* Современная 1-строчная панель ввода (Composer) со скрепкой, полем Сообщение..., молнией и отправкой */}
+                {/* Современная 1-строчная панель ввода (Composer), жестко прибитая к низу (shrink-0 sticky bottom-0) */}
                 <form
                   onSubmit={handleSendCorporateMessage}
-                  className="flex items-center gap-2 p-2.5 border-t border-white/[0.08] bg-zinc-950/90"
+                  className="shrink-0 sticky bottom-0 flex items-center gap-2 p-2.5 border-t border-white/[0.08] bg-[#121216]"
                 >
                   <input
                     ref={commFileInputRef}
@@ -4130,7 +4570,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
               TAB 5: ШТАТ И ДОСТУПЫ / TEAM & ACCESS (БЛОК 2: Конструктор отделов + таблица штата / Карта связей)
           ================================================================== */}
           {activeSection === 'team' && perms.team_manage && (
-            <div className="space-y-6">
+            <div className="space-y-5">
+              <QuickInlineEmployeeBar
+                departments={companyDepartments}
+                inputRef={quickEmployeeInputRef}
+                onCreateEmployee={async (payload) => {
+                  await onCreateRecord('organization_nodes', {
+                    company_id: companyId,
+                    name: payload.name,
+                    role_type: payload.role_type,
+                    department: payload.department,
+                    access_level: payload.access_level,
+                  });
+                }}
+              />
               {renderDepartmentConstructorCard()}
 
               {teamViewMode === 'graph' ? (
@@ -4277,7 +4730,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       />
                                       <div className="min-w-0">
                                         <div className="font-semibold text-white truncate">
-                                          {node.name}
+                                          <InlineEditableCell
+                                            value={node.name}
+                                            onSave={(nextName) =>
+                                              onPatchRecord('organization_nodes', node.id, {
+                                                name: nextName,
+                                              })
+                                            }
+                                          />
                                         </div>
                                         {node.email && (
                                           <div className="text-[11px] text-[#71717A] mt-0.5 truncate">
@@ -4290,12 +4750,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                   <td className="py-4 px-5">
                                     <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.04] text-white border border-white/[0.08] font-medium whitespace-nowrap">
-                                      {formatRole(node.role_type)}
+                                      <InlineEditableCell
+                                        value={node.role_type}
+                                        displayValue={formatRole(node.role_type)}
+                                        onSave={(nextRole) =>
+                                          onPatchRecord('organization_nodes', node.id, {
+                                            role_type: nextRole,
+                                          })
+                                        }
+                                      />
                                     </div>
                                     <div className="text-[11px] text-[#8E8E93] mt-1">
-                                      {node.department
-                                        ? formatRole(node.department)
-                                        : t('team.noDepartment')}
+                                      <InlineEditableCell
+                                        value={node.department || ''}
+                                        placeholder={t('team.noDepartment')}
+                                        displayValue={
+                                          node.department
+                                            ? formatRole(node.department)
+                                            : t('team.noDepartment')
+                                        }
+                                        onSave={(nextDept) =>
+                                          onPatchRecord('organization_nodes', node.id, {
+                                            department: nextDept || null,
+                                          })
+                                        }
+                                      />
                                     </div>
                                   </td>
 
@@ -5717,16 +6196,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
         nodes={safeNodes}
         currentProfile={currentProfile}
         companyId={companyId}
-        onSubmitApproval={async (payload) => {
-          const res = await onCreateRecord('tasks', payload);
-          if (res.ok) {
-            showToast(
-              isEn
-                ? 'Approval request sent to manager & Telegram'
-                : 'Запрос на согласование отправлен руководителю и в Telegram'
-            );
-          }
+        onCreated={async () => {
+          await onRefresh();
         }}
+        showToast={showToast}
+      />
+
+      <LegalDocumentGeneratorModal
+        deal={legalDocModalDeal}
+        company={company}
+        onClose={() => setLegalDocModalDeal(null)}
       />
 
       {/* Custom Enterprise Confirmation Dialog */}

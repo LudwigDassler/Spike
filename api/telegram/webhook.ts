@@ -332,10 +332,20 @@ function resolveUserPermissions(user: any): {
   };
 }
 
-// Главное меню командного центра с кнопками «Аналитика TedCloud AI» и «Связь с коллегами / Отделом» (ZERO EMOJI)
+const pendingNatTextMap = new Map<string, string>();
+const pendingFwdMap = new Map<string, { clientName: string; text: string; phone?: string }>();
+
+// Главное меню командного центра с кнопками «Аналитика TedCloud AI», «Связь с коллегами» и «Рабочая смена» (ZERO EMOJI)
 function buildRoleCommandCenterKeyboard(siteUrl: string, chatId: string, user: any) {
-  const { canAssignTasks, canViewCrm } = resolveUserPermissions(user);
+  const { canAssignTasks, canViewCrm, rawPerms } = resolveUserPermissions(user);
+  const isShiftActive = Boolean(rawPerms?.shift_started_at);
   const rows: any[][] = [
+    [
+      {
+        text: isShiftActive ? 'Завершить смену (Отчет)' : 'Начать рабочую смену',
+        callback_data: 'shift_toggle',
+      },
+    ],
     [{ text: 'Мои активные задачи', callback_data: 'menu_my_tasks' }],
     [{ text: 'Аналитика TedCloud AI', callback_data: 'menu_ai_brief' }],
     [{ text: 'Связь с коллегами / Отделом', callback_data: 'menu_comm' }],
@@ -1207,7 +1217,337 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         return res.status(200).send('OK');
       }
 
-      // Обработка выбора сотрудника или кнопки «Ответить» (reply_msg_<UUID>) — строго 1 строка с кнопкой [Отмена]
+      // 5.1 Рабочая смена (Check-in / Check-out с авто-отчетом)
+      if (cbData === 'shift_toggle') {
+        const { rawPerms } = resolveUserPermissions(user);
+        const companyId = user.company_id || (await resolveCompanyId());
+        const nowIso = new Date().toISOString();
+        const timeLabel = new Date().toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        if (!rawPerms?.shift_started_at) {
+          await safeWebhookUpdate(supabase, 'organization_nodes', user.id, {
+            permissions: {
+              ...rawPerms,
+              shift_started_at: nowIso,
+            },
+          });
+          if (cbId) await answerCallbackQuery(cbId, 'Рабочая смена открыта');
+          await sendTelegramMessage(
+            cbChatId,
+            `✓ <b>Смена начата (${timeLabel})</b> · Статус: На линии`,
+            {
+              reply_markup: {
+                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              },
+            }
+          );
+          return res.status(200).send('OK');
+        } else {
+          const startedMs = new Date(rawPerms.shift_started_at).getTime();
+          const diffMin = Math.max(1, Math.round((Date.now() - startedMs) / 60000));
+          const hours = Math.floor(diffMin / 60);
+          const mins = diffMin % 60;
+          const durationStr = hours > 0 ? `${hours} ч ${mins} мин` : `${mins} мин`;
+
+          const { data: userTasks } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('assigned_to', user.id);
+          const doneCount = (userTasks || []).filter((t: any) => t.status === 'Done').length;
+          const inProgCount = (userTasks || []).filter((t: any) => t.status !== 'Done').length;
+
+          const cleanedPerms = { ...rawPerms };
+          delete cleanedPerms.shift_started_at;
+          await safeWebhookUpdate(supabase, 'organization_nodes', user.id, {
+            permissions: cleanedPerms,
+          });
+
+          const summaryText = `Завершена смена (${durationStr}). Выполнено задач: ${doneCount}, в работе: ${inProgCount}.`;
+          await safeWebhookInsert(supabase, 'workspace_messages', {
+            company_id: companyId,
+            sender_id: user.id,
+            sender_name: user.name,
+            sender_role: user.role_type || 'Специалист',
+            target_type: 'broadcast',
+            target_label: 'Всем сотрудникам',
+            message_text: summaryText,
+            text: summaryText,
+            is_urgent: false,
+            is_read: false,
+          });
+
+          if (cbId) await answerCallbackQuery(cbId, 'Смена завершена, отчет отправлен');
+          await sendTelegramMessage(
+            cbChatId,
+            `✓ <b>Смена завершена (${durationStr})</b>\nАвто-отчет опубликован в общем инфополе (Выполнено: ${doneCount}, В работе: ${inProgCount}).`,
+            {
+              reply_markup: {
+                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              },
+            }
+          );
+          return res.status(200).send('OK');
+        }
+      }
+
+      // 5.2 Быстрые реакции в 1 клик под входящим сообщением (quick_ack_ / quick_wait_)
+      if (cbData.startsWith('quick_ack_') || cbData.startsWith('quick_wait_')) {
+        const isAck = cbData.startsWith('quick_ack_');
+        const targetNodeId = isAck
+          ? cbData.slice('quick_ack_'.length)
+          : cbData.slice('quick_wait_'.length);
+        const quickReplyText = isAck
+          ? 'Принято в работу, сделаю!'
+          : 'На связи, отвечу через 10 минут!';
+
+        const companyId = user.company_id || (await resolveCompanyId());
+        const { data: targetNode } = await supabase
+          .from('organization_nodes')
+          .select('*')
+          .eq('id', targetNodeId)
+          .maybeSingle();
+
+        const { data: insertedQuickMsg } = await safeWebhookInsert(
+          supabase,
+          'workspace_messages',
+          {
+            company_id: companyId,
+            sender_id: user.id,
+            sender_name: user.name,
+            sender_role: user.role_type || 'Специалист',
+            target_type: 'direct',
+            target_id: targetNodeId,
+            target_label: targetNode?.name || 'Сотрудник',
+            message_text: quickReplyText,
+            text: quickReplyText,
+            is_urgent: false,
+            is_read: false,
+          }
+        );
+
+        if (targetNode?.telegram_chat_id && String(targetNode.telegram_chat_id).trim() !== cbChatId) {
+          const incomingHtml = formatCompactIncomingTelegramMessage({
+            senderName: user.name || 'Сотрудник',
+            senderRole: user.role_type || 'Специалист',
+            messageText: quickReplyText,
+            targetType: 'direct',
+            targetLabel: null,
+          });
+          await sendTelegramMessage(String(targetNode.telegram_chat_id).trim(), incomingHtml, {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: 'Написать ответ', callback_data: `reply_msg_${user.id}` },
+                  ...(insertedQuickMsg?.id
+                    ? [{ text: 'В задачу', callback_data: `msg_to_task_${insertedQuickMsg.id}` }]
+                    : []),
+                ],
+              ],
+            },
+          });
+        }
+
+        if (cbId) await answerCallbackQuery(cbId, 'Быстрый ответ отправлен');
+        await sendTelegramMessage(cbChatId, '✓ Быстрый ответ отправлен', {
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+          },
+        });
+        return res.status(200).send('OK');
+      }
+
+      // 5.3 Умное распознавание имени коллеги или пересланного контакта (nat_msg_, nat_task_, fwd_to_lead, fwd_to_task)
+      if (cbData.startsWith('nat_msg_') || cbData.startsWith('nat_task_')) {
+        const isMsg = cbData.startsWith('nat_msg_');
+        const targetNodeId = isMsg
+          ? cbData.slice('nat_msg_'.length)
+          : cbData.slice('nat_task_'.length);
+        const savedText = pendingNatTextMap.get(cbChatId) || 'Оперативное поручение';
+        pendingNatTextMap.delete(cbChatId);
+        const companyId = user.company_id || (await resolveCompanyId());
+
+        const { data: targetNode } = await supabase
+          .from('organization_nodes')
+          .select('*')
+          .eq('id', targetNodeId)
+          .maybeSingle();
+        const targetName = targetNode?.name || 'Сотрудник';
+
+        if (isMsg) {
+          await setPendingCommForUser(cbChatId, user, {
+            mode: 'direct',
+            targetNodeId,
+          });
+          const { data: insertedMsg } = await safeWebhookInsert(supabase, 'workspace_messages', {
+            company_id: companyId,
+            sender_id: user.id,
+            sender_name: user.name,
+            sender_role: user.role_type || 'Специалист',
+            target_type: 'direct',
+            target_id: targetNodeId,
+            target_label: targetName,
+            message_text: savedText,
+            text: savedText,
+            is_urgent: false,
+            is_read: false,
+          });
+          if (targetNode?.telegram_chat_id && String(targetNode.telegram_chat_id).trim() !== cbChatId) {
+            const incomingHtml = formatCompactIncomingTelegramMessage({
+              senderName: user.name || 'Сотрудник',
+              senderRole: user.role_type || 'Специалист',
+              messageText: savedText,
+              targetType: 'direct',
+              targetLabel: null,
+            });
+            await sendTelegramMessage(String(targetNode.telegram_chat_id).trim(), incomingHtml, {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: 'Принято, сделаю', callback_data: `quick_ack_${user.id}` },
+                    { text: 'На связи через 10 мин', callback_data: `quick_wait_${user.id}` },
+                  ],
+                  [
+                    { text: 'Написать ответ', callback_data: `reply_msg_${user.id}` },
+                    ...(insertedMsg?.id
+                      ? [{ text: 'В задачу', callback_data: `msg_to_task_${insertedMsg.id}` }]
+                      : []),
+                  ],
+                ],
+              },
+            });
+          }
+          const timeNow = new Date().toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          if (cbId) await answerCallbackQuery(cbId, `Отправлено: ${targetName}`);
+          await sendTelegramMessage(
+            cbChatId,
+            `✓ Доставлено (${timeNow}) · Можете продолжить мысль или нажать «Командное меню»`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    ...(insertedMsg?.id
+                      ? [{ text: 'Поставить как задачу', callback_data: `msg_to_task_${insertedMsg.id}` }]
+                      : []),
+                    { text: 'Меню', callback_data: 'open_main_menu' },
+                  ],
+                ],
+              },
+            }
+          );
+          return res.status(200).send('OK');
+        } else {
+          const { data: createdTask } = await safeWebhookInsert(supabase, 'tasks', {
+            company_id: companyId,
+            title: savedText,
+            type: 'Task',
+            priority: 'Medium',
+            status: 'Todo',
+            department: targetNode?.department || null,
+            owner_node_id: targetNodeId,
+            assigned_to: targetNodeId,
+            created_by: user.id,
+          });
+          if (targetNode?.telegram_chat_id && String(targetNode.telegram_chat_id).trim() !== cbChatId) {
+            await sendTelegramMessage(
+              String(targetNode.telegram_chat_id).trim(),
+              `<b>Поручение</b> · ${escapeHtml(user.name)} (<i>${escapeHtml(
+                user.role_type || 'Руководитель'
+              )}</i>)\n${escapeHtml(savedText)}`,
+              {
+                reply_markup: {
+                  inline_keyboard: createdTask?.id
+                    ? [
+                        [
+                          { text: 'В работу', callback_data: `task_progress:${createdTask.id}` },
+                          { text: 'Выполнено', callback_data: `task_done:${createdTask.id}` },
+                        ],
+                      ]
+                    : [],
+                },
+              }
+            );
+          }
+          if (cbId) await answerCallbackQuery(cbId, 'Задача поручена');
+          await sendTelegramMessage(
+            cbChatId,
+            `✓ Задача поручена (<b>${escapeHtml(targetName)}</b>): <b>${escapeHtml(savedText)}</b>`,
+            {
+              reply_markup: {
+                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              },
+            }
+          );
+          return res.status(200).send('OK');
+        }
+      }
+
+      if (cbData === 'fwd_to_lead' || cbData === 'fwd_to_task') {
+        const fwd = pendingFwdMap.get(cbChatId) || {
+          clientName: 'Внешний контакт Telegram',
+          text: 'Запрос из Telegram',
+        };
+        pendingFwdMap.delete(cbChatId);
+        const companyId = user.company_id || (await resolveCompanyId());
+
+        if (cbData === 'fwd_to_lead') {
+          await safeWebhookInsert(supabase, 'crm_leads', {
+            company_id: companyId,
+            client_name: fwd.clientName,
+            full_name: fwd.clientName,
+            title: `${fwd.clientName} — Telegram`,
+            amount: 0,
+            deal_value: 0,
+            status: 'New',
+            stage: 'New',
+            contact: fwd.phone || null,
+            notes: fwd.text,
+            description: fwd.text,
+            owner_node_id: user.id,
+            assigned_to: user.id,
+          });
+          if (cbId) await answerCallbackQuery(cbId, 'Сделка создана в CRM');
+          await sendTelegramMessage(
+            cbChatId,
+            `✓ Создана сделка CRM: <b>${escapeHtml(fwd.clientName)}</b>`,
+            {
+              reply_markup: {
+                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              },
+            }
+          );
+          return res.status(200).send('OK');
+        } else {
+          await safeWebhookInsert(supabase, 'tasks', {
+            company_id: companyId,
+            title: `${fwd.clientName}: ${fwd.text}`.slice(0, 140),
+            type: 'Task',
+            priority: 'Medium',
+            status: 'Todo',
+            owner_node_id: user.id,
+            assigned_to: user.id,
+            created_by: user.id,
+          });
+          if (cbId) await answerCallbackQuery(cbId, 'Задача создана');
+          await sendTelegramMessage(
+            cbChatId,
+            `✓ Задача создана из пересланного контакта: <b>${escapeHtml(fwd.clientName)}</b>`,
+            {
+              reply_markup: {
+                inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              },
+            }
+          );
+          return res.status(200).send('OK');
+        }
+      }
+
+      // Обработка выбора сотрудника или кнопки «Написать ответ» (reply_msg_<UUID>) — непрерывная сессия диалога (Sticky Chat Session)
       if (cbData.startsWith('comm_to_node:') || cbData.startsWith('reply_msg_')) {
         const targetNodeId = cbData.startsWith('comm_to_node:')
           ? cbData.slice('comm_to_node:'.length)
@@ -1230,13 +1570,13 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           targetNodeId,
         });
 
-        if (cbId) await answerCallbackQuery(cbId, `Ответ для: ${targetName}`);
+        if (cbId) await answerCallbackQuery(cbId, `Связь с: ${targetName}`);
         await sendTelegramMessage(
           cbChatId,
-          `Ответ для <b>${escapeHtml(targetName)}</b> (отправьте текст):`,
+          `<b>Связь с: ${escapeHtml(targetName)}</b>\nПишите сообщения подряд — они доставляются мгновенно:`,
           {
             reply_markup: {
-              inline_keyboard: [[{ text: 'Отмена', callback_data: 'cancel_reply' }]],
+              inline_keyboard: [[{ text: 'Завершить диалог', callback_data: 'cancel_action' }]],
             },
           }
         );
@@ -1263,10 +1603,10 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         return res.status(200).send('OK');
       }
 
-      if (cbData === 'cancel_comm' || cbData === 'cancel_reply') {
+      if (cbData === 'cancel_comm' || cbData === 'cancel_reply' || cbData === 'cancel_action') {
         await setPendingCommForUser(cbChatId, user, null);
-        if (cbId) await answerCallbackQuery(cbId, 'Отправка отменена');
-        await sendTelegramMessage(cbChatId, 'Отправка сообщения отменена.', {
+        if (cbId) await answerCallbackQuery(cbId, 'Диалог завершен');
+        await sendTelegramMessage(cbChatId, 'Диалог завершен.', {
           reply_markup: {
             inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
           },
@@ -1503,7 +1843,10 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
       }
 
       if (activeCommState && !rawText.startsWith('/')) {
-        await setPendingCommForUser(chatId, user, null);
+        // БЛОК 3.1: В режиме личного диалога ('direct') НЕ сбрасываем сессию, чтобы сотрудник мог писать сообщения подряд!
+        if (activeCommState.mode !== 'direct') {
+          await setPendingCommForUser(chatId, user, null);
+        }
         const nodesList = await loadCompanyNodes();
 
         // БЛОК 1: is_urgent ставится ТОЛЬКО если сообщение начинается с "!" (символ "!" убирается)
@@ -1589,16 +1932,26 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           targetLabel: resolvedTargetType === 'direct' ? null : resolvedTargetLabel,
         });
 
-        // Кнопки под входящим сообщением выстроены в один горизонтальный ряд (2 кнопки рядом)
+        // 2 ряда живых кнопок под входящим сообщением (БЛОК 3.2)
+        const quickReactionRow: any[] = [
+          {
+            text: 'Принято, сделаю',
+            callback_data: `quick_ack_${user.id}`,
+          },
+          {
+            text: 'На связи через 10 мин',
+            callback_data: `quick_wait_${user.id}`,
+          },
+        ];
         const actionRow: any[] = [
           {
-            text: 'Ответить',
+            text: 'Написать ответ',
             callback_data: `reply_msg_${user.id}`,
           },
         ];
         if (msgIdForTask) {
           actionRow.push({
-            text: 'Создать задачу',
+            text: 'В задачу',
             callback_data: `msg_to_task_${msgIdForTask}`,
           });
         }
@@ -1609,22 +1962,72 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
 
           await sendTelegramMessage(recChatId, incomingHtml, {
             reply_markup: {
-              inline_keyboard: [actionRow],
+              inline_keyboard: [quickReactionRow, actionRow],
             },
           });
         }
 
-        // БЛОК 1: Лаконичное подтверждение в 1 строку без спама главным меню
+        const timeStr = new Date().toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        // БЛОК 3.1: Подтверждение доставки с сохранением непрерывного диалога
         await sendTelegramMessage(
           chatId,
-          `✓ Доставлено: <b>${escapeHtml(recipientShortName)}</b>`,
+          `✓ Доставлено (${timeStr}) · <b>${escapeHtml(recipientShortName)}</b> · Можете продолжить мысль или нажать «Меню»`,
           {
             reply_markup: {
-              inline_keyboard: [[{ text: 'Командное меню', callback_data: 'open_main_menu' }]],
+              inline_keyboard: [
+                [
+                  ...(msgIdForTask
+                    ? [{ text: 'Поставить как задачу', callback_data: `msg_to_task_${msgIdForTask}` }]
+                    : []),
+                  { text: 'Меню', callback_data: 'open_main_menu' },
+                ],
+              ],
             },
           }
         );
 
+        return res.status(200).send('OK');
+      }
+
+      // БЛОК 3.4: Пересылка внешнего сообщения или контакта (Forward-to-CRM / Task)
+      const isForwarded = Boolean(
+        message?.forward_from ||
+          message?.forward_sender_name ||
+          message?.forward_from_chat ||
+          message?.contact
+      );
+      if (isForwarded && !rawText.startsWith('/')) {
+        const fwdClientName =
+          message?.contact?.first_name ||
+          message?.forward_from?.first_name ||
+          message?.forward_sender_name ||
+          message?.forward_from_chat?.title ||
+          'Внешний клиент';
+        pendingFwdMap.set(chatId, {
+          clientName: String(fwdClientName).trim(),
+          text: rawText || message?.caption || 'Контакт из Telegram',
+          phone: message?.contact?.phone_number || undefined,
+        });
+        await sendTelegramMessage(
+          chatId,
+          `Распознан внешний контакт (<b>${escapeHtml(
+            String(fwdClientName).trim()
+          )}</b>). Создать из сообщения:`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '+ В новую сделку CRM', callback_data: 'fwd_to_lead' },
+                  { text: '+ В задачу', callback_data: 'fwd_to_task' },
+                ],
+              ],
+            },
+          }
+        );
         return res.status(200).send('OK');
       }
 
@@ -1653,6 +2056,50 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
       const delegatedTargetId =
         pendingDelegateMap.get(chatId) ||
         (typeof rawPerms.pending_delegate_to === 'string' ? rawPerms.pending_delegate_to : null);
+
+      // БЛОК 3.4: Естественное распознавание имени/фамилии коллеги в тексте вне режима диалога
+      if (!delegatedTargetId && !rawText.startsWith('/new')) {
+        const nodesList = await loadCompanyNodes();
+        const lowerInput = cleanTitle.toLowerCase();
+        const matchedColleague = nodesList.find((emp: any) => {
+          if (String(emp.id) === String(user.id)) return false;
+          const parts = String(emp.name || '')
+            .toLowerCase()
+            .split(/\s+/)
+            .filter((part) => part.length >= 4);
+          return parts.some((token) => {
+            const stem = token.length >= 5 ? token.slice(0, -1) : token;
+            return lowerInput.includes(stem);
+          });
+        });
+
+        if (matchedColleague) {
+          pendingNatTextMap.set(chatId, cleanTitle);
+          await sendTelegramMessage(
+            chatId,
+            `Нашел сотрудника <b>${escapeHtml(
+              matchedColleague.name
+            )}</b>. Отправить как сообщение или поставить задачу?`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: 'Отправить сообщение',
+                      callback_data: `nat_msg_${matchedColleague.id}`,
+                    },
+                    {
+                      text: 'Поставить задачу',
+                      callback_data: `nat_task_${matchedColleague.id}`,
+                    },
+                  ],
+                ],
+              },
+            }
+          );
+          return res.status(200).send('OK');
+        }
+      }
 
       let targetAssigneeNode = user;
       let isDelegated = false;

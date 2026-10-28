@@ -55,6 +55,7 @@ export interface PinnedPlaybookItem {
   size: number;
   pinned_at: string;
   pinned_by?: string;
+  acknowledged_by?: string[] | null;
 }
 
 export interface CompanyBillingDetails {
@@ -133,6 +134,7 @@ export interface TaskRecord {
   checklist?: TaskChecklistItem[] | null;
   attachments?: AttachmentItem[] | null;
   ai_summary?: string | null;
+  lead_id?: string | null;
   due_date?: string | null;
   created_at?: string;
 }
@@ -197,6 +199,7 @@ export interface WorkspaceMessageRecord {
   attachments?: AttachmentItem[] | null;
   is_urgent?: boolean;
   is_read?: boolean;
+  acknowledged_by?: string[] | null;
   created_at?: string;
 }
 

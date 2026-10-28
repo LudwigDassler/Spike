@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const visibleNavItems = navItems.filter((item) => item.visible);
 
   return (
-    <aside className="hidden lg:flex w-64 shrink-0 bg-[#070709] flex-col justify-between min-h-screen select-none">
+    <aside className="hidden lg:flex w-64 shrink-0 bg-[#070709] flex-col justify-between min-h-screen select-none overflow-hidden">
       <div>
         {/* Brand Header */}
         <div className="h-14 px-5 flex items-center justify-between">

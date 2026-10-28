@@ -210,6 +210,13 @@ function AppContent() {
           localStorage.removeItem(SESSION_PROFILE_ID_KEY);
           localStorage.removeItem(SESSION_COMPANY_ID_KEY);
         }
+      } else if (params.get('autostart') === '1' && loadedNodes.length > 0) {
+        const autoNode = loadedNodes[0];
+        setCurrentProfile(autoNode);
+        localStorage.setItem(SESSION_PROFILE_ID_KEY, autoNode.id);
+        if (autoNode.company_id) {
+          localStorage.setItem(SESSION_COMPANY_ID_KEY, autoNode.company_id);
+        }
       } else {
         setCurrentProfile(null);
       }
@@ -265,7 +272,13 @@ function AppContent() {
 
   const handlePatchRecord = useCallback(
     async (
-      table: 'tasks' | 'crm_leads' | 'organization_nodes' | 'companies' | 'billing_invoices',
+      table:
+        | 'tasks'
+        | 'crm_leads'
+        | 'organization_nodes'
+        | 'companies'
+        | 'billing_invoices'
+        | 'workspace_messages',
       id: string,
       updates: Record<string, any>
     ): Promise<{ ok: boolean; pushSent?: boolean }> => {
@@ -313,6 +326,12 @@ function AppContent() {
           setCompany((prev) => (prev ? { ...prev, ...result.data } : result.data));
         } else if (table === 'billing_invoices' && result.data) {
           setInvoices((prev) =>
+            (Array.isArray(prev) ? prev : []).map((item) =>
+              item.id === id ? result.data : item
+            )
+          );
+        } else if (table === 'workspace_messages' && result.data) {
+          setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((item) =>
               item.id === id ? result.data : item
             )

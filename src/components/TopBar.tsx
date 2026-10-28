@@ -1,9 +1,11 @@
 import React from 'react';
 import { RefreshCw, Search, Cpu, Command, X, Menu, Sun, Moon } from 'lucide-react';
-import { DashboardSection } from '../types/database';
+import { DashboardSection, OrganizationNode, TaskRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
+import { WorkdayShiftWidget } from './EnterpriseB2BFeatures';
 
 interface TopBarProps {
+  companyId?: string;
   companyName: string;
   activeSection: DashboardSection;
   searchQuery: string;
@@ -14,9 +16,14 @@ interface TopBarProps {
   searchPlaceholder?: string;
   isSyncing: boolean;
   onRefresh: () => void;
+  currentProfile?: OrganizationNode | null;
+  tasks?: TaskRecord[];
+  onPostShiftSummary?: (summaryText: string) => Promise<void>;
+  showToast?: (msg: string) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
+  companyId = 'default',
   companyName,
   activeSection,
   searchQuery,
@@ -27,6 +34,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   searchPlaceholder,
   isSyncing,
   onRefresh,
+  currentProfile = null,
+  tasks = [],
+  onPostShiftSummary,
+  showToast,
 }) => {
   const { t, language, theme, toggleTheme } = useLocale();
   const isEn = language === 'en';
@@ -66,7 +77,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </span>
       </div>
 
-      {/* Zone 2 & 3: Global Search (Cmd+K) + TedCloud Intelligence + Theme Switcher + Refresh */}
+      {/* Zone 2 & 3: Global Search (Cmd+K) + Workday Shift Tracker + TedCloud Intelligence + Theme Switcher + Refresh */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {/* Mobile compact search button (< 640px) */}
         {onOpenCommandBar && (
@@ -94,7 +105,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             }}
             placeholder={effectivePlaceholder}
             aria-label={effectivePlaceholder}
-            className="w-44 md:w-60 lg:w-72 rounded-lg border border-white/[0.08] bg-[#111114] pl-8 pr-14 py-1.5 text-xs text-white placeholder-zinc-500 focus:border-white/25 focus:outline-none transition-colors"
+            className="w-40 md:w-56 lg:w-64 rounded-lg border border-white/[0.08] bg-[#111114] pl-8 pr-14 py-1.5 text-xs text-white placeholder-zinc-500 focus:border-white/25 focus:outline-none transition-colors"
           />
           {searchQuery ? (
             <button
@@ -123,6 +134,15 @@ export const TopBar: React.FC<TopBarProps> = ({
             )
           )}
         </div>
+
+        {/* Live Workday Shift Tracker */}
+        <WorkdayShiftWidget
+          companyId={companyId}
+          currentProfile={currentProfile}
+          tasks={tasks}
+          onPostShiftSummary={onPostShiftSummary}
+          showToast={showToast}
+        />
 
         {onOpenAiCopilot && (
           <button

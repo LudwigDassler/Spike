@@ -1648,22 +1648,36 @@ async function sendTelegramWorkspaceMessagePush(params: {
   const senderIdForReply = String(messageRecord.sender_id || senderNode?.id || '');
   const msgIdForTask = String(messageRecord.id || '');
 
-  // Кнопки под входящим сообщением выстроены в один горизонтальный ряд (2 кнопки рядом)
-  const rowButtons: any[] = [];
+  // 2 ряда живых кнопок под входящим сообщением (БЛОК 3.2)
+  const inlineKeyboard: any[][] = [];
   if (senderIdForReply) {
-    rowButtons.push({
-      text: 'Ответить',
+    inlineKeyboard.push([
+      {
+        text: 'Принято, сделаю',
+        callback_data: `quick_ack_${senderIdForReply}`,
+      },
+      {
+        text: 'На связи через 10 мин',
+        callback_data: `quick_wait_${senderIdForReply}`,
+      },
+    ]);
+  }
+  const secondRow: any[] = [];
+  if (senderIdForReply) {
+    secondRow.push({
+      text: 'Написать ответ',
       callback_data: `reply_msg_${senderIdForReply}`,
     });
   }
   if (msgIdForTask) {
-    rowButtons.push({
-      text: 'Создать задачу',
+    secondRow.push({
+      text: 'В задачу',
       callback_data: `msg_to_task_${msgIdForTask}`,
     });
   }
-
-  const inlineKeyboard: any[][] = rowButtons.length > 0 ? [rowButtons] : [];
+  if (secondRow.length > 0) {
+    inlineKeyboard.push(secondRow);
+  }
 
   let pushedCount = 0;
 
@@ -1827,6 +1841,7 @@ function normalizeTaskRow(row: any) {
     checklist,
     attachments,
     ai_summary: row.ai_summary ?? extras?.ai_summary ?? null,
+    lead_id: row.lead_id ?? extras?.lead_id ?? null,
     due_date: row.due_date ?? extras?.due_date ?? null,
     assigned_to:
       row.assigned_to !== undefined
@@ -1997,6 +2012,11 @@ function normalizeMessageRow(row: any) {
       targetType === 'task' || targetType === 'deal' ? targetLabel : merged.entity_title || null,
     is_urgent: Boolean(merged.is_urgent),
     is_read: Boolean(merged.is_read),
+    acknowledged_by: Array.isArray(merged.acknowledged_by)
+      ? merged.acknowledged_by
+      : Array.isArray(extras?.acknowledged_by)
+      ? extras.acknowledged_by
+      : [],
     created_at: merged.created_at || new Date().toISOString(),
   };
 }
@@ -2862,6 +2882,7 @@ ${builtInResult.reply}
         const checklist = Array.isArray(payload.checklist) ? payload.checklist : [];
         const attachments = normalizeAttachmentsServer(payload.attachments);
         const dueDate = payload.due_date ? String(payload.due_date).trim() : null;
+        const leadId = payload.lead_id ? String(payload.lead_id).trim() : null;
 
         const rawInsertPayload: Record<string, any> = {
           company_id: companyId,
@@ -2878,6 +2899,7 @@ ${builtInResult.reply}
           checklist,
           attachments,
           ai_summary: payload.ai_summary || null,
+          lead_id: leadId,
           due_date: dueDate,
         };
 
@@ -2917,6 +2939,7 @@ ${builtInResult.reply}
             checklist,
             attachments,
             ai_summary: payload.ai_summary || null,
+            lead_id: leadId,
             due_date: dueDate,
           });
         }
@@ -3585,6 +3608,9 @@ ${builtInResult.reply}
         if (updates.ai_summary !== undefined) {
           rawUpdates.ai_summary = updates.ai_summary;
         }
+        if (updates.lead_id !== undefined) {
+          rawUpdates.lead_id = updates.lead_id ? String(updates.lead_id).trim() : null;
+        }
         if (updates.due_date !== undefined) {
           rawUpdates.due_date = updates.due_date ? String(updates.due_date).trim() : null;
         }
@@ -3604,6 +3630,7 @@ ${builtInResult.reply}
           ...(rawUpdates.checklist !== undefined ? { checklist: rawUpdates.checklist } : {}),
           ...(rawUpdates.attachments !== undefined ? { attachments: rawUpdates.attachments } : {}),
           ...(rawUpdates.ai_summary !== undefined ? { ai_summary: rawUpdates.ai_summary } : {}),
+          ...(rawUpdates.lead_id !== undefined ? { lead_id: rawUpdates.lead_id } : {}),
           ...(rawUpdates.due_date !== undefined ? { due_date: rawUpdates.due_date } : {}),
         });
 
@@ -3905,6 +3932,51 @@ ${builtInResult.reply}
         return res.status(200).json({
           ok: true,
           data: normalizeNodeRow({ ...existing, ...rawUpdates, ...data }),
+        });
+      }
+
+      if (table === 'workspace_messages') {
+        const rawUpdates: Record<string, any> = {};
+        if (updates.is_read !== undefined) {
+          rawUpdates.is_read = Boolean(updates.is_read);
+        }
+        if (updates.acknowledged_by !== undefined) {
+          rawUpdates.acknowledged_by = Array.isArray(updates.acknowledged_by)
+            ? updates.acknowledged_by
+            : [];
+        }
+        if (updates.message_text !== undefined || updates.text !== undefined) {
+          const nextText = String(updates.message_text ?? updates.text ?? '').trim();
+          rawUpdates.message_text = nextText;
+          rawUpdates.text = nextText;
+        }
+
+        const prevMsgExtras = recordExtrasOverlay.get(`workspace_messages:${id}`) || {};
+        recordExtrasOverlay.set(`workspace_messages:${id}`, {
+          ...prevMsgExtras,
+          ...rawUpdates,
+        });
+
+        const localIdx = localStore.workspace_messages.findIndex((m) => m.id === id);
+        if (localIdx !== -1) {
+          localStore.workspace_messages[localIdx] = {
+            ...localStore.workspace_messages[localIdx],
+            ...rawUpdates,
+          };
+        }
+
+        if (supabase) {
+          await safeSupabaseUpdate(supabase, 'workspace_messages', id, rawUpdates);
+        }
+
+        const updatedMsg =
+          localIdx !== -1
+            ? localStore.workspace_messages[localIdx]
+            : { id, ...prevMsgExtras, ...rawUpdates };
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeMessageRow(updatedMsg),
         });
       }
 

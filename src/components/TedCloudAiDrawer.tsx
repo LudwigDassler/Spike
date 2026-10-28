@@ -330,7 +330,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl bg-[#0D0D11] border-l border-white/[0.08] h-full flex flex-col justify-between shadow-2xl"
+        className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-[#0D0D11] border-l border-white/[0.08] h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Compact Header */}
@@ -625,7 +625,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         </div>
 
         {/* Bottom Composer with Paperclip + Input + Send */}
-        <div className="shrink-0 bg-[#111116]">
+        <div className="shrink-0 sticky bottom-0 bg-[#111116] border-t border-white/[0.08]">
           <PendingAttachmentsStrip
             attachments={pendingAttachments}
             onRemove={(id) =>
@@ -634,7 +634,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           />
           <form
             onSubmit={handleSubmitQuestion}
-            className="flex items-center gap-2 p-2.5 border-t border-white/[0.08]"
+            className="flex items-center gap-2 p-3"
           >
             <input
               ref={fileInputRef}
