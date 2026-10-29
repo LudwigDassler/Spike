@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Clock,
   Play,
+  Pause,
   Square,
-  Coffee,
   Check,
   Plus,
   FileText,
@@ -239,7 +239,7 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
             onClick={handleToggleBreak}
             className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-zinc-200 hover:bg-white/[0.06] transition-colors text-left"
           >
-            <Coffee className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <Pause className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span>
               {shiftState.status === 'break'
                 ? isEn

@@ -90,12 +90,18 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                onClose();
+              }
+            }}
             placeholder={
               isEn
-                ? 'Instant search: tasks, deals, Tax ID, team members, messages...'
-                : 'Мгновенный поиск: задачи, сделки, ИНН контрагента, сотрудники, сообщения...'
+                ? 'Search tasks, deals, Tax ID, team members, and chat...'
+                : 'Поиск по задачам, сделкам, ИНН, сотрудникам и чату...'
             }
-            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none"
+            className="tc-composer-input !bg-transparent bg-transparent border-0 outline-none focus:ring-0 flex-1 w-full text-sm text-white placeholder-zinc-500"
           />
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-400">

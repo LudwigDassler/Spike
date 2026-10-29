@@ -2222,7 +2222,12 @@ export default async function handler(req: any, res: any) {
             (m) =>
               String(m.company_id || '') === String(activeCompanyId) &&
               (!currentProfile || canServerUserSeeMessage(m, currentProfile))
-          );
+          )
+          .sort((a, b) => {
+            const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return (Number.isNaN(tA) ? 0 : tA) - (Number.isNaN(tB) ? 0 : tB);
+          });
         const companyInvoices = localStore.billing_invoices
           .map(normalizeInvoiceRow)
           .filter((inv) => String(inv.company_id || '') === String(activeCompanyId));
@@ -2342,6 +2347,11 @@ export default async function handler(req: any, res: any) {
           }
         }
       }
+      mergedMessages.sort((a, b) => {
+        const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return (Number.isNaN(tA) ? 0 : tA) - (Number.isNaN(tB) ? 0 : tB);
+      });
 
       // Merge remote billing_invoices with in-memory fallback invoices strictly for activeCompanyId
       const remoteInvoices = Array.isArray(invoicesData) ? invoicesData : [];
@@ -3358,6 +3368,12 @@ ${builtInResult.reply}
           });
         }
 
+        const priorityRu =
+          rawInsertPayload.priority === 'High'
+            ? 'Высокий'
+            : rawInsertPayload.priority === 'Low'
+            ? 'Низкий'
+            : 'Средний';
         await recordAuditLog({
           supabase,
           companyId,
@@ -3366,8 +3382,8 @@ ${builtInResult.reply}
           actionType: 'TASK_CREATED',
           entityType: 'tasks',
           entityId: savedTask?.id,
-          details: `Создана задача «${title}» [${rawInsertPayload.priority}]${
-            taskDept ? ` (${taskDept})` : ''
+          details: `Создана задача «${title}» (Приоритет: ${priorityRu})${
+            taskDept ? ` · ${taskDept}` : ''
           }`,
         });
 
@@ -3843,7 +3859,7 @@ ${builtInResult.reply}
         let savedMsg: any = {
           id: crypto.randomUUID(),
           ...fullRecordExtras,
-          created_at: new Date().toISOString(),
+          created_at: payload.created_at || new Date().toISOString(),
         };
 
         if (supabase) {
@@ -4461,6 +4477,14 @@ ${builtInResult.reply}
         }
 
         if (deletedItem?.company_id) {
+          const itemLabel =
+            deletedItem.title || deletedItem.client_name || deletedItem.name || id;
+          const deletedPrefix =
+            table === 'tasks'
+              ? 'Удалена задача'
+              : table === 'crm_leads'
+              ? 'Удалена сделка CRM'
+              : 'Удален профиль сотрудника';
           await recordAuditLog({
             supabase: null,
             companyId: deletedItem.company_id,
@@ -4468,9 +4492,7 @@ ${builtInResult.reply}
             actionType: `${table.toUpperCase()}_DELETED`,
             entityType: table,
             entityId: id,
-            details: `Удалена запись из «${table}»: ${
-              deletedItem.title || deletedItem.client_name || deletedItem.name || id
-            }`,
+            details: `${deletedPrefix} «${itemLabel}»`,
           });
         }
 
@@ -4496,6 +4518,17 @@ ${builtInResult.reply}
       }
 
       if (existingToDelete?.company_id) {
+        const itemLabel =
+          existingToDelete.title ||
+          existingToDelete.client_name ||
+          existingToDelete.name ||
+          id;
+        const deletedPrefix =
+          table === 'tasks'
+            ? 'Удалена задача'
+            : table === 'crm_leads'
+            ? 'Удалена сделка CRM'
+            : 'Удален профиль сотрудника';
         await recordAuditLog({
           supabase,
           companyId: existingToDelete.company_id,
@@ -4503,12 +4536,7 @@ ${builtInResult.reply}
           actionType: `${table.toUpperCase()}_DELETED`,
           entityType: table,
           entityId: id,
-          details: `Удален объект (${table}): ${
-            existingToDelete.title ||
-            existingToDelete.client_name ||
-            existingToDelete.name ||
-            id
-          }`,
+          details: `${deletedPrefix} «${itemLabel}»`,
         });
       }
 

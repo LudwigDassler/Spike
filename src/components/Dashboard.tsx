@@ -574,10 +574,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Active thread messages in the Split-View Messenger (strictly chronological ascending: oldest at top, newest at bottom)
   const activeThreadMessages = useMemo(() => {
     const list = filterMessagesForActiveThread(visibleMessages, activeCommThread, currentProfile);
-    return [...list].sort(
-      (a, b) =>
-        new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-    );
+    const getSafeTime = (m: any): number => {
+      const raw = m?.created_at || m?.timestamp || m?.inserted_at;
+      if (!raw) return 0;
+      const t = new Date(raw).getTime();
+      return Number.isNaN(t) ? 0 : t;
+    };
+    return [...list].sort((a, b) => getSafeTime(a) - getSafeTime(b));
   }, [visibleMessages, activeCommThread, currentProfile]);
 
   // Auto-scroll to bottom when opening a dialog or receiving/sending a message
@@ -1930,7 +1933,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div
-      className={`min-h-screen flex font-sans antialiased overflow-x-hidden ${
+      className={`flex h-dvh w-full max-w-full overflow-hidden font-sans antialiased ${
         theme === 'light'
           ? 'theme-light bg-slate-100/80 text-[#0f172a]'
           : 'theme-dark bg-[#070709] text-[#EDEDED]'
@@ -1950,7 +1953,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       />
 
       {/* БЛОК 2: Архитектура «Вложенного холста» (Inset Canvas) + Ambient Glow */}
-      <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden lg:m-2.5 lg:rounded-2xl bg-[#0c0c10] border border-white/[0.07] shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-64 before:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(99,102,241,0.09),transparent)]">
+      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto flex flex-col lg:m-2.5 lg:rounded-2xl bg-[#0c0c10] border border-white/[0.07] shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-64 before:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(99,102,241,0.09),transparent)]">
         <TopBar
           companyId={companyId}
           companyName={companyName}
@@ -4319,7 +4322,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 }
               />
             ) : (
-            <div className="h-[calc(100dvh-210px)] min-h-[480px] max-h-[calc(100dvh-210px)] rounded-2xl border border-white/[0.08] bg-[#111114] overflow-hidden flex flex-col lg:flex-row shadow-2xl">
+            <div className="w-full max-w-full min-w-0 h-[calc(100dvh-210px)] min-h-[480px] max-h-[calc(100dvh-210px)] rounded-2xl border border-white/[0.08] bg-[#111114] overflow-hidden flex flex-col lg:flex-row shadow-2xl">
               {/* ЛЕВАЯ ПАНЕЛЬ (Ширина 300px на десктопе, 100% на мобильных при !mobileChatOpen): Каналы и Личные диалоги */}
               <aside
                 className={`${
@@ -4520,7 +4523,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <section
                 className={`${
                   mobileChatOpen ? 'flex' : 'hidden lg:flex'
-                } flex-1 flex-col h-full min-w-0 overflow-hidden bg-[#111113]`}
+                } flex-1 flex-col h-full min-w-0 max-w-full overflow-hidden bg-[#111113]`}
               >
                 {/* Чистая 1-строчная шапка диалога (Linear / Telegram iOS standard) */}
                 {(() => {
@@ -4607,7 +4610,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 })()}
 
                 {/* Поток сообщений (БЛОК 1: pt-5 pb-4 px-5 space-y-1.5, разделители дат и авто-скролл вниз) */}
-                <div className="flex-1 overflow-y-auto no-scrollbar pt-5 pb-4 px-5 space-y-1.5">
+                <div className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar pt-5 pb-4 px-4 sm:px-5 space-y-1.5">
                   {activeThreadMessages.length === 0 ? (
                     <RichEmptyState
                       variant="chat"
@@ -4741,17 +4744,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </div>
                                 )}
 
-                                {/* Обтекаемый бабл сообщения (Telegram Desktop геометрия: w-fit max-w-[75%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words) */}
+                                {/* Обтекаемый бабл сообщения (Telegram Desktop геометрия: w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words) */}
                                 <div
-                                  className={`relative group w-fit max-w-[75%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words shadow-sm transition-colors ${
+                                  className={`relative group w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words shadow-sm transition-colors ${
                                     isOutgoing
-                                      ? 'tc-bubble-outgoing rounded-[20px] rounded-br-[5px] bg-indigo-600/90 text-white'
+                                      ? 'ml-auto tc-bubble-outgoing rounded-[20px] rounded-br-[5px] bg-indigo-600/90 text-white'
                                       : 'rounded-[20px] rounded-bl-[5px] bg-zinc-800/90 text-zinc-100'
                                   }`}
                                 >
                                   {/* Боковая всплывающая панель быстрых реакций и действий (Сбоку от баббла — никогда не перекрывает соседние сообщения и не сжимает "+ В задачу") */}
                                   <div
-                                    className={`tc-reaction-pill absolute z-30 flex items-center gap-1 px-2 py-1 rounded-full w-max whitespace-nowrap shadow-lg backdrop-blur-md bg-zinc-900/95 text-white border border-white/10 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto transition-all duration-150 top-1/2 -translate-y-1/2 ${
+                                    className={`tc-reaction-pill absolute z-30 hidden group-hover:flex focus-within:flex items-center gap-1 px-2 py-1 rounded-full w-max whitespace-nowrap shadow-lg backdrop-blur-md bg-zinc-900/95 text-white border border-white/10 transition-all duration-150 top-1/2 -translate-y-1/2 ${
                                       isOutgoing ? 'right-full mr-2' : 'left-full ml-2'
                                     }`}
                                   >
@@ -4965,16 +4968,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   )}
                 </div>
 
-                {/* Плашка цитируемого сообщения (Reply Banner) над полем ввода */}
+                {/* Плашка цитируемого сообщения (Reply Banner) над полем ввода — адаптивная под тему */}
                 {replyingToMessage && (
-                  <div className="shrink-0 px-4 py-2 border-t border-white/[0.07] bg-[#14141A] flex items-center justify-between gap-3">
+                  <div
+                    className={`tc-reply-banner shrink-0 px-4 py-2 flex items-center justify-between gap-3 ${
+                      theme === 'light'
+                        ? 'bg-indigo-50/90 border-t border-indigo-200 text-slate-800'
+                        : 'bg-zinc-900/95 border-t border-white/10 text-zinc-200'
+                    }`}
+                  >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <Reply className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <Reply
+                        className={`w-3.5 h-3.5 shrink-0 ${
+                          theme === 'light' ? 'text-indigo-600' : 'text-indigo-400'
+                        }`}
+                      />
                       <div className="min-w-0 border-l-2 border-indigo-500 pl-2">
-                        <div className="text-[11px] font-semibold text-indigo-300 truncate">
+                        <div
+                          className={`text-[11px] font-semibold truncate ${
+                            theme === 'light' ? 'text-indigo-600' : 'text-indigo-300'
+                          }`}
+                        >
                           {isEn ? 'Reply to' : 'В ответ'} {replyingToMessage.sender_name}
                         </div>
-                        <div className="text-xs text-zinc-400 truncate">
+                        <div
+                          className={`text-xs truncate ${
+                            theme === 'light' ? 'text-slate-600' : 'text-zinc-400'
+                          }`}
+                        >
                           {replyingToMessage.text}
                         </div>
                       </div>
@@ -4982,7 +5003,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setReplyingToMessage(null)}
-                      className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+                      className={`p-1 rounded-lg transition-colors shrink-0 ${
+                        theme === 'light'
+                          ? 'text-slate-500 hover:text-slate-900 hover:bg-indigo-100/80'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                      }`}
                       aria-label={isEn ? 'Cancel reply' : 'Отменить ответ'}
                     >
                       <X className="w-3.5 h-3.5" />
@@ -5435,8 +5460,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ================================================================== */}
           {activeSection === 'profile' && currentProfile && (
             <div className="max-w-4xl mx-auto space-y-6">
-              {/* Верхний презентабельный блок (Header): Крупный градиентный аватар, ФИО, бейджи, статус Telegram и 2 вторичные кнопки-триггеры модалок */}
-              <div className="rounded-2xl border border-white/[0.08] bg-[#111115] shadow-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+              {/* Верхний презентабельный блок (Header): Крупный градиентный аватар, ФИО, бейджи в одну горизонтальную линию и 2 вторичные кнопки-триггеры модалок */}
+              <div className="rounded-2xl border border-white/[0.08] bg-[#111115] shadow-2xl p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">
                   <div className="relative group shrink-0">
                     <button
@@ -5475,29 +5500,69 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     />
                   </div>
 
-                  <div className="space-y-2 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                       <h2 className="text-lg font-semibold text-white tracking-tight truncate">
                         {currentProfile.name}
                       </h2>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.08] text-xs font-medium text-white whitespace-nowrap">
+
+                      {/* Чистая панель из 2 вторичных кнопок-триггеров (Progressive Disclosure) */}
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setIsMyPermissionsModalOpen(true)}
+                          className={SECONDARY_BTN_CLASS}
+                        >
+                          <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>
+                            {isEn
+                              ? 'My Permissions (Access Scope)'
+                              : 'Мои полномочия (Контур доступа)'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsMyAccessKeysModalOpen(true)}
+                          className={SECONDARY_BTN_CLASS}
+                        >
+                          <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>
+                            {isEn ? 'Login Keys & Telegram' : 'Ключи входа и Telegram'}
+                          </span>
+                        </button>
+
+                        {currentProfile.avatar_url && (
+                          <button
+                            type="button"
+                            disabled={isUploadingAvatar}
+                            onClick={() => void handleRemoveAvatar()}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
+                            title={isEn ? 'Remove Photo' : 'Удалить фото'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.08] font-medium text-white whitespace-nowrap">
                         {formatRole(currentProfile.role_type)}
                       </span>
                       {currentProfile.department && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.07] text-xs text-[#A1A1AA] whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.07] text-[#A1A1AA] whitespace-nowrap">
                           {formatRole(currentProfile.department)}
                         </span>
                       )}
-                    </div>
 
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/25 text-indigo-200 font-medium">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/25 text-indigo-200 font-medium whitespace-nowrap">
                         <Shield className="w-3 h-3 text-indigo-400" />
                         <span>{t(`access.${currentAccessLevel}`)}</span>
                       </span>
 
                       {currentProfile.telegram_chat_id ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium tabular-nums">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-medium tabular-nums whitespace-nowrap">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                           <span>
                             {isEn
@@ -5506,51 +5571,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.07] text-[#8E8E93]">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.07] text-[#8E8E93] whitespace-nowrap">
                           <span>{isEn ? 'Telegram not linked' : 'Telegram не привязан'}</span>
                         </span>
                       )}
                     </div>
                   </div>
-                </div>
-
-                {/* Чистая панель из 2 вторичных кнопок-триггеров (Progressive Disclosure) */}
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setIsMyPermissionsModalOpen(true)}
-                    className={SECONDARY_BTN_CLASS}
-                  >
-                    <Shield className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>
-                      {isEn
-                        ? 'My Permissions (Access Scope)'
-                        : 'Мои полномочия (Контур доступа)'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsMyAccessKeysModalOpen(true)}
-                    className={SECONDARY_BTN_CLASS}
-                  >
-                    <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>
-                      {isEn ? 'Login Keys & Telegram' : 'Ключи входа и Telegram'}
-                    </span>
-                  </button>
-
-                  {currentProfile.avatar_url && (
-                    <button
-                      type="button"
-                      disabled={isUploadingAvatar}
-                      onClick={() => void handleRemoveAvatar()}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 text-xs font-medium text-[#A1A1AA] transition-colors whitespace-nowrap"
-                      title={isEn ? 'Remove Photo' : 'Удалить фото'}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
               </div>
 

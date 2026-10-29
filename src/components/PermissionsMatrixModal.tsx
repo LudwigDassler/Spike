@@ -73,6 +73,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [copiedKey, setCopiedKey] = useState<'code' | 'web' | 'tg' | null>(null);
+  const [autoSavedFlash, setAutoSavedFlash] = useState(false);
 
   useEffect(() => {
     if (node) {
@@ -137,8 +138,6 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
       setTimeout(() => setCopiedKey(null), 2000);
     } catch {}
   };
-
-  const [autoSavedFlash, setAutoSavedFlash] = useState(false);
 
   const triggerInstantRbacSave = async (
     nextLevel: AccessLevel,
@@ -259,7 +258,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
         </div>
 
         {/* 3 Switchable Tabs */}
-        <div className="px-5 pt-3 border-b border-white/[0.08] bg-zinc-950/40 flex items-center gap-1 overflow-x-auto no-scrollbar">
+        <div className="px-5 pt-3 border-b border-white/[0.08] bg-[#16161A] flex items-center gap-1 overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setActiveTab('profile')}

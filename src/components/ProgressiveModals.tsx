@@ -757,27 +757,231 @@ interface SecurityAuditLogModalProps {
   auditLogs: AuditLogRecord[];
 }
 
+function formatAuditLogEntry(
+  log: AuditLogRecord,
+  isEn: boolean
+): {
+  actionLabel: string;
+  badgeClass: string;
+  entityLabel: string;
+  cleanDetails: string;
+} {
+  const rawAction = String(log.action_type || (log as any).action || '')
+    .trim()
+    .toUpperCase();
+  const rawEntity = String(log.entity_type || '')
+    .trim()
+    .toLowerCase();
+  const rawDetails = String(log.details || '').trim();
+  const detailsLower = rawDetails.toLowerCase();
+
+  // 1. Determine human-readable Entity (ОБЪЕКТ)
+  let entityCategory: 'tasks' | 'crm' | 'team' | 'billing' | 'approvals' = 'tasks';
+  if (
+    rawEntity === 'tasks' ||
+    rawEntity === 'task' ||
+    rawAction.includes('TASK') ||
+    detailsLower.includes('задач') ||
+    detailsLower.includes('поручен') ||
+    detailsLower.includes('(tasks)')
+  ) {
+    entityCategory = 'tasks';
+  } else if (
+    rawEntity === 'crm_leads' ||
+    rawEntity === 'deal' ||
+    rawEntity === 'lead' ||
+    rawAction.includes('DEAL') ||
+    rawAction.includes('LEAD') ||
+    detailsLower.includes('сделк') ||
+    detailsLower.includes('(crm_leads)')
+  ) {
+    entityCategory = 'crm';
+  } else if (
+    rawEntity === 'organization_nodes' ||
+    rawEntity === 'employee' ||
+    rawEntity === 'team' ||
+    rawAction.includes('EMPLOYEE') ||
+    rawAction.includes('PERMISSION') ||
+    rawAction.includes('NODE') ||
+    detailsLower.includes('сотрудник') ||
+    detailsLower.includes('прав') ||
+    detailsLower.includes('(organization_nodes)')
+  ) {
+    entityCategory = 'team';
+  } else if (
+    rawEntity === 'billing_invoices' ||
+    rawEntity === 'companies' ||
+    rawEntity === 'billing' ||
+    rawAction.includes('INVOICE') ||
+    rawAction.includes('BILLING') ||
+    rawAction.includes('PLAN') ||
+    detailsLower.includes('счет') ||
+    detailsLower.includes('реквизит') ||
+    detailsLower.includes('тариф') ||
+    detailsLower.includes('подписк')
+  ) {
+    entityCategory = 'billing';
+  } else if (rawAction.includes('APPROVAL') || detailsLower.includes('заявк')) {
+    entityCategory = 'approvals';
+  }
+
+  const entityLabel =
+    entityCategory === 'tasks'
+      ? isEn
+        ? 'Tasks'
+        : 'Задачи'
+      : entityCategory === 'crm'
+      ? isEn
+        ? 'CRM Deals'
+        : 'Сделки CRM'
+      : entityCategory === 'team'
+      ? isEn
+        ? 'Team & Access'
+        : 'Штат и Доступы'
+      : entityCategory === 'billing'
+      ? isEn
+        ? 'Billing'
+        : 'Биллинг'
+      : isEn
+      ? 'Tasks'
+      : 'Задачи';
+
+  // 2. Determine Action Label & Semantic Badge Color (ДЕЙСТВИЕ)
+  let actionLabel = isEn ? 'System Event' : 'Системное событие';
+  let badgeClass = 'bg-slate-500/10 text-slate-500 border-slate-500/25';
+
+  if (rawAction.includes('DELETE') || rawAction.includes('REMOVED')) {
+    actionLabel = isEn ? 'Record Deleted' : 'Удаление записи';
+    badgeClass = 'bg-rose-500/10 text-rose-600 border-rose-500/20';
+  } else if (rawAction === 'APPROVAL_REJECTED' || rawAction.includes('REJECT')) {
+    actionLabel = isEn ? 'Approval Rejected' : 'Отклонение заявки';
+    badgeClass = 'bg-rose-500/10 text-rose-600 border-rose-500/20';
+  } else if (rawAction === 'TASK_CREATED' || rawAction === 'AI_TASK_CREATED' || (rawAction === 'CREATE' && entityCategory === 'tasks')) {
+    actionLabel = isEn ? 'Task Created' : 'Создание задачи';
+    badgeClass = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25';
+  } else if (rawAction === 'DEAL_CREATED' || rawAction === 'AI_DEAL_CREATED' || (rawAction === 'CREATE' && entityCategory === 'crm')) {
+    actionLabel = isEn ? 'Deal Created' : 'Создание сделки';
+    badgeClass = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25';
+  } else if (rawAction === 'EMPLOYEE_ADDED' || (rawAction === 'CREATE' && entityCategory === 'team')) {
+    actionLabel = isEn ? 'Employee Added' : 'Добавление сотрудника';
+    badgeClass = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25';
+  } else if (rawAction === 'APPROVAL_APPROVED') {
+    actionLabel = isEn ? 'Approval Granted' : 'Утверждение заявки';
+    badgeClass = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25';
+  } else if (rawAction === 'INVOICE_ISSUED' || rawAction === 'INVOICE_PAID') {
+    actionLabel = isEn ? 'Invoice Issued' : 'Выставление счета';
+    badgeClass = 'bg-indigo-500/10 text-indigo-600 border-indigo-500/25';
+  } else if (
+    rawAction === 'BILLING_DETAILS_UPDATED' ||
+    rawAction === 'COMPANY_PLAN_UPDATED' ||
+    (rawAction === 'UPDATE' && entityCategory === 'billing')
+  ) {
+    actionLabel = isEn ? 'Billing Details Updated' : 'Обновление реквизитов';
+    badgeClass = 'bg-amber-500/10 text-amber-600 border-amber-500/25';
+  } else if (rawAction === 'PERMISSIONS_UPDATED' || rawAction === 'PERMISSIONS_CHANGED') {
+    actionLabel = isEn ? 'Permissions Changed' : 'Изменение прав доступа';
+    badgeClass = 'bg-purple-500/10 text-purple-600 border-purple-500/25';
+  } else if (rawAction === 'UPDATE' || rawAction.includes('UPDATE')) {
+    actionLabel =
+      entityCategory === 'billing'
+        ? isEn
+          ? 'Billing Details Updated'
+          : 'Обновление реквизитов'
+        : entityCategory === 'team'
+        ? isEn
+          ? 'Permissions Changed'
+          : 'Изменение прав доступа'
+        : isEn
+        ? 'Record Updated'
+        : 'Обновление данных';
+    badgeClass =
+      entityCategory === 'team'
+        ? 'bg-purple-500/10 text-purple-600 border-purple-500/25'
+        : 'bg-amber-500/10 text-amber-600 border-amber-500/25';
+  } else if (rawAction === 'CREATE') {
+    actionLabel = isEn ? 'Task Created' : 'Создание задачи';
+    badgeClass = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25';
+  }
+
+  // 3. Clean up Details (ДЕТАЛИ) from technical table names and raw brackets
+  let cleanDetails = rawDetails
+    .replace(
+      /Удален объект\s*\(tasks\)\s*:\s*(.+)$/i,
+      (_, title) => `Удалена задача «${String(title).trim().replace(/^[«"']|[»"']$/g, '')}»`
+    )
+    .replace(
+      /Удалена запись из\s*«tasks»\s*:\s*(.+)$/i,
+      (_, title) => `Удалена задача «${String(title).trim().replace(/^[«"']|[»"']$/g, '')}»`
+    )
+    .replace(
+      /Удален объект\s*\(crm_leads\)\s*:\s*(.+)$/i,
+      (_, title) => `Удалена сделка CRM «${String(title).trim().replace(/^[«"']|[»"']$/g, '')}»`
+    )
+    .replace(
+      /Удалена запись из\s*«crm_leads»\s*:\s*(.+)$/i,
+      (_, title) => `Удалена сделка CRM «${String(title).trim().replace(/^[«"']|[»"']$/g, '')}»`
+    )
+    .replace(
+      /Удален объект\s*\(organization_nodes\)\s*:\s*(.+)$/i,
+      (_, title) => `Удален профиль сотрудника «${String(title).trim().replace(/^[«"']|[»"']$/g, '')}»`
+    )
+    .replace(
+      /Удалена запись из\s*«organization_nodes»\s*:\s*(.+)$/i,
+      (_, title) => `Удален профиль сотрудника «${String(title).trim().replace(/^[«"']|[»"']$/g, '')}»`
+    )
+    .replace(/\((tasks|crm_leads|organization_nodes|billing_invoices|companies|workspace)\)/gi, '')
+    .replace(
+      /\[High\]/gi,
+      isEn ? '(Priority: High)' : '(Приоритет: Высокий)'
+    )
+    .replace(
+      /\[Medium\]/gi,
+      isEn ? '(Priority: Medium)' : '(Приоритет: Средний)'
+    )
+    .replace(
+      /\[Low\]/gi,
+      isEn ? '(Priority: Low)' : '(Приоритет: Низкий)'
+    )
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return {
+    actionLabel,
+    badgeClass,
+    entityLabel,
+    cleanDetails,
+  };
+}
+
 export const SecurityAuditLogModal: React.FC<SecurityAuditLogModalProps> = ({
   isOpen,
   onClose,
   companyName,
   auditLogs,
 }) => {
-  const { language, formatRole } = useLocale();
+  const { language, theme, formatRole } = useLocale();
   const isEn = language === 'en';
+  const isLight = theme === 'light';
   const [query, setQuery] = useState('');
+
+  const enrichedLogs = useMemo(() => {
+    return (Array.isArray(auditLogs) ? auditLogs : []).map((log) => ({
+      raw: log,
+      formatted: formatAuditLogEntry(log, isEn),
+    }));
+  }, [auditLogs, isEn]);
 
   const filteredLogs = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return auditLogs;
-    return auditLogs.filter(
-      (log) =>
-        String(log.actor_name || '').toLowerCase().includes(q) ||
-        String(log.action_type || '').toLowerCase().includes(q) ||
-        String(log.entity_type || '').toLowerCase().includes(q) ||
-        String(log.details || '').toLowerCase().includes(q)
+    if (!q) return enrichedLogs;
+    return enrichedLogs.filter(
+      ({ raw, formatted }) =>
+        String(raw.actor_name || '').toLowerCase().includes(q) ||
+        formatted.actionLabel.toLowerCase().includes(q) ||
+        formatted.entityLabel.toLowerCase().includes(q) ||
+        formatted.cleanDetails.toLowerCase().includes(q)
     );
-  }, [auditLogs, query]);
+  }, [enrichedLogs, query]);
 
   if (!isOpen) return null;
 
@@ -841,7 +1045,13 @@ export const SecurityAuditLogModal: React.FC<SecurityAuditLogModalProps> = ({
           ) : (
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider bg-[#131318]">
+                <tr
+                  className={
+                    isLight
+                      ? 'border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wider bg-slate-100'
+                      : 'border-b border-white/[0.07] text-[11px] font-medium text-[#71717A] uppercase tracking-wider bg-[#131318]'
+                  }
+                >
                   <th className="py-3 px-5">{isEn ? 'Time' : 'Время'}</th>
                   <th className="py-3 px-5">{isEn ? 'Actor' : 'Сотрудник'}</th>
                   <th className="py-3 px-5">{isEn ? 'Action' : 'Действие'}</th>
@@ -850,7 +1060,7 @@ export const SecurityAuditLogModal: React.FC<SecurityAuditLogModalProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.05] text-xs">
-                {filteredLogs.slice(0, 80).map((log) => {
+                {filteredLogs.slice(0, 80).map(({ raw: log, formatted }) => {
                   const timeFormatted = log.created_at
                     ? new Date(log.created_at).toLocaleString(isEn ? 'en-US' : 'ru-RU', {
                         day: '2-digit',
@@ -873,14 +1083,16 @@ export const SecurityAuditLogModal: React.FC<SecurityAuditLogModalProps> = ({
                         )}
                       </td>
                       <td className="py-3 px-5">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-medium text-emerald-300">
-                          {log.action_type || (log as any).action}
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-medium whitespace-nowrap ${formatted.badgeClass}`}
+                        >
+                          {formatted.actionLabel}
                         </span>
                       </td>
-                      <td className="py-3 px-5 text-[#A1A1AA] text-[11px]">
-                        {log.entity_type}
+                      <td className="py-3 px-5 text-[#A1A1AA] text-[11px] font-medium whitespace-nowrap">
+                        {formatted.entityLabel}
                       </td>
-                      <td className="py-3 px-5 text-[#D4D4D8]">{log.details}</td>
+                      <td className="py-3 px-5 text-[#D4D4D8]">{formatted.cleanDetails}</td>
                     </tr>
                   );
                 })}

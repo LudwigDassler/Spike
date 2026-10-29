@@ -291,10 +291,12 @@ export function filterMessagesForActiveThread<
     return false;
   });
 
-  // Sort oldest-to-newest for natural chat reading order (bottom = newest)
-  return [...filtered].sort((a, b) => {
-    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return timeA - timeB;
-  });
+  // Sort oldest-to-newest for natural chat reading order (top = oldest / Yesterday, bottom = newest / Today)
+  const getSafeTime = (m: any): number => {
+    const raw = m?.created_at || m?.timestamp || m?.inserted_at;
+    if (!raw) return 0;
+    const t = new Date(raw).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+  return [...filtered].sort((a, b) => getSafeTime(a) - getSafeTime(b));
 }
