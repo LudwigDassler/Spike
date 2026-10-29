@@ -22,7 +22,7 @@ export const PERMISSION_KEYS: readonly (keyof EmployeePermissions)[] = [
 
 export type TaskPriority = 'Low' | 'Medium' | 'High';
 
-export type TaskStatus = 'Todo' | 'In Progress' | 'Done' | 'Cancelled';
+export type TaskStatus = 'Todo' | 'In Progress' | 'Review' | 'Done' | 'Cancelled';
 
 export type CrmLeadStatus = 'New' | 'Negotiation' | 'Won' | 'Lost';
 

@@ -238,7 +238,7 @@ body.theme-light,
 }
 
 /* Inputs, Selects, Textareas in Light Mode */
-.theme-light input:not([type="checkbox"]):not([type="radio"]),
+.theme-light input:not([type="checkbox"]):not([type="radio"]):not(.tc-composer-input),
 .theme-light select,
 .theme-light textarea {
   background-color: #f8fafc !important;
@@ -246,12 +246,52 @@ body.theme-light,
   color: #0f172a !important;
 }
 
+.theme-light input.tc-composer-input,
+.theme-light .\!bg-transparent {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: #0f172a !important;
+}
+
+.theme-light input.tc-composer-input:focus,
+.theme-light .\!bg-transparent:focus {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Floating Reaction Pill always retains high-contrast dark surface */
+.theme-light .tc-reaction-pill,
+.theme-light .tc-reaction-pill button,
+.theme-light .tc-reaction-pill span {
+  color: #ffffff !important;
+}
+
+.theme-light .tc-reaction-pill {
+  background-color: rgba(24, 24, 27, 0.96) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* Outgoing chat bubble in Light Mode keeps crisp white text on Indigo background */
+.theme-light .tc-bubble-outgoing,
+.theme-light .tc-bubble-outgoing span,
+.theme-light .tc-bubble-outgoing div {
+  color: #ffffff !important;
+}
+
+.theme-light .tc-date-pill {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #475569 !important;
+}
+
 .theme-light input::placeholder,
 .theme-light textarea::placeholder {
   color: #64748b !important;
 }
 
-.theme-light input:focus,
+.theme-light input:not(.tc-composer-input):focus,
 .theme-light select:focus,
 .theme-light textarea:focus {
   border-color: #64748b !important;

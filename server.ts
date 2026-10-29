@@ -29,9 +29,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '15mb' }));
 
-  await checkPostgresConnection();
+  void checkPostgresConnection();
 
   // 1. Получение полного состояния рабочего пространства и статуса подключения БД
   app.get('/api/workspace', async (_req, res) => {

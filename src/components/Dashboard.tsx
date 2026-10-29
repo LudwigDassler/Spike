@@ -295,9 +295,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const quickTaskInputRef = React.useRef<HTMLInputElement | null>(null);
   const quickDealInputRef = React.useRef<HTMLInputElement | null>(null);
   const quickEmployeeInputRef = React.useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
 
   // Task & CRM View Modes + Approvals & Document Vault + B2B Enterprise states
-  const [taskViewMode, setTaskViewMode] = useState<'list' | 'board' | 'timeline'>('list');
+  const [taskViewMode, setTaskViewMode] = useState<'list' | 'board' | 'timeline'>('board');
+  const [taskSliceFilter, setTaskSliceFilter] = useState<
+    'all' | 'mine' | 'delegated' | 'approvals' | 'urgent_overdue'
+  >('all');
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
   const [autoPipelineEnabled, setAutoPipelineEnabled] = useState<boolean>(true);
   const [legalDocModalDeal, setLegalDocModalDeal] = useState<CrmLeadRecord | null>(null);
   const [dealRoomPreviewId, setDealRoomPreviewId] = useState<string | null>(() => {
@@ -565,10 +571,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return safeMessages.filter((msg) => canUserSeeWorkspaceMessage(msg, currentProfile));
   }, [safeMessages, currentProfile]);
 
-  // Active thread messages in the Split-View Messenger (chronological order: oldest to newest or newest to oldest)
+  // Active thread messages in the Split-View Messenger (strictly chronological ascending: oldest at top, newest at bottom)
   const activeThreadMessages = useMemo(() => {
-    return filterMessagesForActiveThread(visibleMessages, activeCommThread, currentProfile);
+    const list = filterMessagesForActiveThread(visibleMessages, activeCommThread, currentProfile);
+    return [...list].sort(
+      (a, b) =>
+        new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+    );
   }, [visibleMessages, activeCommThread, currentProfile]);
+
+  // Auto-scroll to bottom when opening a dialog or receiving/sending a message
+  useEffect(() => {
+    if (activeSection !== 'communications' || commViewMode !== 'messenger') return;
+    const timer = setTimeout(() => {
+      try {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } catch {}
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [
+    activeSection,
+    commViewMode,
+    activeCommThread.type,
+    activeCommThread.id,
+    activeThreadMessages.length,
+  ]);
 
   const broadcastMessagesCount = useMemo(
     () =>
@@ -919,14 +946,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
     } catch {}
   };
 
-  // Filtered Lists
+  // Filtered Lists & Slice Counters (Block 2)
+  const isApprovalTaskHelper = (tItem: TaskRecord) =>
+    String(tItem?.type || '').toLowerCase() === 'approval' ||
+    (tItem?.title || '').startsWith('[СОГЛАСОВАНИЕ:') ||
+    tItem?.status === 'Review';
+
+  const isUrgentOrOverdueTaskHelper = (tItem: TaskRecord) => {
+    if (!tItem || tItem.status === 'Done' || tItem.status === 'Cancelled') return false;
+    if (tItem.priority === 'High') return true;
+    if (tItem.due_date) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      if (tItem.due_date < todayIso) return true;
+    }
+    return false;
+  };
+
   const approvalsCount = useMemo(
+    () => visibleTasks.filter((tItem) => isApprovalTaskHelper(tItem)).length,
+    [visibleTasks]
+  );
+
+  const myTasksSliceCount = useMemo(
     () =>
       visibleTasks.filter(
         (tItem) =>
-          String(tItem?.type || '').toLowerCase() === 'approval' ||
-          (tItem?.title || '').startsWith('[СОГЛАСОВАНИЕ:')
+          currentProfile &&
+          (tItem.assigned_to === currentProfile.id || tItem.owner_node_id === currentProfile.id)
       ).length,
+    [visibleTasks, currentProfile]
+  );
+
+  const delegatedSliceCount = useMemo(
+    () =>
+      visibleTasks.filter(
+        (tItem) =>
+          currentProfile &&
+          tItem.created_by === currentProfile.id &&
+          tItem.assigned_to &&
+          tItem.assigned_to !== currentProfile.id
+      ).length,
+    [visibleTasks, currentProfile]
+  );
+
+  const urgentOverdueSliceCount = useMemo(
+    () => visibleTasks.filter((tItem) => isUrgentOrOverdueTaskHelper(tItem)).length,
     [visibleTasks]
   );
 
@@ -939,7 +1003,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         (item.title || '').toLowerCase().includes(q) ||
         (item.description || item.notes || '').toLowerCase().includes(q) ||
         (item.department || '').toLowerCase().includes(q) ||
-        (item.type || '').toLowerCase().includes(q);
+        (item.type || '').toLowerCase().includes(q) ||
+        (item.id || '').toLowerCase().includes(q);
 
       const matchesMyTasks =
         !onlyMyTasks ||
@@ -949,14 +1014,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const matchesPriority =
         priorityFilter === 'ALL' || (item.priority || 'Medium') === priorityFilter;
 
-      const isApproval =
-        String(item.type || '').toLowerCase() === 'approval' ||
-        (item.title || '').startsWith('[СОГЛАСОВАНИЕ:');
+      const isApproval = isApprovalTaskHelper(item);
       const matchesCategory = taskCategoryFilter === 'all' || isApproval;
 
-      return matchesQuery && matchesMyTasks && matchesPriority && matchesCategory;
+      let matchesSlice = true;
+      if (taskSliceFilter === 'mine') {
+        matchesSlice = Boolean(
+          currentProfile &&
+            (item.assigned_to === currentProfile.id || item.owner_node_id === currentProfile.id)
+        );
+      } else if (taskSliceFilter === 'delegated') {
+        matchesSlice = Boolean(
+          currentProfile &&
+            item.created_by === currentProfile.id &&
+            item.assigned_to &&
+            item.assigned_to !== currentProfile.id
+        );
+      } else if (taskSliceFilter === 'approvals') {
+        matchesSlice = isApproval;
+      } else if (taskSliceFilter === 'urgent_overdue') {
+        matchesSlice = isUrgentOrOverdueTaskHelper(item);
+      }
+
+      return (
+        matchesQuery &&
+        matchesMyTasks &&
+        matchesPriority &&
+        matchesCategory &&
+        matchesSlice
+      );
     });
-  }, [visibleTasks, searchQuery, onlyMyTasks, currentProfile, priorityFilter, taskCategoryFilter]);
+  }, [
+    visibleTasks,
+    searchQuery,
+    onlyMyTasks,
+    currentProfile,
+    priorityFilter,
+    taskCategoryFilter,
+    taskSliceFilter,
+  ]);
 
   const filteredNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -2841,7 +2937,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
             {/* =================================================================
-                TAB 2: ЗАДАЧИ / TASKS (Inline Bar + Список / Канбан / Таймлайн сроков)
+                TAB 2: ЗАДАЧИ / TASKS — ПОЛНОЭКРАННАЯ «СТЕНА ЗАДАЧ» (4-КОЛОНОЧНЫЙ КАНБАН С DRAG & DROP + ГРУППЫ LINEAR + ТАЙМЛАЙН)
             ================================================================== */}
             {activeSection === 'tasks' && (
               <div className="space-y-4">
@@ -2867,544 +2963,767 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     }}
                   />
                 )}
+
                 <section className="rounded-xl border border-white/[0.07] bg-[#111114] overflow-hidden shadow-2xl">
-                <div className="px-5 py-3.5 border-b border-white/[0.07] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-[#A1A1AA]" />
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-[#D4D4D8]">
-                      {t('tasks.sectionTitle')}
-                    </h2>
-                    <span className="text-[11px] font-medium tabular-nums text-[#71717A] bg-[#1A1A1C] px-2 py-0.5 rounded whitespace-nowrap">
-                      {filteredTasks.length}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* БЛОК 3: Таб-переключатель «Все задачи» / «Согласования и Заявки (Approvals)» */}
-                    <div className="inline-flex rounded-lg border border-white/10 bg-[#16161A] p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setTaskCategoryFilter('all')}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                          taskCategoryFilter === 'all'
-                            ? 'bg-zinc-800 text-white border border-white/10'
-                            : 'text-[#8E8E93] hover:text-white'
-                        }`}
-                      >
-                        <span>{isEn ? 'All Tasks' : 'Все задачи'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskCategoryFilter('approvals')}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                          taskCategoryFilter === 'approvals'
-                            ? 'bg-zinc-800 text-white border border-white/10'
-                            : 'text-[#8E8E93] hover:text-white'
-                        }`}
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>{isEn ? 'Approvals' : 'Согласования и Заявки'}</span>
-                        <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-semibold tabular-nums">
-                          {approvalsCount}
-                        </span>
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsRequestApprovalModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-xs font-medium text-indigo-300 transition-colors whitespace-nowrap"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Request Approval' : 'Запрос на согласование'}</span>
-                    </button>
-
-                    {perms.tasks_view_all && (
-                      <button
-                        onClick={() => setOnlyMyTasks((prev) => !prev)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors whitespace-nowrap ${
-                          onlyMyTasks
-                            ? 'bg-white text-black border-white'
-                            : 'bg-[#161618] text-[#A1A1AA] border-white/10 hover:text-white'
-                        }`}
-                      >
-                        {t('tasks.myTasks')}
-                      </button>
-                    )}
-
-                    <select
-                      value={priorityFilter}
-                      onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | 'ALL')}
-                      className="rounded-md border border-white/10 bg-[#161618] px-2.5 py-1 text-xs text-[#D4D4D8] focus:outline-none"
-                    >
-                      <option value="ALL">{t('tasks.allPriorities')}</option>
-                      <option value="High">{t('priority.High')}</option>
-                      <option value="Medium">{t('priority.Medium')}</option>
-                      <option value="Low">{t('priority.Low')}</option>
-                    </select>
-
-                    {perms.data_export && (
-                      <button
-                        onClick={handleExportTasksCsv}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/10 bg-[#161618] text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>CSV</span>
-                      </button>
-                    )}
-
-                    <div className="inline-flex rounded-lg border border-white/10 bg-[#16161A] p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setTaskViewMode('list')}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                          taskViewMode === 'list'
-                            ? 'bg-zinc-800 text-white border border-white/10'
-                            : 'text-[#8E8E93] hover:text-white'
-                        }`}
-                      >
-                        <LayoutList className="w-3.5 h-3.5" />
-                        <span>{isEn ? 'List' : 'Список'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskViewMode('board')}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                          taskViewMode === 'board'
-                            ? 'bg-zinc-800 text-white border border-white/10'
-                            : 'text-[#8E8E93] hover:text-white'
-                        }`}
-                      >
-                        <Columns3 className="w-3.5 h-3.5" />
-                        <span>{isEn ? 'Kanban' : 'Канбан'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskViewMode('timeline')}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                          taskViewMode === 'timeline'
-                            ? 'bg-zinc-800 text-white border border-white/10'
-                            : 'text-[#8E8E93] hover:text-white'
-                        }`}
-                      >
-                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>{isEn ? 'Timeline' : 'Таймлайн сроков'}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {filteredTasks.length === 0 ? (
-                  <RichEmptyState
-                    variant="tasks"
-                    title={t('tasks.emptyTitle')}
-                    description={t('tasks.empty')}
-                    quickCards={[
-                      {
-                        step: isEn ? 'Step 1' : 'Шаг 1',
-                        title: isEn
-                          ? '1. Create First Assignment'
-                          : '1. Создать первое поручение',
-                        subtitle: isEn
-                          ? 'Assign owner, department & SLA deadline'
-                          : 'Укажите исполнителя, подразделение и дедлайн',
-                        icon: 'plus',
-                        onClick: () => setModalType('tasks'),
-                      },
-                      {
-                        step: isEn ? 'Step 2' : 'Шаг 2',
-                        title: isEn
-                          ? '2. Generate Plan via TedCloud Intelligence'
-                          : '2. Сгенерировать план через TedCloud Intelligence',
-                        subtitle: isEn
-                          ? 'Automated AI breakdown & executive summary'
-                          : 'Автоматическая декомпозиция и сводка по задачам',
-                        icon: 'ai',
-                        onClick: () => setIsAiDrawerOpen(true),
-                      },
-                      {
-                        step: isEn ? 'Step 3' : 'Шаг 3',
-                        title: isEn
-                          ? '3. Switch to Kanban Board'
-                          : '3. Переключить на Канбан-доску',
-                        subtitle: isEn
-                          ? 'Track tasks across Todo, In Progress & Done'
-                          : 'Управляйте потоком поручений по колонкам стадий',
-                        icon: 'kanban',
-                        onClick: () => setTaskViewMode('board'),
-                      },
-                    ]}
-                  />
-                ) : taskViewMode === 'list' ? (
-                  <div className="divide-y divide-[#1A1A1C]">
-                    {filteredTasks.map((task) => {
-                      const isBusy = busyRecordId === task.id;
-                      const assignee = task.assigned_to ? nodeMap.get(task.assigned_to) : null;
-                      const checklist = Array.isArray(task.checklist) ? task.checklist : [];
-                      const doneSubtasks = checklist.filter((c) => c.done).length;
-                      const isDecomposing = decomposingTaskId === task.id;
-
-                      return (
-                        <div
-                          key={task.id}
-                          onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
-                          className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#16161A] transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-start sm:items-center gap-3 min-w-0">
-                            <button
-                              type="button"
-                              disabled={isBusy || !canCreateOrEditTasks}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleTaskUpdate(task.id, {
-                                  status: task.status === 'Done' ? 'Todo' : 'Done',
-                                });
-                              }}
-                              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                                task.status === 'Done'
-                                  ? 'bg-emerald-500 border-emerald-500 text-black'
-                                  : 'border-[#3F3F46] hover:border-white'
+                  {/* ВЕРХНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ (БЛОК 2): Быстрые вкладки-срезы слева + Переключатель Стена/Группы/Таймлайн справа */}
+                  <div className="px-4 sm:px-5 py-3.5 border-b border-white/[0.07] flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                    {/* Слева: Быстрые вкладки-срезы */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(
+                        [
+                          {
+                            id: 'all' as const,
+                            label: isEn ? 'All Tasks' : 'Все задачи',
+                            count: visibleTasks.length,
+                          },
+                          {
+                            id: 'mine' as const,
+                            label: isEn ? 'My Assignments' : 'Мои поручения',
+                            count: myTasksSliceCount,
+                          },
+                          {
+                            id: 'delegated' as const,
+                            label: isEn ? 'Delegated by Me' : 'Делегировано мной',
+                            count: delegatedSliceCount,
+                          },
+                          {
+                            id: 'approvals' as const,
+                            label: isEn ? 'Approvals' : 'Согласования',
+                            count: approvalsCount,
+                          },
+                          {
+                            id: 'urgent_overdue' as const,
+                            label: isEn ? 'Urgent / Overdue' : 'Горящие / Просроченные',
+                            count: urgentOverdueSliceCount,
+                          },
+                        ]
+                      ).map((tab) => {
+                        const isActive = taskSliceFilter === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              setTaskSliceFilter(tab.id);
+                              setTaskCategoryFilter('all');
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap border ${
+                              isActive
+                                ? 'bg-white text-black border-white shadow-xs'
+                                : 'bg-[#16161A] text-[#A1A1AA] border-white/[0.08] hover:text-white hover:bg-[#1C1C22]'
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            <span
+                              className={`px-1.5 py-0.2 rounded text-[10px] font-semibold tabular-nums ${
+                                isActive
+                                  ? 'bg-black/15 text-current'
+                                  : tab.id === 'urgent_overdue' && tab.count > 0
+                                  ? 'bg-red-500/20 text-red-300'
+                                  : tab.id === 'approvals' && tab.count > 0
+                                  ? 'bg-indigo-500/20 text-indigo-300'
+                                  : 'bg-zinc-800/80 text-zinc-400'
                               }`}
                             >
-                              {task.status === 'Done' && <CheckCircle2 className="w-3 h-3" />}
-                            </button>
+                              {tab.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                            <div className="min-w-0">
-                              <div
-                                className={`text-sm font-medium truncate ${
-                                  task.status === 'Done'
-                                    ? 'text-[#71717A] line-through'
-                                    : 'text-white'
-                                }`}
-                              >
-                                <InlineEditableCell
-                                  value={task.title}
-                                  disabled={!canCreateOrEditTasks}
-                                  onSave={(nextTitle) =>
-                                    handleTaskUpdate(task.id, { title: nextTitle })
-                                  }
+                    {/* Справа: Действия, фильтр приоритета и переключатель режимов Стена (Канбан) / Группы (Список Linear) / Таймлайн */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsRequestApprovalModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-xs font-medium text-indigo-300 transition-colors whitespace-nowrap"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Request Approval' : 'Запрос на согласование'}</span>
+                      </button>
+
+                      <select
+                        value={priorityFilter}
+                        onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | 'ALL')}
+                        className="rounded-lg border border-white/10 bg-[#161618] px-2.5 py-1.5 text-xs text-[#D4D4D8] focus:outline-none"
+                      >
+                        <option value="ALL">{t('tasks.allPriorities')}</option>
+                        <option value="High">{t('priority.High')}</option>
+                        <option value="Medium">{t('priority.Medium')}</option>
+                        <option value="Low">{t('priority.Low')}</option>
+                      </select>
+
+                      {perms.data_export && (
+                        <button
+                          onClick={handleExportTasksCsv}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/10 bg-[#161618] text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
+                        </button>
+                      )}
+
+                      <div className="inline-flex rounded-lg border border-white/10 bg-[#16161A] p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setTaskViewMode('board')}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                            taskViewMode === 'board'
+                              ? 'bg-zinc-800 text-white border border-white/10'
+                              : 'text-[#8E8E93] hover:text-white'
+                          }`}
+                        >
+                          <Columns3 className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{isEn ? 'Wall (Kanban)' : 'Стена (Канбан)'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTaskViewMode('list')}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                            taskViewMode === 'list'
+                              ? 'bg-zinc-800 text-white border border-white/10'
+                              : 'text-[#8E8E93] hover:text-white'
+                          }`}
+                        >
+                          <LayoutList className="w-3.5 h-3.5" />
+                          <span>{isEn ? 'Groups (Linear List)' : 'Группы (Список Linear)'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTaskViewMode('timeline')}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                            taskViewMode === 'timeline'
+                              ? 'bg-zinc-800 text-white border border-white/10'
+                              : 'text-[#8E8E93] hover:text-white'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{isEn ? 'Timeline' : 'Таймлайн сроков'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {filteredTasks.length === 0 ? (
+                    <RichEmptyState
+                      variant="tasks"
+                      title={t('tasks.emptyTitle')}
+                      description={t('tasks.empty')}
+                      quickCards={[
+                        {
+                          step: isEn ? 'Step 1' : 'Шаг 1',
+                          title: isEn
+                            ? '1. Create First Assignment'
+                            : '1. Создать первое поручение',
+                          subtitle: isEn
+                            ? 'Assign owner, department & SLA deadline'
+                            : 'Укажите исполнителя, подразделение и дедлайн',
+                          icon: 'plus',
+                          onClick: () => setModalType('tasks'),
+                        },
+                        {
+                          step: isEn ? 'Step 2' : 'Шаг 2',
+                          title: isEn
+                            ? '2. Generate Plan via TedCloud Intelligence'
+                            : '2. Сгенерировать план через TedCloud Intelligence',
+                          subtitle: isEn
+                            ? 'Automated AI breakdown & executive summary'
+                            : 'Автоматическая декомпозиция и сводка по задачам',
+                          icon: 'ai',
+                          onClick: () => setIsAiDrawerOpen(true),
+                        },
+                        {
+                          step: isEn ? 'Step 3' : 'Шаг 3',
+                          title: isEn
+                            ? '3. Open 4-Column Task Wall'
+                            : '3. Переключить на Стену задач',
+                          subtitle: isEn
+                            ? 'Track tasks across Queue, In Progress, Review & Done'
+                            : 'Управляйте потоком поручений по 4 колонкам стадий',
+                          icon: 'kanban',
+                          onClick: () => {
+                            setTaskSliceFilter('all');
+                            setTaskViewMode('board');
+                          },
+                        },
+                      ]}
+                    />
+                  ) : taskViewMode === 'board' ? (
+                    /* РЕЖИМ 1: ПОЛНОШИРИННАЯ 4-КОЛОНОЧНАЯ КАНБАН-СТЕНА (grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4) */
+                    <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+                      {(
+                        [
+                          {
+                            status: 'Todo' as TaskStatus,
+                            title: isEn ? 'Queue / To Do' : 'Очередь / К выполнению',
+                            dotClass: 'bg-sky-400',
+                            badgeClass: 'border-sky-500/25 bg-sky-500/10 text-sky-300',
+                            nextStatus: 'In Progress' as TaskStatus,
+                            nextLabel: isEn ? 'Start →' : 'В работу →',
+                          },
+                          {
+                            status: 'In Progress' as TaskStatus,
+                            title: isEn ? 'In Active Progress' : 'В активной работе',
+                            dotClass: 'bg-amber-400',
+                            badgeClass: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+                            nextStatus: 'Review' as TaskStatus,
+                            nextLabel: isEn ? 'To Review →' : 'На проверку →',
+                          },
+                          {
+                            status: 'Review' as TaskStatus,
+                            title: isEn ? 'In Review / Approval' : 'На проверке / Согласовании',
+                            dotClass: 'bg-purple-400',
+                            badgeClass: 'border-purple-500/25 bg-purple-500/10 text-purple-300',
+                            nextStatus: 'Done' as TaskStatus,
+                            nextLabel: isEn ? 'Complete ✓' : 'Завершить ✓',
+                          },
+                          {
+                            status: 'Done' as TaskStatus,
+                            title: isEn ? 'Completed' : 'Завершено',
+                            dotClass: 'bg-emerald-400',
+                            badgeClass: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
+                            nextStatus: 'Todo' as TaskStatus,
+                            nextLabel: isEn ? 'Reopen' : 'Вернуть',
+                          },
+                        ]
+                      ).map((col) => {
+                        const getEffectiveBoardColumn = (tk: TaskRecord): TaskStatus => {
+                          if (tk.status === 'Done') return 'Done';
+                          if (tk.status === 'Review') return 'Review';
+                          const isAppr =
+                            String(tk.type || '').toLowerCase() === 'approval' ||
+                            (tk.title || '').startsWith('[СОГЛАСОВАНИЕ:');
+                          if (isAppr && tk.status !== 'In Progress') return 'Review';
+                          if (tk.status === 'In Progress') return 'In Progress';
+                          return 'Todo';
+                        };
+
+                        const colTasks = filteredTasks.filter(
+                          (tItem) => getEffectiveBoardColumn(tItem) === col.status
+                        );
+                        const isDragTarget = dragOverColumn === col.status;
+
+                        return (
+                          <div
+                            key={col.status}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              if (dragOverColumn !== col.status) {
+                                setDragOverColumn(col.status);
+                              }
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverColumn === col.status) {
+                                setDragOverColumn(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setDragOverColumn(null);
+                              const droppedId =
+                                draggedTaskId || e.dataTransfer.getData('text/plain');
+                              setDraggedTaskId(null);
+                              if (droppedId && canCreateOrEditTasks) {
+                                void handleTaskUpdate(droppedId, { status: col.status });
+                              }
+                            }}
+                            className={`rounded-xl border p-3.5 flex flex-col gap-3 transition-colors min-h-[420px] ${
+                              isDragTarget
+                                ? 'border-indigo-500/60 bg-indigo-950/15'
+                                : 'border-white/[0.07] bg-[#0D0D10]'
+                            }`}
+                          >
+                            {/* Шапка колонки: Цветной индикатор, Название стадии, Счетчик карточек и кнопка + */}
+                            <div className="flex items-center justify-between px-1 pb-2 border-b border-white/[0.06]">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dotClass}`}
                                 />
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 mt-1">
-                                <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-[#1C1C1F] text-[#A1A1AA] border border-[#2C2C30] whitespace-nowrap">
-                                  {t(`type.${task.type || 'Task'}`)}
+                                <span className="text-xs font-semibold text-white truncate">
+                                  {col.title}
                                 </span>
-                                {renderPriorityBadge(task.priority)}
-                                {renderDueDateBadge(task.due_date, task.status)}
-                                {task.department && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8] whitespace-nowrap">
-                                    {formatRole(task.department)}
-                                  </span>
-                                )}
-                                {checklist.length > 0 && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 border border-white/10 text-[11px] tabular-nums text-zinc-300">
-                                    <ListChecks className="w-3 h-3 text-indigo-400" />
-                                    <span>
-                                      {doneSubtasks}/{checklist.length}
-                                    </span>
-                                  </span>
-                                )}
-                                {assignee && (
-                                  <span className="inline-flex items-center gap-1.5 text-xs text-[#8E8E93]">
-                                    <UserAvatar
-                                      name={assignee.name}
-                                      avatarUrl={assignee.avatar_url}
-                                      size="xs"
-                                    />
-                                    <strong className="text-[#D4D4D8] font-medium">
-                                      {assignee.name} ({formatRole(assignee.role_type)})
-                                    </strong>
-                                  </span>
-                                )}
-                                {(task.description || task.notes) && (
-                                  <span className="inline-flex items-center gap-1 text-[11px] text-[#71717A]">
-                                    <FileText className="w-3 h-3" />
-                                    <span className="truncate max-w-[200px]">
-                                      {task.description || task.notes}
-                                    </span>
-                                  </span>
-                                )}
+                                <span className="text-[11px] font-semibold tabular-nums text-zinc-400 bg-zinc-900 border border-white/[0.08] px-1.5 py-0.5 rounded shrink-0">
+                                  {colTasks.length}
+                                </span>
                               </div>
-                              {(String(task.type || '').toLowerCase() === 'approval' ||
-                                (task.title || '').startsWith('[СОГЛАСОВАНИЕ:')) && (
-                                <ApprovalDecisionBar
-                                  task={task}
-                                  currentProfile={currentProfile}
-                                  isBusy={isBusy}
-                                  onDecision={handleApprovalDecision}
-                                />
+
+                              {canCreateOrEditTasks && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (col.status === 'Review') {
+                                      setIsRequestApprovalModalOpen(true);
+                                    } else {
+                                      setInitialTaskDraft({
+                                        title: '',
+                                        description: '',
+                                        assigned_to: currentProfile?.id || '',
+                                        department: currentProfile?.department || '',
+                                        priority: 'Medium',
+                                      });
+                                      setModalType('tasks');
+                                    }
+                                  }}
+                                  title={
+                                    isEn
+                                      ? `Add task to "${col.title}"`
+                                      : `Быстро создать поручение в колонке «${col.title}»`
+                                  }
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-white/[0.08] bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-colors shrink-0"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
                               )}
                             </div>
-                          </div>
 
-                          <div
-                            className="flex flex-wrap items-center gap-2 shrink-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {canCreateOrEditTasks && (
-                              <button
-                                type="button"
-                                disabled={isDecomposing}
-                                onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
-                                title={
-                                  isEn
-                                    ? 'Decompose task into AI subtask checklist'
-                                    : 'ИИ-декомпозиция задачи на чек-лист подзадач'
-                                }
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
-                              >
-                                {isDecomposing ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <Cpu className="w-3 h-3 text-indigo-400" />
-                                )}
-                                <span>{isEn ? 'AI Subtasks' : 'ИИ-декомпозиция'}</span>
-                              </button>
-                            )}
+                            {colTasks.length === 0 ? (
+                              <div className="flex-1 flex flex-col items-center justify-center py-10 px-3 text-center text-xs text-zinc-500 border border-dashed border-white/[0.06] rounded-xl">
+                                <span>
+                                  {isEn
+                                    ? 'Drag a card here or click + to add'
+                                    : 'Перетащите карточку сюда или нажмите +'}
+                                </span>
+                              </div>
+                            ) : (
+                              colTasks.map((task, idx) => {
+                                const assignee = task.assigned_to
+                                  ? nodeMap.get(task.assigned_to)
+                                  : null;
+                                const checklist = Array.isArray(task.checklist)
+                                  ? task.checklist
+                                  : [];
+                                const doneSubtasks = checklist.filter((c) => c.done).length;
+                                const progressPct =
+                                  checklist.length > 0
+                                    ? Math.round((doneSubtasks / checklist.length) * 100)
+                                    : 0;
+                                const taskAttachments = normalizeAttachments(task.attachments);
+                                const isDecomposing = decomposingTaskId === task.id;
+                                const shortCode = `#TC-${String(
+                                  task.id.replace(/\D/g, '').slice(-3) || 101 + idx
+                                ).padStart(3, '0')}`;
+                                const descPreview = (task.description || task.notes || '').trim();
 
-                            {perms.tasks_assign && (
-                              <select
-                                disabled={isBusy}
-                                value={task.assigned_to || ''}
-                                onChange={(e) =>
-                                  handleTaskUpdate(task.id, {
-                                    assigned_to: e.target.value || null,
-                                  })
-                                }
-                                className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none"
-                              >
-                                <option value="">{t('tasks.unassigned')}</option>
-                                {safeNodes.map((node) => (
-                                  <option key={node.id} value={node.id}>
-                                    {node.name} — {formatRole(node.role_type)}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-
-                            <select
-                              disabled={isBusy || !canCreateOrEditTasks}
-                              value={task.priority || 'Medium'}
-                              onChange={(e) =>
-                                handleTaskUpdate(task.id, {
-                                  priority: e.target.value as TaskPriority,
-                                })
-                              }
-                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
-                            >
-                              <option value="Low">{t('priority.Low')}</option>
-                              <option value="Medium">{t('priority.Medium')}</option>
-                              <option value="High">{t('priority.High')}</option>
-                            </select>
-
-                            <select
-                              disabled={isBusy || !canCreateOrEditTasks}
-                              value={task.status || 'Todo'}
-                              onChange={(e) =>
-                                handleTaskUpdate(task.id, {
-                                  status: e.target.value as TaskStatus,
-                                })
-                              }
-                              className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
-                            >
-                              <option value="Todo">{t('status.Todo')}</option>
-                              <option value="In Progress">{t('status.In Progress')}</option>
-                              <option value="Done">{t('status.Done')}</option>
-                              <option value="Cancelled">{t('status.Cancelled')}</option>
-                            </select>
-
-                            {canCreateOrEditTasks && (
-                              <button
-                                type="button"
-                                disabled={isBusy}
-                                onClick={() => requestDeleteRecord('tasks', task.id, task.title)}
-                                className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                              >
-                                {isBusy ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : taskViewMode === 'board' ? (
-                  <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-                    {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((columnStatus) => {
-                      const colTasks = filteredTasks.filter(
-                        (tItem) => (tItem.status || 'Todo') === columnStatus
-                      );
-                      return (
-                        <div
-                          key={columnStatus}
-                          className="rounded-xl border border-white/[0.07] bg-[#0D0D10] p-3.5 flex flex-col gap-3"
-                        >
-                          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.06]">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`w-2 h-2 rounded-full ${
-                                  columnStatus === 'Done'
-                                    ? 'bg-emerald-400'
-                                    : columnStatus === 'In Progress'
-                                    ? 'bg-indigo-400'
-                                    : 'bg-zinc-500'
-                                }`}
-                              />
-                              <span className="text-xs font-semibold text-white">
-                                {t(`status.${columnStatus}`)}
-                              </span>
-                            </div>
-                            <span className="text-xs font-medium tabular-nums text-zinc-400 bg-zinc-900 border border-white/[0.07] px-2 py-0.5 rounded">
-                              {colTasks.length}
-                            </span>
-                          </div>
-
-                          {colTasks.length === 0 ? (
-                            <div className="py-10 text-center text-xs text-zinc-600 border border-dashed border-white/[0.06] rounded-lg">
-                              {isEn ? 'No tasks in column' : 'Нет задач в колонке'}
-                            </div>
-                          ) : (
-                            colTasks.map((task) => {
-                              const assignee = task.assigned_to
-                                ? nodeMap.get(task.assigned_to)
-                                : null;
-                              const checklist = Array.isArray(task.checklist)
-                                ? task.checklist
-                                : [];
-                              const doneSubtasks = checklist.filter((c) => c.done).length;
-                              const progressPct =
-                                checklist.length > 0
-                                  ? Math.round((doneSubtasks / checklist.length) * 100)
-                                  : 0;
-
-                              return (
-                                <div
-                                  key={task.id}
-                                  onClick={() => setDrawerSelection({ kind: 'task', id: task.id })}
-                                  className="rounded-xl border border-white/[0.08] bg-[#141418] p-3.5 space-y-3 hover:border-white/25 transition-colors cursor-pointer shadow-lg"
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <p className="text-xs font-semibold text-white leading-snug">
-                                      {task.title}
-                                    </p>
-                                    {canCreateOrEditTasks && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          requestDeleteRecord('tasks', task.id, task.title);
-                                        }}
-                                        className="text-zinc-500 hover:text-red-400 transition-colors shrink-0"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    {renderPriorityBadge(task.priority)}
-                                    {renderDueDateBadge(task.due_date, task.status)}
-                                    {task.department && (
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-900 border border-white/[0.08] text-[10px] text-zinc-300">
-                                        {formatRole(task.department)}
+                                return (
+                                  <div
+                                    key={task.id}
+                                    draggable={canCreateOrEditTasks}
+                                    onDragStart={(e) => {
+                                      setDraggedTaskId(task.id);
+                                      e.dataTransfer.setData('text/plain', task.id);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedTaskId(null);
+                                      setDragOverColumn(null);
+                                    }}
+                                    onClick={() =>
+                                      setDrawerSelection({ kind: 'task', id: task.id })
+                                    }
+                                    className="group rounded-xl border border-white/[0.08] bg-[#141418] p-3.5 space-y-2.5 hover:border-white/25 transition-all cursor-pointer shadow-lg"
+                                  >
+                                    {/* Верхняя строка карточки: Код задачи и тип (#TC-104 · Поручение), бейдж приоритета и индикатор дедлайна */}
+                                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                      <span className="text-[11px] font-medium text-[#8E8E93] tabular-nums">
+                                        {shortCode} · {t(`type.${task.type || 'Task'}`)}
                                       </span>
-                                    )}
-                                  </div>
-
-                                  {checklist.length > 0 && (
-                                    <div className="space-y-1.5 pt-0.5">
-                                      <div className="flex items-center justify-between text-[11px] text-zinc-400 tabular-nums">
-                                        <span className="inline-flex items-center gap-1">
-                                          <ListChecks className="w-3 h-3 text-indigo-400" />
-                                          <span>{isEn ? 'Checklist' : 'Чек-лист'}</span>
-                                        </span>
-                                        <span>
-                                          {doneSubtasks}/{checklist.length} ({progressPct}%)
-                                        </span>
-                                      </div>
-                                      <div className="h-1.5 w-full rounded-full bg-zinc-900 overflow-hidden">
-                                        <div
-                                          className="h-full bg-indigo-500 transition-all duration-200"
-                                          style={{ width: `${progressPct}%` }}
-                                        />
+                                      <div className="flex items-center gap-1.5">
+                                        {renderPriorityBadge(task.priority)}
+                                        {renderDueDateBadge(task.due_date, task.status)}
                                       </div>
                                     </div>
-                                  )}
 
-                                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                                    {assignee ? (
-                                      <span className="inline-flex items-center gap-1.5 text-[11px] text-zinc-300 truncate">
-                                        <UserAvatar
-                                          name={assignee.name}
-                                          avatarUrl={assignee.avatar_url}
-                                          size="xs"
-                                        />
-                                        <span className="truncate font-medium">{assignee.name}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[11px] text-zinc-500 truncate">
-                                        {t('tasks.unassigned')}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {(String(task.type || '').toLowerCase() === 'approval' ||
-                                    (task.title || '').startsWith('[СОГЛАСОВАНИЕ:')) && (
-                                    <ApprovalDecisionBar
-                                      task={task}
-                                      currentProfile={currentProfile}
-                                      isBusy={busyRecordId === task.id}
-                                      onDecision={handleApprovalDecision}
-                                    />
-                                  )}
-
-                                  <div
-                                    className="pt-2 flex items-center justify-between gap-1.5 border-t border-white/[0.06]"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    {(['Todo', 'In Progress', 'Done'] as TaskStatus[]).map((st) => (
-                                      <button
-                                        key={st}
-                                        disabled={!canCreateOrEditTasks}
-                                        onClick={() => handleTaskUpdate(task.id, { status: st })}
-                                        className={`flex-1 py-1 rounded-md text-[11px] transition-colors whitespace-nowrap ${
-                                          (task.status || 'Todo') === st
-                                            ? 'bg-white text-black font-semibold'
-                                            : 'bg-zinc-900 text-zinc-400 hover:text-white border border-white/[0.06]'
+                                    {/* Центр карточки: Четкий заголовок задачи + краткое превью описания/комментария (line-clamp-2) */}
+                                    <div className="space-y-1">
+                                      <h3
+                                        className={`text-[13px] font-semibold leading-snug ${
+                                          task.status === 'Done'
+                                            ? 'text-[#71717A] line-through'
+                                            : 'text-white'
                                         }`}
                                       >
-                                        {t(`status.${st}`)}
-                                      </button>
-                                    ))}
+                                        {task.title}
+                                      </h3>
+                                      {descPreview && (
+                                        <p className="text-xs text-[#8E8E93] line-clamp-2 leading-relaxed">
+                                          {descPreview}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* Мини-прогресс чек-листа подзадач (2/4 выполнено с полоской прогресса) и иконка вложений */}
+                                    {(checklist.length > 0 || taskAttachments.length > 0) && (
+                                      <div className="space-y-1.5 pt-0.5">
+                                        <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400 tabular-nums">
+                                          {checklist.length > 0 ? (
+                                            <span className="inline-flex items-center gap-1">
+                                              <ListChecks className="w-3.5 h-3.5 text-indigo-400" />
+                                              <span>
+                                                {doneSubtasks}/{checklist.length}{' '}
+                                                {isEn ? 'completed' : 'выполнено'}
+                                              </span>
+                                            </span>
+                                          ) : (
+                                            <span />
+                                          )}
+
+                                          {taskAttachments.length > 0 && (
+                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900 border border-white/[0.08] text-[10px] text-zinc-300">
+                                              <Paperclip className="w-3 h-3 text-indigo-400" />
+                                              <span>{taskAttachments.length}</span>
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {checklist.length > 0 && (
+                                          <div className="h-1.5 w-full rounded-full bg-zinc-900 overflow-hidden">
+                                            <div
+                                              className="h-full bg-indigo-500 transition-all duration-200"
+                                              style={{ width: `${progressPct}%` }}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {(String(task.type || '').toLowerCase() === 'approval' ||
+                                      (task.title || '').startsWith('[СОГЛАСОВАНИЕ:')) && (
+                                      <ApprovalDecisionBar
+                                        task={task}
+                                        currentProfile={currentProfile}
+                                        isBusy={busyRecordId === task.id}
+                                        onDecision={handleApprovalDecision}
+                                      />
+                                    )}
+
+                                    {/* Подвал карточки: Аватар и имя исполнителя, отдел, кнопка ИИ-шаги и быстрая кнопка перевода в следующий этап в 1 клик */}
+                                    <div
+                                      className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-2"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        {assignee ? (
+                                          <>
+                                            <UserAvatar
+                                              name={assignee.name}
+                                              avatarUrl={assignee.avatar_url}
+                                              size="xs"
+                                            />
+                                            <div className="min-w-0">
+                                              <div className="text-[11px] font-medium text-zinc-200 truncate">
+                                                {assignee.name}
+                                              </div>
+                                              {task.department && (
+                                                <div className="text-[10px] text-[#71717A] truncate">
+                                                  {formatRole(task.department)}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <span className="text-[11px] text-zinc-500 truncate">
+                                            {task.department
+                                              ? formatRole(task.department)
+                                              : t('tasks.unassigned')}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {canCreateOrEditTasks && (
+                                          <button
+                                            type="button"
+                                            disabled={isDecomposing}
+                                            onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
+                                            title={
+                                              isEn
+                                                ? 'AI Subtask Breakdown'
+                                                : 'Разбить на ИИ-шаги чек-листа'
+                                            }
+                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-white/[0.08] bg-zinc-900 hover:bg-zinc-800 text-[10px] font-medium text-zinc-300 hover:text-white transition-colors whitespace-nowrap"
+                                          >
+                                            {isDecomposing ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                              <Cpu className="w-3 h-3 text-indigo-400" />
+                                            )}
+                                            <span>{isEn ? 'AI Steps' : 'ИИ-шаги'}</span>
+                                          </button>
+                                        )}
+
+                                        {canCreateOrEditTasks && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void handleTaskUpdate(task.id, {
+                                                status: col.nextStatus,
+                                              })
+                                            }
+                                            className="px-2 py-1 rounded-md bg-white text-black hover:bg-zinc-200 text-[10px] font-semibold transition-colors whitespace-nowrap"
+                                          >
+                                            {col.nextLabel}
+                                          </button>
+                                        )}
+
+                                        {canCreateOrEditTasks && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              requestDeleteRecord('tasks', task.id, task.title)
+                                            }
+                                            className="p-1 rounded-md text-zinc-500 hover:text-red-400 transition-colors shrink-0"
+                                            title={isEn ? 'Delete task' : 'Удалить поручение'}
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-5">
-                    <TaskTimelineView
-                      tasks={filteredTasks}
-                      nodes={safeNodes}
-                      leads={visibleLeads}
-                      onSelectTask={(tk) => setDrawerSelection({ kind: 'task', id: tk.id })}
-                      onStatusChange={async (taskId, nextStatus) => {
-                        await handleTaskUpdate(taskId, { status: nextStatus });
-                      }}
-                      onInlineTitleSave={async (taskId, newTitle) => {
-                        await handleTaskUpdate(taskId, { title: newTitle });
-                      }}
-                    />
-                  </div>
-                )}
-              </section>
+                                );
+                              })
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : taskViewMode === 'list' ? (
+                    /* РЕЖИМ 2: СГРУППИРОВАННЫЙ СПИСОК LINEAR (Linear Grouped List View) */
+                    <div className="divide-y divide-white/[0.07]">
+                      {(
+                        [
+                          {
+                            status: 'In Progress' as TaskStatus,
+                            title: isEn ? 'In Active Progress' : 'В активной работе',
+                            dotClass: 'bg-amber-400',
+                          },
+                          {
+                            status: 'Review' as TaskStatus,
+                            title: isEn ? 'In Review / Approval' : 'На проверке / Согласовании',
+                            dotClass: 'bg-purple-400',
+                          },
+                          {
+                            status: 'Todo' as TaskStatus,
+                            title: isEn ? 'Queue / To Do' : 'К выполнению',
+                            dotClass: 'bg-sky-400',
+                          },
+                          {
+                            status: 'Done' as TaskStatus,
+                            title: isEn ? 'Completed' : 'Завершено',
+                            dotClass: 'bg-emerald-400',
+                          },
+                        ]
+                      ).map((group) => {
+                        const getEffectiveListGroup = (tk: TaskRecord): TaskStatus => {
+                          if (tk.status === 'Done') return 'Done';
+                          if (tk.status === 'Review') return 'Review';
+                          const isAppr =
+                            String(tk.type || '').toLowerCase() === 'approval' ||
+                            (tk.title || '').startsWith('[СОГЛАСОВАНИЕ:');
+                          if (isAppr && tk.status !== 'In Progress') return 'Review';
+                          if (tk.status === 'In Progress') return 'In Progress';
+                          return 'Todo';
+                        };
+
+                        const groupTasks = filteredTasks.filter(
+                          (tItem) => getEffectiveListGroup(tItem) === group.status
+                        );
+
+                        return (
+                          <div key={group.status} className="bg-[#111114]">
+                            {/* Заголовок секции группы Linear */}
+                            <div className="px-5 py-2.5 bg-[#151519] border-b border-white/[0.05] flex items-center justify-between">
+                              <div className="flex items-center gap-2.5">
+                                <span className={`w-2 h-2 rounded-full ${group.dotClass}`} />
+                                <span className="text-xs font-semibold text-white">
+                                  {group.title}
+                                </span>
+                                <span className="text-[11px] font-medium tabular-nums text-[#8E8E93] bg-zinc-900 border border-white/[0.07] px-1.5 py-0.2 rounded">
+                                  {groupTasks.length}
+                                </span>
+                              </div>
+                            </div>
+
+                            {groupTasks.length === 0 ? (
+                              <div className="px-5 py-3 text-xs text-[#71717A]">
+                                {isEn ? 'No tasks in this stage' : 'Нет задач на данном этапе'}
+                              </div>
+                            ) : (
+                              <div className="divide-y divide-[#1A1A1C]">
+                                {groupTasks.map((task, idx) => {
+                                  const isBusy = busyRecordId === task.id;
+                                  const assignee = task.assigned_to
+                                    ? nodeMap.get(task.assigned_to)
+                                    : null;
+                                  const checklist = Array.isArray(task.checklist)
+                                    ? task.checklist
+                                    : [];
+                                  const doneSubtasks = checklist.filter((c) => c.done).length;
+                                  const isDecomposing = decomposingTaskId === task.id;
+                                  const shortCode = `#TC-${String(
+                                    task.id.replace(/\D/g, '').slice(-3) || 101 + idx
+                                  ).padStart(3, '0')}`;
+
+                                  return (
+                                    <div
+                                      key={task.id}
+                                      onClick={() =>
+                                        setDrawerSelection({ kind: 'task', id: task.id })
+                                      }
+                                      className="px-5 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#16161A] transition-colors cursor-pointer"
+                                    >
+                                      <div className="flex items-start sm:items-center gap-3 min-w-0">
+                                        <button
+                                          type="button"
+                                          disabled={isBusy || !canCreateOrEditTasks}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleTaskUpdate(task.id, {
+                                              status: task.status === 'Done' ? 'Todo' : 'Done',
+                                            });
+                                          }}
+                                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                            task.status === 'Done'
+                                              ? 'bg-emerald-500 border-emerald-500 text-black'
+                                              : 'border-[#3F3F46] hover:border-white'
+                                          }`}
+                                        >
+                                          {task.status === 'Done' && (
+                                            <CheckCircle2 className="w-3 h-3" />
+                                          )}
+                                        </button>
+
+                                        <span className="text-[11px] font-medium text-[#71717A] tabular-nums shrink-0">
+                                          {shortCode}
+                                        </span>
+
+                                        <div className="min-w-0">
+                                          <div
+                                            className={`text-sm font-medium truncate ${
+                                              task.status === 'Done'
+                                                ? 'text-[#71717A] line-through'
+                                                : 'text-white'
+                                            }`}
+                                          >
+                                            <InlineEditableCell
+                                              value={task.title}
+                                              disabled={!canCreateOrEditTasks}
+                                              onSave={(nextTitle) =>
+                                                handleTaskUpdate(task.id, { title: nextTitle })
+                                              }
+                                            />
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                                            <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-[#1C1C1F] text-[#A1A1AA] border border-[#2C2C30] whitespace-nowrap">
+                                              {t(`type.${task.type || 'Task'}`)}
+                                            </span>
+                                            {renderPriorityBadge(task.priority)}
+                                            {renderDueDateBadge(task.due_date, task.status)}
+                                            {task.department && (
+                                              <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8] whitespace-nowrap">
+                                                {formatRole(task.department)}
+                                              </span>
+                                            )}
+                                            {checklist.length > 0 && (
+                                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 border border-white/10 text-[11px] tabular-nums text-zinc-300">
+                                                <ListChecks className="w-3 h-3 text-indigo-400" />
+                                                <span>
+                                                  {doneSubtasks}/{checklist.length}
+                                                </span>
+                                              </span>
+                                            )}
+                                            {assignee && (
+                                              <span className="inline-flex items-center gap-1.5 text-xs text-[#8E8E93]">
+                                                <UserAvatar
+                                                  name={assignee.name}
+                                                  avatarUrl={assignee.avatar_url}
+                                                  size="xs"
+                                                />
+                                                <strong className="text-[#D4D4D8] font-medium">
+                                                  {assignee.name}
+                                                </strong>
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div
+                                        className="flex flex-wrap items-center gap-2 shrink-0"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {canCreateOrEditTasks && (
+                                          <button
+                                            type="button"
+                                            disabled={isDecomposing}
+                                            onClick={(e) => void handleQuickAiDecomposeTask(task, e)}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
+                                          >
+                                            {isDecomposing ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                              <Cpu className="w-3 h-3 text-indigo-400" />
+                                            )}
+                                            <span>{isEn ? 'AI Steps' : 'ИИ-шаги'}</span>
+                                          </button>
+                                        )}
+
+                                        <select
+                                          disabled={isBusy || !canCreateOrEditTasks}
+                                          value={task.status || 'Todo'}
+                                          onChange={(e) =>
+                                            handleTaskUpdate(task.id, {
+                                              status: e.target.value as TaskStatus,
+                                            })
+                                          }
+                                          className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                                        >
+                                          <option value="Todo">{t('status.Todo')}</option>
+                                          <option value="In Progress">{t('status.In Progress')}</option>
+                                          <option value="Review">{t('status.Review')}</option>
+                                          <option value="Done">{t('status.Done')}</option>
+                                          <option value="Cancelled">{t('status.Cancelled')}</option>
+                                        </select>
+
+                                        {canCreateOrEditTasks && (
+                                          <button
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() =>
+                                              requestDeleteRecord('tasks', task.id, task.title)
+                                            }
+                                            className="p-1.5 rounded-md text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-5">
+                      <TaskTimelineView
+                        tasks={filteredTasks}
+                        nodes={safeNodes}
+                        leads={visibleLeads}
+                        onSelectTask={(tk) => setDrawerSelection({ kind: 'task', id: tk.id })}
+                        onStatusChange={async (taskId, nextStatus) => {
+                          await handleTaskUpdate(taskId, { status: nextStatus });
+                        }}
+                        onInlineTitleSave={async (taskId, newTitle) => {
+                          await handleTaskUpdate(taskId, { title: newTitle });
+                        }}
+                      />
+                    </div>
+                  )}
+                </section>
               </div>
             )}
 
@@ -4287,8 +4606,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                {/* Поток сообщений (БЛОК 2: pt-6 pb-4 px-5 space-y-1.5, чтобы верхнее сообщение никогда не обрезалось шапкой) */}
-                <div className="flex-1 overflow-y-auto no-scrollbar pt-6 pb-4 px-5 space-y-1.5">
+                {/* Поток сообщений (БЛОК 1: pt-5 pb-4 px-5 space-y-1.5, разделители дат и авто-скролл вниз) */}
+                <div className="flex-1 overflow-y-auto no-scrollbar pt-5 pb-4 px-5 space-y-1.5">
                   {activeThreadMessages.length === 0 ? (
                     <RichEmptyState
                       variant="chat"
@@ -4313,296 +4632,336 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       }
                     />
                   ) : (
-                    activeThreadMessages.map((msg, idx) => {
-                      const isOutgoing =
-                        Boolean(currentProfile?.id) &&
-                        String(msg.sender_id || '') === String(currentProfile?.id || '');
-                      const senderNode = msg.sender_id
-                        ? nodeMap.get(String(msg.sender_id))
-                        : null;
+                    <>
+                      {activeThreadMessages.map((msg, idx) => {
+                        const isOutgoing =
+                          Boolean(currentProfile?.id) &&
+                          String(msg.sender_id || '') === String(currentProfile?.id || '');
+                        const senderNode = msg.sender_id
+                          ? nodeMap.get(String(msg.sender_id))
+                          : null;
 
-                      const senderName =
-                        senderNode?.name ||
-                        msg.sender_name ||
-                        (isEn ? 'TedCloud Employee' : 'Сотрудник TedCloud');
-                      const senderRole = formatRole(
-                        senderNode?.role_type || msg.sender_role || ''
-                      );
-                      const senderAvatarUrl =
-                        senderNode?.avatar_url ||
-                        (isOutgoing ? currentProfile?.avatar_url : null);
+                        const senderName =
+                          senderNode?.name ||
+                          msg.sender_name ||
+                          (isEn ? 'TedCloud Employee' : 'Сотрудник TedCloud');
+                        const senderRole = formatRole(
+                          senderNode?.role_type || msg.sender_role || ''
+                        );
+                        const senderAvatarUrl =
+                          senderNode?.avatar_url ||
+                          (isOutgoing ? currentProfile?.avatar_url : null);
 
-                      const isDirectThread = activeCommThread.type === 'direct';
-                      const prevMsg = idx > 0 ? activeThreadMessages[idx - 1] : null;
-                      const isFirstInSequence =
-                        !prevMsg ||
-                        String(prevMsg.sender_id || prevMsg.sender_name || '') !==
-                          String(msg.sender_id || msg.sender_name || '');
+                        const isDirectThread = activeCommThread.type === 'direct';
+                        const prevMsg = idx > 0 ? activeThreadMessages[idx - 1] : null;
+                        const isFirstInSequence =
+                          !prevMsg ||
+                          String(prevMsg.sender_id || prevMsg.sender_name || '') !==
+                            String(msg.sender_id || msg.sender_name || '');
 
-                      const messageBody =
-                        msg.message_text || msg.text || msg.content || '';
-                      const msgAttachments = normalizeAttachments(msg.attachments);
+                        // Разделитель дат по центру («Сегодня», «Вчера», «27 октября») при смене дня
+                        const msgDateObj = msg.created_at ? new Date(msg.created_at) : null;
+                        const prevDateObj = prevMsg?.created_at ? new Date(prevMsg.created_at) : null;
+                        const msgDayKey =
+                          msgDateObj && !Number.isNaN(msgDateObj.getTime())
+                            ? `${msgDateObj.getFullYear()}-${msgDateObj.getMonth()}-${msgDateObj.getDate()}`
+                            : '';
+                        const prevDayKey =
+                          prevDateObj && !Number.isNaN(prevDateObj.getTime())
+                            ? `${prevDateObj.getFullYear()}-${prevDateObj.getMonth()}-${prevDateObj.getDate()}`
+                            : '';
+                        const showDateDivider = Boolean(msgDayKey && msgDayKey !== prevDayKey);
 
-                      const shortTime = msg.created_at
-                        ? new Date(msg.created_at).toLocaleTimeString(
-                            isEn ? 'en-US' : 'ru-RU',
-                            {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            }
-                          )
-                        : '';
+                        const formatDateDividerLabel = (d: Date): string => {
+                          const now = new Date();
+                          const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+                          const yesterday = new Date(now.getTime() - 86400000);
+                          const yesterdayKey = `${yesterday.getFullYear()}-${yesterday.getMonth()}-${yesterday.getDate()}`;
+                          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+                          if (key === todayKey) return isEn ? 'Today' : 'Сегодня';
+                          if (key === yesterdayKey) return isEn ? 'Yesterday' : 'Вчера';
+                          return d.toLocaleDateString(isEn ? 'en-US' : 'ru-RU', {
+                            day: 'numeric',
+                            month: 'long',
+                          });
+                        };
 
-                      const reactionEntries =
-                        msg.reactions && typeof msg.reactions === 'object'
-                          ? Object.entries(msg.reactions).filter(
-                              ([, users]) => Array.isArray(users) && users.length > 0
+                        const messageBody =
+                          msg.message_text || msg.text || msg.content || '';
+                        const msgAttachments = normalizeAttachments(msg.attachments);
+
+                        const shortTime = msg.created_at
+                          ? new Date(msg.created_at).toLocaleTimeString(
+                              isEn ? 'en-US' : 'ru-RU',
+                              {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              }
                             )
-                          : [];
+                          : '';
 
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`group relative flex flex-col ${
-                            isOutgoing ? 'items-end' : 'items-start'
-                          } ${isFirstInSequence && idx > 0 ? 'mt-3' : 'mt-1'}`}
-                        >
-                          <div
-                            className={`relative flex items-end gap-2 max-w-full ${
-                              isOutgoing ? 'justify-end' : 'justify-start'
-                            }`}
-                          >
-                            {/* В групповых каналах аватар только у первого сообщения в серии от автора; в личных 1-на-1 чатах аватар внутри баблов убран */}
-                            {!isDirectThread && !isOutgoing && (
-                              <div className="w-7 shrink-0 flex justify-center">
-                                {isFirstInSequence ? (
-                                  <UserAvatar
-                                    name={senderName}
-                                    avatarUrl={senderAvatarUrl}
-                                    size="sm"
-                                    className="mb-0.5"
-                                  />
-                                ) : null}
+                        const reactionEntries =
+                          msg.reactions && typeof msg.reactions === 'object'
+                            ? Object.entries(msg.reactions).filter(
+                                ([, users]) => Array.isArray(users) && users.length > 0
+                              )
+                            : [];
+
+                        return (
+                          <React.Fragment key={msg.id}>
+                            {showDateDivider && msgDateObj && (
+                              <div className="flex justify-center my-3 select-none">
+                                <span className="tc-date-pill px-3 py-0.5 rounded-full text-[11px] font-medium bg-zinc-900/80 border border-white/[0.07] text-[#8E8E93]">
+                                  {formatDateDividerLabel(msgDateObj)}
+                                </span>
                               </div>
                             )}
 
-                            {/* Всплывающая панель быстрых реакций, Reply и Поручения при наведении (group-hover) */}
                             <div
-                              className={`opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-20 absolute -top-7 ${
-                                isOutgoing ? 'right-1' : isDirectThread ? 'left-1' : 'left-9'
-                              } inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[#18181F]/95 border border-white/10 shadow-lg backdrop-blur-md`}
+                              className={`flex flex-col w-full ${
+                                isOutgoing ? 'items-end' : 'items-start'
+                              } ${isFirstInSequence && idx > 0 ? 'mt-3' : 'mt-1'}`}
                             >
-                              {(['👍', '🔥', '❤️', '✅'] as const).map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  type="button"
-                                  onClick={() => void handleToggleMessageReaction(msg, emoji)}
-                                  className="w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center text-xs transition-transform hover:scale-110"
-                                  title={emoji}
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-
-                              <span className="w-px h-3.5 bg-white/10 mx-0.5" />
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setReplyingToMessage({
-                                    id: msg.id,
-                                    sender_name: senderName,
-                                    text: messageBody.slice(0, 140),
-                                  })
-                                }
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full hover:bg-white/10 text-[10px] font-medium text-zinc-200 transition-colors"
-                                title={isEn ? 'Reply to message' : 'Ответить на сообщение'}
+                              <div
+                                className={`relative flex items-end gap-2 w-full ${
+                                  isOutgoing ? 'justify-end' : 'justify-start'
+                                }`}
                               >
-                                <Reply className="w-3 h-3" />
-                                <span className="hidden sm:inline">
-                                  {isEn ? 'Reply' : 'Ответить'}
-                                </span>
-                              </button>
+                                {/* В групповых каналах аватар только у первого сообщения в серии от автора; в личных 1-на-1 чатах аватар внутри баблов убран */}
+                                {!isDirectThread && !isOutgoing && (
+                                  <div className="w-7 shrink-0 flex justify-center">
+                                    {isFirstInSequence ? (
+                                      <UserAvatar
+                                        name={senderName}
+                                        avatarUrl={senderAvatarUrl}
+                                        size="sm"
+                                        className="mb-0.5"
+                                      />
+                                    ) : null}
+                                  </div>
+                                )}
 
-                              {canCreateOrEditTasks && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleConvertMessageToTask(msg)}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full hover:bg-indigo-500/20 text-[10px] font-medium text-indigo-300 transition-colors"
-                                  title={
-                                    isEn
-                                      ? 'Convert message into task'
-                                      : 'Создать задачу из сообщения'
-                                  }
-                                >
-                                  <Plus className="w-3 h-3" />
-                                  <span className="hidden sm:inline">
-                                    {isEn ? 'Task' : 'В задачу'}
-                                  </span>
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Обтекаемый бабл сообщения (Telegram Desktop / iMessage style) */}
-                            <div
-                              className={`relative w-fit max-w-[78%] sm:max-w-[72%] px-4 py-2.5 text-[14px] leading-snug shadow-sm transition-colors ${
-                                isOutgoing
-                                  ? 'rounded-[20px] rounded-br-[5px] bg-indigo-600/90 text-white'
-                                  : 'rounded-[20px] rounded-bl-[5px] bg-zinc-800/90 text-zinc-100'
-                              }`}
-                            >
-                              {/* В групповых каналах имя автора рендерится только на первом сообщении в серии */}
-                              {!isDirectThread && !isOutgoing && isFirstInSequence && (
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <span className="text-xs font-semibold text-indigo-300 truncate">
-                                    {senderName}
-                                  </span>
-                                  {senderRole && (
-                                    <span className="text-[10px] text-zinc-400 truncate">
-                                      · {senderRole}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-
-                              {msg.is_urgent && (
-                                <div className="mb-1">
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-500/20 border border-red-400/30 text-[10px] font-semibold text-red-200">
-                                    <AlertCircle className="w-2.5 h-2.5" />
-                                    <span>{isEn ? 'Urgent' : 'Срочно'}</span>
-                                  </span>
-                                </div>
-                              )}
-
-                              {/* Цитируемое сообщение (Reply Quote) */}
-                              {msg.reply_to && msg.reply_to.text && (
+                                {/* Обтекаемый бабл сообщения (Telegram Desktop геометрия: w-fit max-w-[75%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words) */}
                                 <div
-                                  className={`mb-1.5 pl-2.5 py-1 rounded-r-lg border-l-2 text-xs ${
+                                  className={`relative group w-fit max-w-[75%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words shadow-sm transition-colors ${
                                     isOutgoing
-                                      ? 'border-white/60 bg-black/15 text-indigo-100'
-                                      : 'border-indigo-400 bg-white/[0.05] text-zinc-300'
+                                      ? 'tc-bubble-outgoing rounded-[20px] rounded-br-[5px] bg-indigo-600/90 text-white'
+                                      : 'rounded-[20px] rounded-bl-[5px] bg-zinc-800/90 text-zinc-100'
                                   }`}
                                 >
-                                  <div className="font-semibold text-[11px] truncate">
-                                    {msg.reply_to.sender_name}
-                                  </div>
-                                  <div className="truncate opacity-85 text-[11px]">
-                                    {msg.reply_to.text}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Текст сообщения + встроенное время и галочки доставки справа внизу */}
-                              <div className="whitespace-pre-wrap break-words">
-                                <span>{messageBody}</span>
-                                <span
-                                  className={`float-right ml-3 mt-1.5 inline-flex items-center gap-1 text-[11px] leading-none select-none ${
-                                    isOutgoing ? 'text-indigo-100/80' : 'text-zinc-400/80'
-                                  }`}
-                                >
-                                  {shortTime && <span className="tabular-nums">{shortTime}</span>}
-                                  {isOutgoing && (
-                                    <CheckCheck className="w-3.5 h-3.5 text-indigo-100/90 shrink-0" />
-                                  )}
-                                </span>
-                              </div>
-
-                              {msgAttachments.length > 0 && (
-                                <div className="pt-2 clear-both">
-                                  <AttachmentListRenderer
-                                    attachments={msgAttachments}
-                                    compact
-                                  />
-                                </div>
-                              )}
-
-                              {/* Кнопка подтверждения ознакомления для циркуляров (Broadcast Read Receipts) */}
-                              {!isDirectThread && activeCommThread.type === 'broadcast' && (
-                                <div className="pt-2 mt-1.5 border-t border-white/10 flex items-center justify-between gap-2 clear-both">
-                                  {(() => {
-                                    const ackList = Array.isArray(msg.acknowledged_by)
-                                      ? msg.acknowledged_by
-                                      : [];
-                                    const myId = currentProfile?.id || 'root';
-                                    const isAcked = ackList.includes(myId);
-                                    return (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            const nextAck = isAcked
-                                              ? ackList.filter((id) => id !== myId)
-                                              : [...ackList, myId];
-                                            await onPatchRecord('workspace_messages', msg.id, {
-                                              acknowledged_by: nextAck,
-                                            });
-                                          }}
-                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
-                                            isAcked
-                                              ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
-                                              : 'bg-black/20 border-white/15 text-white/80 hover:text-white'
-                                          }`}
-                                        >
-                                          <Check className="w-2.5 h-2.5 text-emerald-300" />
-                                          <span>
-                                            {isAcked
-                                              ? isEn
-                                                ? 'Acknowledged'
-                                                : 'Ознакомлен'
-                                              : isEn
-                                              ? 'Acknowledge'
-                                              : 'Ознакомиться'}
-                                          </span>
-                                        </button>
-                                        {ackList.length > 0 && (
-                                          <span className="text-[10px] opacity-75 tabular-nums">
-                                            {isEn
-                                              ? `Read by: ${ackList.length}`
-                                              : `Ознакомились: ${ackList.length} сотр.`}
-                                          </span>
-                                        )}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Пилюли поставленных реакций под баблом */}
-                          {reactionEntries.length > 0 && (
-                            <div
-                              className={`flex flex-wrap items-center gap-1 mt-1 ${
-                                isOutgoing ? 'justify-end' : isDirectThread ? 'justify-start' : 'pl-9'
-                              }`}
-                            >
-                              {reactionEntries.map(([emoji, userIds]) => {
-                                const myId = String(currentProfile?.id || 'root');
-                                const isMine =
-                                  Array.isArray(userIds) && userIds.includes(myId);
-                                return (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    onClick={() => void handleToggleMessageReaction(msg, emoji)}
-                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
-                                      isMine
-                                        ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200'
-                                        : 'bg-zinc-900/90 border-white/10 text-zinc-300 hover:bg-zinc-800'
+                                  {/* Боковая всплывающая панель быстрых реакций и действий (Сбоку от баббла — никогда не перекрывает соседние сообщения и не сжимает "+ В задачу") */}
+                                  <div
+                                    className={`tc-reaction-pill absolute z-30 flex items-center gap-1 px-2 py-1 rounded-full w-max whitespace-nowrap shadow-lg backdrop-blur-md bg-zinc-900/95 text-white border border-white/10 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto transition-all duration-150 top-1/2 -translate-y-1/2 ${
+                                      isOutgoing ? 'right-full mr-2' : 'left-full ml-2'
                                     }`}
                                   >
-                                    <span>{emoji}</span>
-                                    <span className="tabular-nums text-[10px]">
-                                      {Array.isArray(userIds) ? userIds.length : 1}
+                                    {(['👍', '🔥', '❤️', '✅'] as const).map((emoji) => (
+                                      <button
+                                        key={emoji}
+                                        type="button"
+                                        onClick={() => void handleToggleMessageReaction(msg, emoji)}
+                                        className="whitespace-nowrap shrink-0 text-xs px-1.5 py-0.5 rounded hover:bg-white/15 transition-transform hover:scale-110"
+                                        title={emoji}
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+
+                                    <span className="w-px h-3.5 bg-white/15 mx-0.5 shrink-0" />
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setReplyingToMessage({
+                                          id: msg.id,
+                                          sender_name: senderName,
+                                          text: messageBody.slice(0, 140),
+                                        })
+                                      }
+                                      className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 text-xs px-1.5 py-0.5 rounded hover:bg-white/15 text-zinc-100 transition-colors"
+                                      title={isEn ? 'Reply to message' : 'Ответить на сообщение'}
+                                    >
+                                      <Reply className="w-3 h-3 shrink-0" />
+                                      <span>{isEn ? 'Reply' : 'Ответить'}</span>
+                                    </button>
+
+                                    {canCreateOrEditTasks && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleConvertMessageToTask(msg)}
+                                        className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 text-xs px-1.5 py-0.5 rounded hover:bg-white/15 text-indigo-300 transition-colors"
+                                        title={
+                                          isEn
+                                            ? 'Convert message into task'
+                                            : 'Создать задачу из сообщения'
+                                        }
+                                      >
+                                        <span>{isEn ? '+ To Task' : '+ В задачу'}</span>
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* В групповых каналах имя автора рендерится только на первом сообщении в серии */}
+                                  {!isDirectThread && !isOutgoing && isFirstInSequence && (
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <span className="text-xs font-semibold text-indigo-300 truncate">
+                                        {senderName}
+                                      </span>
+                                      {senderRole && (
+                                        <span className="text-[10px] text-zinc-400 truncate">
+                                          · {senderRole}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {msg.is_urgent && (
+                                    <div className="mb-1">
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-500/20 border border-red-400/30 text-[10px] font-semibold text-red-200">
+                                        <AlertCircle className="w-2.5 h-2.5" />
+                                        <span>{isEn ? 'Urgent' : 'Срочно'}</span>
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Цитируемое сообщение (Reply Quote) */}
+                                  {msg.reply_to && msg.reply_to.text && (
+                                    <div
+                                      className={`mb-1.5 pl-2.5 py-1 rounded-r-lg border-l-2 text-xs ${
+                                        isOutgoing
+                                          ? 'border-white/60 bg-black/15 text-indigo-100'
+                                          : 'border-indigo-400 bg-white/[0.05] text-zinc-300'
+                                      }`}
+                                    >
+                                      <div className="font-semibold text-[11px] truncate">
+                                        {msg.reply_to.sender_name}
+                                      </div>
+                                      <div className="truncate opacity-85 text-[11px]">
+                                        {msg.reply_to.text}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Текст сообщения + встроенное время и галочки доставки на одной строке (inline-flex flex-wrap items-end gap-x-2.5 gap-y-0.5) */}
+                                  <div className="inline-flex flex-wrap items-end gap-x-2.5 gap-y-0.5 max-w-full">
+                                    <span className="whitespace-pre-wrap break-words">
+                                      {messageBody}
                                     </span>
-                                  </button>
-                                );
-                              })}
+                                    <span
+                                      className={`inline-flex items-center gap-1 text-[11px] leading-none opacity-65 select-none ml-auto shrink-0 translate-y-[1px] ${
+                                        isOutgoing ? 'text-indigo-100' : 'text-zinc-400'
+                                      }`}
+                                    >
+                                      {shortTime && <span className="tabular-nums">{shortTime}</span>}
+                                      {isOutgoing && <span>✓✓</span>}
+                                    </span>
+                                  </div>
+
+                                  {msgAttachments.length > 0 && (
+                                    <div className="pt-2">
+                                      <AttachmentListRenderer
+                                        attachments={msgAttachments}
+                                        compact
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Кнопка подтверждения ознакомления для циркуляров (Broadcast Read Receipts) */}
+                                  {!isDirectThread && activeCommThread.type === 'broadcast' && (
+                                    <div className="pt-2 mt-1.5 border-t border-white/10 flex items-center justify-between gap-2">
+                                      {(() => {
+                                        const ackList = Array.isArray(msg.acknowledged_by)
+                                          ? msg.acknowledged_by
+                                          : [];
+                                        const myId = currentProfile?.id || 'root';
+                                        const isAcked = ackList.includes(myId);
+                                        return (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                const nextAck = isAcked
+                                                  ? ackList.filter((id) => id !== myId)
+                                                  : [...ackList, myId];
+                                                await onPatchRecord('workspace_messages', msg.id, {
+                                                  acknowledged_by: nextAck,
+                                                });
+                                              }}
+                                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
+                                                isAcked
+                                                  ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+                                                  : 'bg-black/20 border-white/15 text-white/80 hover:text-white'
+                                              }`}
+                                            >
+                                              <Check className="w-2.5 h-2.5 text-emerald-300" />
+                                              <span>
+                                                {isAcked
+                                                  ? isEn
+                                                    ? 'Acknowledged'
+                                                    : 'Ознакомлен'
+                                                  : isEn
+                                                  ? 'Acknowledge'
+                                                  : 'Ознакомиться'}
+                                              </span>
+                                            </button>
+                                            {ackList.length > 0 && (
+                                              <span className="text-[10px] opacity-75 tabular-nums">
+                                                {isEn
+                                                  ? `Read by: ${ackList.length}`
+                                                  : `Ознакомились: ${ackList.length} сотр.`}
+                                              </span>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Пилюли поставленных реакций под баблом */}
+                              {reactionEntries.length > 0 && (
+                                <div
+                                  className={`flex flex-wrap items-center gap-1 mt-1 ${
+                                    isOutgoing
+                                      ? 'justify-end'
+                                      : isDirectThread
+                                      ? 'justify-start'
+                                      : 'pl-9'
+                                  }`}
+                                >
+                                  {reactionEntries.map(([emoji, userIds]) => {
+                                    const myId = String(currentProfile?.id || 'root');
+                                    const isMine =
+                                      Array.isArray(userIds) && userIds.includes(myId);
+                                    return (
+                                      <button
+                                        key={emoji}
+                                        type="button"
+                                        onClick={() =>
+                                          void handleToggleMessageReaction(msg, emoji)
+                                        }
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                                          isMine
+                                            ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200'
+                                            : 'bg-zinc-900/90 border-white/10 text-zinc-300 hover:bg-zinc-800'
+                                        }`}
+                                      >
+                                        <span>{emoji}</span>
+                                        <span className="tabular-nums text-[10px]">
+                                          {Array.isArray(userIds) ? userIds.length : 1}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })
+                          </React.Fragment>
+                        );
+                      })}
+                      <div ref={messagesEndRef} />
+                    </>
                   )}
                 </div>
 
@@ -4643,7 +5002,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
 
-                {/* Современная капсула ввода (Composer) с Emoji Picker, Paperclip, Input, Urgent и круглой кнопкой Send */}
+                {/* Современная капсула ввода (Composer) с Emoji Picker, Paperclip, прозрачным Input, Urgent и круглой кнопкой Send */}
                 <div className="relative shrink-0 sticky bottom-0 p-3 border-t border-white/[0.07] bg-[#111115]">
                   {showEmojiPicker && (
                     <div className="absolute bottom-16 left-4 z-30 p-2 rounded-2xl bg-[#18181F] border border-white/10 shadow-2xl grid grid-cols-8 gap-1">
@@ -4727,7 +5086,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       value={commText}
                       onChange={(e) => setCommText(e.target.value)}
                       placeholder={isEn ? 'Write a message...' : 'Написать сообщение...'}
-                      className="flex-1 min-w-0 h-8 bg-transparent px-2 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+                      className="tc-composer-input !bg-transparent border-0 focus:ring-0 outline-none flex-1 min-w-0 w-full h-8 px-2 text-sm text-white placeholder:text-zinc-500"
                     />
 
                     <button
