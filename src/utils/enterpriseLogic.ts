@@ -858,9 +858,131 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   };
 }
 
+export interface PricingPlanConfig {
+  id: SubscriptionPlanTier;
+  nameRu: string;
+  nameEn: string;
+  badgeRu: string;
+  badgeEn: string;
+  maxEmployeesLabelRu: string;
+  maxEmployeesLabelEn: string;
+  maxEmployeesCount: number | null; // null = unlimited
+  monthly: {
+    RUB: number;
+    USD: number;
+    EUR: number;
+  };
+  yearlyMonthly: {
+    RUB: number;
+    USD: number;
+    EUR: number;
+  };
+  featuresRu: string[];
+  featuresEn: string[];
+}
+
+export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
+  Trial: {
+    id: 'Trial',
+    nameRu: 'Starter / Trial',
+    nameEn: 'Starter / Trial',
+    badgeRu: 'До 5 сотрудников',
+    badgeEn: 'Up to 5 employees',
+    maxEmployeesLabelRu: 'До 5 сотрудников',
+    maxEmployeesLabelEn: 'Up to 5 employees',
+    maxEmployeesCount: 5,
+    monthly: {
+      RUB: 0,
+      USD: 0,
+      EUR: 0,
+    },
+    yearlyMonthly: {
+      RUB: 0,
+      USD: 0,
+      EUR: 0,
+    },
+    featuresRu: [
+      'До 5 сотрудников в штате',
+      'Канбан-доска поручений и чек-листы',
+      'Базовая воронка сделок CRM',
+      'Синхронизация с Telegram-ботом',
+    ],
+    featuresEn: [
+      'Up to 5 team members',
+      'Kanban task board & checklists',
+      'Core CRM deal pipeline',
+      'Live Telegram bot sync',
+    ],
+  },
+  Business: {
+    id: 'Business',
+    nameRu: 'Business',
+    nameEn: 'Business',
+    badgeRu: 'До 50 сотрудников',
+    badgeEn: 'Up to 50 employees',
+    maxEmployeesLabelRu: 'До 50 сотрудников',
+    maxEmployeesLabelEn: 'Up to 50 employees',
+    maxEmployeesCount: 50,
+    monthly: {
+      RUB: 9900,
+      USD: 99,
+      EUR: 92,
+    },
+    yearlyMonthly: {
+      RUB: 7920,
+      USD: 79,
+      EUR: 74,
+    },
+    featuresRu: [
+      'До 50 сотрудников и ролевая матрица RBAC',
+      'CRM, авто-генерация договоров и B2B-счетов',
+      'Учет рабочего времени и смен (Time Tracking)',
+      'TedCloud Intelligence и сквозная аналитика',
+    ],
+    featuresEn: [
+      'Up to 50 members & granular RBAC matrix',
+      'CRM, automated contracts & B2B invoices',
+      'Work shifts & Time Tracking contour',
+      'TedCloud Intelligence & executive analytics',
+    ],
+  },
+  Enterprise: {
+    id: 'Enterprise',
+    nameRu: 'Enterprise',
+    nameEn: 'Enterprise',
+    badgeRu: 'Безлимит · SLA 99.9%',
+    badgeEn: 'Unlimited · SLA 99.9%',
+    maxEmployeesLabelRu: 'Безлимит сотрудников, SLA 99.9%, выделенный контур',
+    maxEmployeesLabelEn: 'Unlimited employees, SLA 99.9%, dedicated contour',
+    maxEmployeesCount: null,
+    monthly: {
+      RUB: 29900,
+      USD: 299,
+      EUR: 279,
+    },
+    yearlyMonthly: {
+      RUB: 23920,
+      USD: 239,
+      EUR: 223,
+    },
+    featuresRu: [
+      'Безлимитный штат и холдинговая структура',
+      'Выделенный контур БД, SSO и Журнал аудита',
+      'Международный биллинг (РФ / SWIFT / USDT)',
+      'Гарантированный SLA 99.9% и приоритетная поддержка',
+    ],
+    featuresEn: [
+      'Unlimited staff & multi-branch hierarchy',
+      'Dedicated DB contour, SSO & Security Audit Log',
+      'Global settlement (RU / SWIFT / SEPA / USDT)',
+      'Guaranteed 99.9% SLA & dedicated architect',
+    ],
+  },
+};
+
 /**
- * Расчет стоимости корпоративного тарифа с поддержкой глобальных валют (USD/EUR) и РФ/СНГ (RUB),
- * а также скидки -20% при годовом контракте.
+ * Расчет стоимости корпоративного тарифа на базе единой константы PRICING_PLANS
+ * с поддержкой глобальных валют (USD/EUR) и РФ/СНГ (RUB), а также скидки -20% при годовом контракте.
  */
 export function calculateSubscriptionPricing(
   plan: SubscriptionPlanTier,
@@ -877,25 +999,15 @@ export function calculateSubscriptionPricing(
   periodLabelRu: string;
   periodLabelEn: string;
 } {
-  const baseMonthlyRub = plan === 'Enterprise' ? 89000 : plan === 'Business' ? 24900 : 0;
-  const baseMonthlyUsd = plan === 'Enterprise' ? 960 : plan === 'Business' ? 269 : 0;
-  const baseMonthlyEur = plan === 'Enterprise' ? 890 : plan === 'Business' ? 249 : 0;
-
+  const planConfig = PRICING_PLANS[plan] || PRICING_PLANS.Trial;
   const resolvedCurrency: CurrencyCode =
     currencyOverride || (region === 'GLOBAL' ? 'USD' : 'RUB');
 
-  const baseMonthly =
-    resolvedCurrency === 'USD'
-      ? baseMonthlyUsd
-      : resolvedCurrency === 'EUR'
-      ? baseMonthlyEur
-      : baseMonthlyRub;
-
   if (cycle === 'yearly') {
-    const discountedMonthlyRub = Math.round(baseMonthlyRub * 0.8);
+    const discountedMonthlyRub = planConfig.yearlyMonthly.RUB;
     const totalAmountRub = discountedMonthlyRub * 12;
 
-    const discountedMonthly = Math.round(baseMonthly * 0.8);
+    const discountedMonthly = planConfig.yearlyMonthly[resolvedCurrency];
     const totalAmount = discountedMonthly * 12;
 
     return {
@@ -910,6 +1022,9 @@ export function calculateSubscriptionPricing(
     };
   }
 
+  const baseMonthlyRub = planConfig.monthly.RUB;
+  const baseMonthly = planConfig.monthly[resolvedCurrency];
+
   return {
     monthlyPriceRub: baseMonthlyRub,
     totalAmountRub: baseMonthlyRub,
@@ -920,6 +1035,145 @@ export function calculateSubscriptionPricing(
     periodLabelRu: '1 месяц (Ежемесячная подписка)',
     periodLabelEn: '1 Month (Monthly Subscription)',
   };
+}
+
+/**
+ * Мгновенная изолированная печать / сохранение PDF за 0.1 сек через чистый скрытый iframe
+ * без зависания Chrome Print Preview на тяжелом DOM основного SPA.
+ */
+export function handleInstantPrint(documentHtmlElementId: string, title = 'TedCloud_Document'): void {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  const targetEl = document.getElementById(documentHtmlElementId);
+  if (!targetEl) return;
+
+  const existingIframe = document.getElementById('tc-instant-print-iframe');
+  if (existingIframe && existingIframe.parentNode) {
+    existingIframe.parentNode.removeChild(existingIframe);
+  }
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'tc-instant-print-iframe';
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.opacity = '0';
+  iframe.style.pointerEvents = 'none';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (!doc || !iframe.contentWindow) return;
+
+  const safeTitle = String(title || 'TedCloud_Document').replace(/[<>]/g, '');
+
+  doc.open();
+  doc.write(`<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>${safeTitle}</title>
+  <style>
+    @page { size: A4; margin: 15mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #000000 !important;
+      background: #ffffff !important;
+    }
+    h1, h2, h3, h4, p, div, span, strong, b {
+      color: #000000;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+    }
+    th, td {
+      border: 1px solid #1e293b !important;
+      padding: 8px 10px;
+      text-align: left;
+      color: #0f172a !important;
+      font-size: 11px;
+    }
+    th {
+      background-color: #f1f5f9 !important;
+      color: #0f172a !important;
+      font-weight: 600 !important;
+    }
+    .grid { display: grid; }
+    .grid-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+    .grid-cols-2, .sm\\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .col-span-2 { grid-column: span 2 / span 2; }
+    .col-span-3 { grid-column: span 3 / span 3; }
+    .col-span-7 { grid-column: span 7 / span 7; }
+    .col-span-9 { grid-column: span 9 / span 9; }
+    .gap-2 { gap: 8px; }
+    .gap-6 { gap: 24px; }
+    .gap-8 { gap: 32px; }
+    .flex { display: flex; }
+    .flex-col { flex-direction: column; }
+    .items-start { align-items: flex-start; }
+    .items-center { align-items: center; }
+    .items-end { align-items: flex-end; }
+    .justify-between { justify-content: space-between; }
+    .justify-end { justify-content: flex-end; }
+    .space-y-1 > * + * { margin-top: 4px; }
+    .space-y-2 > * + * { margin-top: 8px; }
+    .space-y-2\\.5 > * + * { margin-top: 10px; }
+    .space-y-5 > * + * { margin-top: 18px; }
+    .space-y-6 > * + * { margin-top: 20px; }
+    .border { border: 1px solid #0f172a; }
+    .border-b { border-bottom: 1px solid #0f172a; }
+    .border-b-2 { border-bottom: 2px solid #0f172a; }
+    .border-t { border-top: 1px solid #0f172a; }
+    .border-t-2 { border-top: 2px solid #0f172a; }
+    .border-r { border-right: 1px solid #0f172a; }
+    .p-2 { padding: 8px; }
+    .p-2\\.5 { padding: 10px; }
+    .p-3 { padding: 12px; }
+    .pb-2 { padding-bottom: 8px; }
+    .pb-3 { padding-bottom: 12px; }
+    .pb-4 { padding-bottom: 16px; }
+    .pt-1 { padding-top: 4px; }
+    .pt-2 { padding-top: 8px; }
+    .pt-3 { padding-top: 12px; }
+    .pt-4 { padding-top: 16px; }
+    .pt-6 { padding-top: 24px; }
+    .mt-1 { margin-top: 4px; }
+    .mt-3 { margin-top: 12px; }
+    .w-64 { width: 256px; }
+    .w-full { width: 100%; }
+    .text-center { text-align: center; }
+    .text-right, .sm\\:text-right { text-align: right; }
+    .font-bold { font-weight: 700; }
+    .font-semibold { font-weight: 600; }
+    .font-medium { font-weight: 500; }
+    .uppercase { text-transform: uppercase; }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .rounded-lg { border-radius: 6px; }
+    .bg-slate-50, .bg-zinc-100, .bg-slate-100 { background-color: #f1f5f9 !important; }
+  </style>
+</head>
+<body>
+  <div class="a4-print-root">${targetEl.innerHTML}</div>
+</body>
+</html>`);
+  doc.close();
+
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch (e) {
+      console.error('Instant print error:', e);
+    }
+  }, 60);
 }
 
 export function generateInvoiceNumber(date = new Date()): string {

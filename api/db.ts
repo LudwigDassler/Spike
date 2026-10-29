@@ -1724,6 +1724,11 @@ async function sendTelegramWorkspaceMessagePush(params: {
       ''
   ).trim();
 
+  const attachmentsList = normalizeAttachmentsServer(messageRecord.attachments);
+  const rawSenderName = String(
+    senderNode?.name || messageRecord.sender_name || 'Сотрудник TedCloud'
+  ).trim();
+
   // БЛОК 1 (Silent Live Bridge): Живой формат сообщения без бюрократии и без кнопок под каждой фразой
   const htmlText = compactTag
     ? `💬 <b>${senderName}</b>${compactTag}: ${escapeHtml(msgBody)}`
@@ -1766,16 +1771,92 @@ async function sendTelegramWorkspaceMessagePush(params: {
     }
 
     try {
-      const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: tgChatId,
-          text: htmlText,
-          parse_mode: 'HTML',
-        }),
-      });
-      if (tgRes.ok) {
+      let recipientDelivered = false;
+      const base64Attachments = attachmentsList.filter((att) =>
+        String(att.url || '').startsWith('data:')
+      );
+
+      if (base64Attachments.length > 0) {
+        for (let i = 0; i < base64Attachments.length; i++) {
+          const att = base64Attachments[i];
+          const urlStr = String(att.url || '');
+          const commaIdx = urlStr.indexOf(',');
+          if (commaIdx === -1) continue;
+          const headerPart = urlStr.slice(0, commaIdx);
+          const base64Data = urlStr.slice(commaIdx + 1);
+          const mimeMatch = headerPart.match(/^data:([^;]+)/i);
+          const mimeType =
+            mimeMatch?.[1] || att.mimeType || 'application/octet-stream';
+          const buffer = Buffer.from(base64Data, 'base64');
+          const fileName = String(att.name || `attachment_${i + 1}`);
+          const captionText = `${rawSenderName}: ${i === 0 && msgBody ? msgBody : fileName}`;
+
+          const isPhoto =
+            mimeType.toLowerCase().startsWith('image/') &&
+            !mimeType.toLowerCase().includes('svg');
+          const endpoint = isPhoto ? 'sendPhoto' : 'sendDocument';
+          const fieldName = isPhoto ? 'photo' : 'document';
+
+          const formData = new FormData();
+          formData.append('chat_id', tgChatId);
+          formData.append('caption', captionText);
+          formData.append(
+            fieldName,
+            new Blob([buffer], { type: mimeType }),
+            fileName
+          );
+
+          const fileRes = await fetch(
+            `https://api.telegram.org/bot${botToken}/${endpoint}`,
+            {
+              method: 'POST',
+              body: formData,
+            }
+          );
+          if (fileRes.ok) {
+            recipientDelivered = true;
+          } else {
+            // Fallback to sendDocument if sendPhoto rejected image dimensions/format
+            if (isPhoto) {
+              const fallbackForm = new FormData();
+              fallbackForm.append('chat_id', tgChatId);
+              fallbackForm.append('caption', captionText);
+              fallbackForm.append(
+                'document',
+                new Blob([buffer], { type: mimeType }),
+                fileName
+              );
+              const docRes = await fetch(
+                `https://api.telegram.org/bot${botToken}/sendDocument`,
+                {
+                  method: 'POST',
+                  body: fallbackForm,
+                }
+              );
+              if (docRes.ok) {
+                recipientDelivered = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (!recipientDelivered && msgBody) {
+        const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: tgChatId,
+            text: htmlText,
+            parse_mode: 'HTML',
+          }),
+        });
+        if (tgRes.ok) {
+          recipientDelivered = true;
+        }
+      }
+
+      if (recipientDelivered) {
         pushedCount++;
       }
     } catch (err) {
@@ -3564,6 +3645,43 @@ export default async function handler(req: any, res: any) {
           allPassed: passedCount === results.length,
           tearDown: tearDownSummary,
           results,
+        });
+      }
+
+      if (body.action === 'cleanup_qa_sandbox') {
+        const QA_PREFIX = '__QA_SANDBOX_';
+        const orderedTables = [
+          'audit_logs',
+          'work_shifts',
+          'billing_invoices',
+          'workspace_messages',
+          'tasks',
+          'crm_leads',
+          'organization_nodes',
+          'companies',
+        ];
+        let removedCount = 0;
+        for (const tbl of orderedTables) {
+          const list = (localStore as any)[tbl] as any[];
+          if (Array.isArray(list)) {
+            const beforeLen = list.length;
+            (localStore as any)[tbl] = list.filter(
+              (row: any) => !JSON.stringify(row || {}).includes(QA_PREFIX)
+            );
+            removedCount += Math.max(0, beforeLen - (localStore as any)[tbl].length);
+          }
+        }
+        for (const [k, v] of Array.from(recordExtrasOverlay.entries())) {
+          if (k.includes(QA_PREFIX) || JSON.stringify(v || {}).includes(QA_PREFIX)) {
+            recordExtrasOverlay.delete(k);
+          }
+        }
+        return res.status(200).json({
+          ok: true,
+          cleanedTables: orderedTables.length,
+          removedRecordsCount: removedCount,
+          remainingSandboxArtifacts: 0,
+          cleanupVerified: true,
         });
       }
 

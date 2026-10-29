@@ -116,26 +116,12 @@ export function extractMessageBodyFromQuotedReply(quotedText?: string | null): s
 }
 
 async function reactToTelegramMessage(
-  chatId: string | number,
-  messageId?: number | null,
-  emoji = '⚡'
+  _chatId: string | number,
+  _messageId?: number | null,
+  _emoji = '⚡'
 ): Promise<boolean> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || !messageId) return false;
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${token}/setMessageReaction`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: [{ type: 'emoji', emoji }],
-      }),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  // Реакции бота отключены: переписка пересылается тихо и чисто без эмодзи на сообщениях
+  return true;
 }
 
 async function extractTelegramMediaAttachments(message: any): Promise<{
@@ -1940,7 +1926,6 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
         created_by: user?.id || null,
       });
 
-      await reactToTelegramMessage(chatId, message?.message_id, '⚡');
       await sendTelegramMessage(
         chatId,
         `✓ Задача создана: <b>${escapeHtml(taskTitle)}</b>`
@@ -2130,10 +2115,7 @@ ${customQuestion ? `Вопрос сотрудника: ${customQuestion}` : ''}
           await sendTelegramMessage(recChatId, incomingHtml);
         }
 
-        // БЛОК 1 (Silent Live Bridge): Никаких текстовых отписок «✓ Доставлено...»!
-        // Ставим нативную реакцию ⚡ на сообщение отправителя и держим чат идеально чистым.
-        await reactToTelegramMessage(chatId, message?.message_id, '⚡');
-
+        // Silent Live Bridge: переписка пересылается тихо и чисто без текстовых отписок и без реакций бота.
         return res.status(200).send('OK');
       }
 

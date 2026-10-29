@@ -14,6 +14,9 @@ import {
   Sparkles,
   MessageSquare,
   ArrowUpRight,
+  Maximize2,
+  Minimize2,
+  Trash2,
 } from 'lucide-react';
 import {
   AiAssistantMode,
@@ -92,6 +95,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const [question, setQuestion] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<AttachmentItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFullWorkspaceSize, setIsFullWorkspaceSize] = useState(false);
   const [creatingTaskEntryId, setCreatingTaskEntryId] = useState<string | null>(null);
   const [createdTaskIds, setCreatedTaskIds] = useState<Record<string, boolean>>({});
   const [decomposingEntryId, setDecomposingEntryId] = useState<string | null>(null);
@@ -249,7 +253,6 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     }
   };
 
-  // Прямое создание предложенной задачи в БД в 1 клик из ответа ИИ
   const handleDirectCreateSuggestedTask = async (entry: AiChatEntry) => {
     if (creatingTaskEntryId || createdTaskIds[entry.id]) return;
     setCreatingTaskEntryId(entry.id);
@@ -292,7 +295,6 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     }
   };
 
-  // Прямая декомпозиция активных задач компании в БД в 1 клик из ответа ИИ
   const handleDirectDecomposeActiveTasks = async (entryId: string) => {
     if (decomposingEntryId || decomposedEntryIds[entryId]) return;
     setDecomposingEntryId(entryId);
@@ -345,56 +347,93 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-xs font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3 sm:p-6 font-sans"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-[#0D0D11] border-l border-white/[0.08] h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl"
+        className={`w-full ${
+          isFullWorkspaceSize
+            ? 'max-w-6xl h-[88dvh]'
+            : 'max-w-3xl h-[80dvh] max-h-[760px]'
+        } rounded-2xl border border-white/10 bg-[#0D0D11] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-200`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Compact Header */}
-        <div className="px-4 py-3 border-b border-white/[0.07] bg-[#111116] flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center shrink-0">
+        {/* Spotlight Header */}
+        <div className="px-5 py-3.5 border-b border-white/[0.07] bg-[#111116] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center shrink-0">
               <Cpu className="w-4 h-4 text-indigo-400" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-semibold text-white tracking-tight truncate">
-                  TedCloud Intelligence
+                  TedCloud Intelligence Studio
                 </h2>
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                  Action Engine
+                  Spotlight AI · Action Engine
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 truncate">
                 {companyName} · {tasks.filter((t) => t.status !== 'Done').length}{' '}
-                {isEn ? 'open tasks' : 'активных задач'} · {leads.length} CRM
+                {isEn ? 'open tasks' : 'активных задач'} · {leads.length} CRM ·{' '}
+                {nodes.length} {isEn ? 'staff' : 'сотр.'}
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={isEn ? 'Close TedCloud Intelligence' : 'Закрыть TedCloud Intelligence'}
-            className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {entries.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setEntries([])}
+                title={isEn ? 'Clear conversation' : 'Очистить историю запросов'}
+                className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsFullWorkspaceSize((prev) => !prev)}
+              title={
+                isFullWorkspaceSize
+                  ? isEn
+                    ? 'Restore standard Spotlight size'
+                    : 'Стандартный размер Spotlight'
+                  : isEn
+                  ? 'Expand to full workspace'
+                  : 'Развернуть на весь рабочий экран'
+              }
+              className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+            >
+              {isFullWorkspaceSize ? (
+                <Minimize2 className="w-4 h-4" />
+              ) : (
+                <Maximize2 className="w-4 h-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={isEn ? 'Close TedCloud Intelligence' : 'Закрыть TedCloud Intelligence'}
+              className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        {/* 2x2 Grid of Quick Scenarios */}
-        <div className="grid grid-cols-2 gap-2 p-3 border-b border-white/[0.07] bg-[#0F0F14] shrink-0">
+        {/* 4-Column Grid of Quick Scenarios */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3.5 border-b border-white/[0.07] bg-[#0F0F14] shrink-0">
           <button
             type="button"
             disabled={isLoading}
             onClick={() =>
               void triggerAiAction('daily_brief', isEn ? 'Daily Brief' : 'Сводка дня')
             }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4 shrink-0 text-indigo-400" />
             <span className="truncate">{isEn ? 'Daily Brief' : 'Сводка дня'}</span>
@@ -409,7 +448,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                 isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'
               )
             }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
           >
             <BarChart3 className="w-4 h-4 shrink-0 text-sky-400" />
             <span className="truncate">{isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'}</span>
@@ -427,7 +466,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   : 'Аудит сделок CRM и конверсии воронки компании'
               )
             }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
           >
             <Briefcase className="w-4 h-4 shrink-0 text-amber-400" />
             <span className="truncate">{isEn ? 'CRM Pipeline Audit' : 'Аудит сделок CRM'}</span>
@@ -443,7 +482,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                 tasks[0]?.title || (isEn ? 'Q4 Operational Execution Plan' : 'Операционный план квартала')
               )
             }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors"
+            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
           >
             <ListChecks className="w-4 h-4 shrink-0 text-emerald-400" />
             <span className="truncate">{isEn ? 'Task Plan' : 'План задач'}</span>
@@ -451,7 +490,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         </div>
 
         {/* Conversational Stream */}
-        <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3.5">
+        <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-3.5">
           {entries.length === 0 && (
             <div className="rounded-xl border border-white/[0.08] bg-[#131319] p-3.5 space-y-3 text-zinc-200">
               <div className="flex items-center justify-between text-xs">

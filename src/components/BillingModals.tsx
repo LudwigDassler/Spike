@@ -24,6 +24,8 @@ import {
 import {
   calculateSubscriptionPricing,
   generateInvoiceNumber,
+  handleInstantPrint,
+  PRICING_PLANS,
 } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -243,6 +245,7 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(['Business', 'Enterprise'] as SubscriptionPlanTier[]).map((tier) => {
                 const isSelected = plan === tier;
+                const planCfg = PRICING_PLANS[tier];
                 const tierPrice = calculateSubscriptionPricing(
                   tier,
                   billingCycle,
@@ -261,20 +264,16 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white">{tier}</span>
+                      <span className="text-xs font-semibold text-white">
+                        {isEn ? planCfg.nameEn : planCfg.nameRu}
+                      </span>
                       <span className="text-xs font-bold text-white tabular-nums">
                         {formatCheckoutPrice(tierPrice.monthlyPrice, activeCurrency)}{' '}
                         {isEn ? '/ mo' : '/ мес.'}
                       </span>
                     </div>
                     <div className="text-[11px] text-zinc-400 mt-1">
-                      {tier === 'Business'
-                        ? isEn
-                          ? 'Up to 50 members · Full CRM, Kanban & Telegram Sync'
-                          : 'До 50 сотрудников · Полный CRM, Канбан и Telegram-контур'
-                        : isEn
-                        ? 'Unlimited members · Dedicated SLA, RBAC & Security Audit'
-                        : 'Безлимит сотрудников · Выделенный SLA, RBAC и аудит безопасности'}
+                      {isEn ? planCfg.maxEmployeesLabelEn : planCfg.maxEmployeesLabelRu}
                     </div>
                   </button>
                 );
@@ -786,7 +785,9 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
             )}
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={() =>
+                handleInstantPrint('tc-printable-invoice-sheet', invoice.invoice_number)
+              }
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 text-xs font-semibold transition-colors"
             >
               <Printer className="w-3.5 h-3.5" />
@@ -802,16 +803,19 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
           </div>
         </div>
 
-        {/* Printable Document Sheet */}
-        <div className="p-5 sm:p-8 bg-white text-black space-y-6 text-xs overflow-x-auto">
+        {/* Printable Document Sheet (Strict White A4 Paper in ANY theme) */}
+        <div
+          id="tc-printable-invoice-sheet"
+          className="tc-a4-paper p-5 sm:p-8 !bg-white !text-slate-950 space-y-6 text-xs overflow-x-auto"
+        >
           {!isGlobal ? (
             <>
               {/* РФ Счет на оплату */}
-              <div className="border border-black text-[11px]">
-                <div className="grid grid-cols-12 border-b border-black">
-                  <div className="col-span-7 p-2 border-r border-black">
-                    <div className="font-medium">АО «Т-БАНК» г. Москва</div>
-                    <div className="text-[10px] text-zinc-600 mt-1">Банк получателя</div>
+              <div className="border border-slate-900 text-[11px]">
+                <div className="grid grid-cols-12 border-b border-slate-900">
+                  <div className="col-span-7 p-2 border-r border-slate-900">
+                    <div className="font-medium !text-slate-950">АО «Т-БАНК» г. Москва</div>
+                    <div className="text-[10px] !text-slate-600 mt-1">Банк получателя</div>
                   </div>
                   <div className="col-span-2 p-2 border-r border-black">
                     <div>БИК</div>
@@ -867,29 +871,43 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
                 </div>
               </div>
 
-              <table className="w-full border-collapse border border-black text-xs">
+              <table className="w-full border-collapse border border-slate-900 text-xs">
                 <thead>
-                  <tr className="bg-zinc-100 border-b border-black text-left">
-                    <th className="border-r border-black p-2 w-10 text-center">№</th>
-                    <th className="border-r border-black p-2">Наименование работ, услуг (ЛИЦЕНЗИЯ)</th>
-                    <th className="border-r border-black p-2 w-16 text-center">Кол-во</th>
-                    <th className="border-r border-black p-2 w-16 text-center">Ед.</th>
-                    <th className="border-r border-black p-2 w-28 text-right">Цена</th>
-                    <th className="p-2 w-28 text-right">Сумма</th>
+                  <tr className="!bg-slate-100 border-b border-slate-900 text-left">
+                    <th className="border-r border-slate-900 p-2 w-10 text-center !bg-slate-100 !text-slate-900 font-semibold">
+                      №
+                    </th>
+                    <th className="border-r border-slate-900 p-2 !bg-slate-100 !text-slate-900 font-semibold">
+                      Наименование работ, услуг (ЛИЦЕНЗИЯ)
+                    </th>
+                    <th className="border-r border-slate-900 p-2 w-16 text-center !bg-slate-100 !text-slate-900 font-semibold">
+                      Кол-во
+                    </th>
+                    <th className="border-r border-slate-900 p-2 w-16 text-center !bg-slate-100 !text-slate-900 font-semibold">
+                      Ед.
+                    </th>
+                    <th className="border-r border-slate-900 p-2 w-28 text-right !bg-slate-100 !text-slate-900 font-semibold">
+                      Цена
+                    </th>
+                    <th className="p-2 w-28 text-right !bg-slate-100 !text-slate-900 font-semibold">
+                      Сумма
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="border-r border-black p-2 text-center">1</td>
-                    <td className="border-r border-black p-2 font-medium">
+                    <td className="border-r border-slate-900 p-2 text-center !text-slate-950">1</td>
+                    <td className="border-r border-slate-900 p-2 font-medium !text-slate-950">
                       {serviceDescriptionRu}
                     </td>
-                    <td className="border-r border-black p-2 text-center">1</td>
-                    <td className="border-r border-black p-2 text-center">лиц.</td>
-                    <td className="border-r border-black p-2 text-right tabular-nums">
+                    <td className="border-r border-slate-900 p-2 text-center !text-slate-950">1</td>
+                    <td className="border-r border-slate-900 p-2 text-center !text-slate-950">
+                      лиц.
+                    </td>
+                    <td className="border-r border-slate-900 p-2 text-right tabular-nums !text-slate-950">
                       {Math.round(invoice.amount).toLocaleString('ru-RU')} {invoice.currency}
                     </td>
-                    <td className="p-2 text-right tabular-nums font-semibold">
+                    <td className="p-2 text-right tabular-nums font-semibold !text-slate-950">
                       {Math.round(invoice.amount).toLocaleString('ru-RU')} {invoice.currency}
                     </td>
                   </tr>
@@ -967,23 +985,29 @@ export const PrintableInvoiceModal: React.FC<PrintableInvoiceModalProps> = ({
                 </div>
               </div>
 
-              <table className="w-full border-collapse border border-black text-xs">
+              <table className="w-full border-collapse border border-slate-900 text-xs">
                 <thead>
-                  <tr className="bg-zinc-100 border-b border-black text-left">
-                    <th className="border-r border-black p-2.5">Description</th>
-                    <th className="border-r border-black p-2.5 w-24 text-center">Cycle</th>
-                    <th className="p-2.5 w-36 text-right">Amount</th>
+                  <tr className="!bg-slate-100 border-b border-slate-900 text-left">
+                    <th className="border-r border-slate-900 p-2.5 !bg-slate-100 !text-slate-900 font-semibold">
+                      Description
+                    </th>
+                    <th className="border-r border-slate-900 p-2.5 w-24 text-center !bg-slate-100 !text-slate-900 font-semibold">
+                      Cycle
+                    </th>
+                    <th className="p-2.5 w-36 text-right !bg-slate-100 !text-slate-900 font-semibold">
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="border-r border-black p-2.5 font-medium">
+                    <td className="border-r border-slate-900 p-2.5 font-medium !text-slate-950">
                       {serviceDescriptionEn}
                     </td>
-                    <td className="border-r border-black p-2.5 text-center uppercase">
+                    <td className="border-r border-slate-900 p-2.5 text-center uppercase !text-slate-950">
                       {invoice.billing_cycle}
                     </td>
-                    <td className="p-2.5 text-right tabular-nums font-bold">
+                    <td className="p-2.5 text-right tabular-nums font-bold !text-slate-950">
                       {Math.round(invoice.amount).toLocaleString('en-US')} {invoice.currency}
                     </td>
                   </tr>

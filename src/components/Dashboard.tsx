@@ -111,6 +111,7 @@ import {
 import {
   buildBuiltInChecklistForTask,
   normalizeAttachments,
+  PRICING_PLANS,
 } from '../utils/enterpriseLogic';
 import {
   AttachmentListRenderer,
@@ -141,6 +142,7 @@ import {
   ExecutiveUnitEconomicsRadar,
   DashboardShiftsOverviewWidget,
   TimeAndAttendanceView,
+  CorporateDataExportCenter,
   SuperadminQaAuditPanel,
 } from './EnterpriseB2BFeatures';
 
@@ -4797,12 +4799,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </div>
                                 )}
 
-                                {/* Обтекаемый бабл сообщения (Telegram Desktop геометрия: w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words) */}
+                                {/* Строгие архитектурные карточки сообщений в стиле Linear / Slack Enterprise (rounded-xl, тонкий бордер, чистая типографика без фиолетовых пузырей) */}
                                 <div
-                                  className={`relative group w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2 text-[14px] leading-[1.35] break-words shadow-sm transition-colors ${
+                                  className={`relative group w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2.5 text-[14px] leading-[1.38] break-words rounded-xl transition-colors ${
                                     isOutgoing
-                                      ? 'ml-auto tc-bubble-outgoing rounded-[20px] rounded-br-[5px] bg-indigo-600/90 text-white'
-                                      : 'rounded-[20px] rounded-bl-[5px] bg-zinc-800/90 text-zinc-100'
+                                      ? theme === 'light'
+                                        ? 'ml-auto tc-bubble-outgoing bg-slate-900 text-white border border-slate-800 shadow-2xs'
+                                        : 'ml-auto tc-bubble-outgoing bg-zinc-800/90 border border-white/10 text-zinc-100 shadow-2xs'
+                                      : theme === 'light'
+                                      ? 'bg-white border border-slate-200/80 text-slate-900 shadow-2xs'
+                                      : 'bg-zinc-900/90 border border-white/[0.06] text-zinc-200 shadow-2xs'
                                   }`}
                                 >
                                   {/* Компактная мини-капсула быстрых реакций прямо НАД верхним углом сообщения (-top-8 right-0 / left-0): 4 эмодзи + 2 аккуратные круглые иконки с тултипами */}
@@ -4895,18 +4901,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                   )}
 
-                                  {/* Текст сообщения + встроенное время и галочки доставки на одной строке (inline-flex flex-wrap items-end gap-x-2.5 gap-y-0.5) */}
+                                  {/* Текст сообщения + встроенное время и векторная иконка доставки CheckCheck */}
                                   <div className="inline-flex flex-wrap items-end gap-x-2.5 gap-y-0.5 max-w-full">
                                     <span className="whitespace-pre-wrap break-words">
                                       {messageBody}
                                     </span>
                                     <span
-                                      className={`inline-flex items-center gap-1 text-[11px] leading-none opacity-65 select-none ml-auto shrink-0 translate-y-[1px] ${
-                                        isOutgoing ? 'text-indigo-100' : 'text-zinc-400'
+                                      className={`inline-flex items-center gap-0.5 text-[11px] leading-none opacity-75 select-none ml-auto shrink-0 translate-y-[1px] ${
+                                        isOutgoing
+                                          ? theme === 'light'
+                                            ? 'text-slate-300'
+                                            : 'text-zinc-300'
+                                          : theme === 'light'
+                                          ? 'text-slate-400'
+                                          : 'text-zinc-400'
                                       }`}
                                     >
                                       {shortTime && <span className="tabular-nums">{shortTime}</span>}
-                                      {isOutgoing && <span>✓✓</span>}
+                                      {isOutgoing && (
+                                        <CheckCheck className="w-3.5 h-3.5 inline-block ml-1 text-indigo-400 shrink-0" />
+                                      )}
                                     </span>
                                   </div>
 
@@ -5065,9 +5079,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
 
-                {/* Превью выбранных вложений перед отправкой */}
+                {/* Превью выбранных вложений перед отправкой (Light theme: bg-slate-100 border-t border-slate-200 text-slate-800) */}
                 {commAttachments.length > 0 && (
-                  <div className="shrink-0 px-4 pt-2.5 pb-1 border-t border-white/[0.06] bg-zinc-950/90">
+                  <div
+                    className={`shrink-0 px-4 py-2 ${
+                      theme === 'light'
+                        ? 'bg-slate-100 border-t border-slate-200 text-slate-800'
+                        : 'bg-zinc-900 border-t border-white/10 text-zinc-200'
+                    }`}
+                  >
                     <PendingAttachmentsStrip
                       attachments={commAttachments}
                       onRemove={(id) =>
@@ -5962,41 +5982,62 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       [
                         {
                           tier: 'Trial' as SubscriptionPlanTier,
-                          priceRub: 0,
-                          desc: t('workspace.planTrialDesc'),
+                          priceRub: PRICING_PLANS.Trial.monthly.RUB,
+                          desc: isEn
+                            ? `${PRICING_PLANS.Trial.seatsLabelEn} · Kanban, Chat & Shift Tracker`
+                            : `${PRICING_PLANS.Trial.seatsLabelRu} · Задачи, Чат и Табель смен`,
                         },
                         {
                           tier: 'Business' as SubscriptionPlanTier,
-                          priceRub: 24900,
-                          desc: t('workspace.planBusinessDesc'),
+                          priceRub: PRICING_PLANS.Business.monthly.RUB,
+                          desc: isEn
+                            ? `${PRICING_PLANS.Business.seatsLabelEn} · Full CRM, PDF Docs & AI Studio (-20% yearly: $79/mo)`
+                            : `${PRICING_PLANS.Business.seatsLabelRu} · Полная CRM, Договоры А4 и ИИ (-20% на год: 7 920 ₽/мес)`,
                         },
                         {
                           tier: 'Enterprise' as SubscriptionPlanTier,
-                          priceRub: 89000,
-                          desc: t('workspace.planEnterpriseDesc'),
+                          priceRub: PRICING_PLANS.Enterprise.monthly.RUB,
+                          desc: isEn
+                            ? `${PRICING_PLANS.Enterprise.seatsLabelEn} · SLA 99.9%, Dedicated Contour (-20% yearly: $239/mo)`
+                            : `${PRICING_PLANS.Enterprise.seatsLabelRu} · SLA 99.9%, Выделенный контур (-20% на год: 23 920 ₽/мес)`,
                         },
                       ] as const
                     ).map((planItem) => {
                       const isCurrent = selectedPlan === planItem.tier;
+                      const isFeatured = planItem.tier === 'Business';
                       return (
                         <div
                           key={planItem.tier}
                           className={`rounded-lg border p-4 flex flex-col justify-between transition-colors ${
-                            isCurrent
+                            isFeatured
+                              ? 'tc-pricing-featured border-indigo-500/60 bg-[#151525] !text-white'
+                              : isCurrent
                               ? 'border-white/80 bg-white/[0.04]'
                               : 'border-white/[0.07] bg-[#141418] hover:border-white/[0.18]'
                           }`}
                         >
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-semibold text-white">
+                              <span
+                                className={`text-sm font-semibold ${
+                                  isFeatured ? '!text-white' : 'text-white'
+                                }`}
+                              >
                                 {planItem.tier}
                               </span>
-                              <span className="text-xs font-medium text-[#D4D4D8] whitespace-nowrap tabular-nums">
-                                {formatMoney(planItem.priceRub)}
+                              <span
+                                className={`text-xs font-semibold whitespace-nowrap tabular-nums ${
+                                  isFeatured ? '!text-white' : 'text-[#D4D4D8]'
+                                }`}
+                              >
+                                {formatMoney(planItem.priceRub)} / {isEn ? 'mo' : 'мес'}
                               </span>
                             </div>
-                            <p className="text-[11px] text-[#8E8E93] leading-relaxed mt-2">
+                            <p
+                              className={`text-[11px] leading-relaxed mt-2 ${
+                                isFeatured ? '!text-indigo-100' : 'text-[#8E8E93]'
+                              }`}
+                            >
                               {planItem.desc}
                             </p>
                           </div>
@@ -6010,8 +6051,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 setCheckoutModalPlan(planItem.tier);
                               }
                             }}
-                            className={`mt-4 w-full py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap border ${
-                              isCurrent
+                            className={`mt-4 w-full py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap border ${
+                              isFeatured
+                                ? 'bg-indigo-600 hover:bg-indigo-500 !text-white border-indigo-500'
+                                : isCurrent
                                 ? 'bg-indigo-500/15 text-indigo-200 border-indigo-400/30 hover:bg-indigo-500/25'
                                 : 'bg-white/[0.04] text-[#D4D4D8] border-white/[0.08] hover:bg-white/[0.09] hover:text-white'
                             }`}
@@ -6291,7 +6334,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 )}
               </div>
 
-              {/* АВТОМАТИЗИРОВАННЫЙ QA & SECURITY E2E САМОДИАГНОСТИЧЕСКИЙ РАННЕР (СУПЕРАДМИН) */}
+              {/* 5. РАСШИРЕННЫЙ ЦЕНТР ЭКСПОРТА ДАННЫХ КОМПАНИИ (7 КОНТУРОВ CSV / EXCEL UTF-8 BOM) */}
+              <CorporateDataExportCenter
+                company={company}
+                tasks={safeTasks}
+                leads={safeLeads}
+                nodes={safeNodes}
+                workShifts={safeWorkShifts}
+                invoices={safeInvoices}
+                messages={safeMessages}
+                auditLogs={safeAuditLogs}
+                showToast={showToast}
+              />
+
+              {/* 6. АВТОМАТИЗИРОВАННЫЙ QA & SECURITY E2E САМОДИАГНОСТИЧЕСКИЙ РАННЕР (СУПЕРАДМИН) */}
               <SuperadminQaAuditPanel onRefresh={onRefresh} showToast={showToast} />
             </div>
           )}

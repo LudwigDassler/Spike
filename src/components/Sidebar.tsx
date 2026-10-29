@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutGrid,
   CheckSquare,
@@ -12,6 +12,8 @@ import {
   Sun,
   Moon,
   Clock,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import {
   DashboardSection,
@@ -45,6 +47,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { language, setLanguage, theme, toggleTheme, t, formatRole } = useLocale();
   const isEn = language === 'en';
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('tedcloud_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapsed = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('tedcloud_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const normalized = normalizeEmployeePermissions(
     currentProfile?.access_level,
@@ -118,28 +137,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const visibleNavItems = navItems.filter((item) => item.visible);
 
   return (
-    <aside className="hidden lg:flex w-64 shrink-0 bg-[#070709] flex-col justify-between min-h-screen select-none overflow-hidden">
+    <aside
+      className={`hidden lg:flex ${
+        isSidebarCollapsed ? 'w-[60px]' : 'w-52'
+      } shrink-0 bg-[#070709] border-r border-white/[0.05] flex-col justify-between min-h-screen select-none overflow-hidden transition-all duration-200`}
+    >
       <div>
-        {/* Brand Header */}
-        <div className="h-14 px-5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white to-zinc-200 text-zinc-950 flex items-center justify-center font-bold text-xs tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.9)]">
-              TC
+        {/* Brand Header with Collapse Toggle */}
+        <div
+          className={`h-14 ${
+            isSidebarCollapsed ? 'px-2 justify-center' : 'px-3.5 justify-between'
+          } flex items-center border-b border-white/[0.04]`}
+        >
+          {!isSidebarCollapsed && (
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white to-zinc-200 text-zinc-950 flex items-center justify-center font-bold text-xs tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.9)] shrink-0">
+                TC
+              </div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-sm font-semibold text-white tracking-tight truncate">
+                  TedCloud
+                </span>
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-white/[0.04] text-[#8E8E93] border border-white/[0.07] shrink-0">
+                  B2B
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-white tracking-tight">TedCloud</span>
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/[0.04] text-[#8E8E93] border border-white/[0.07]">
-                Enterprise
-              </span>
-            </div>
-          </div>
+          )}
+
+          <button
+            type="button"
+            onClick={toggleSidebarCollapsed}
+            title={
+              isSidebarCollapsed
+                ? isEn
+                  ? 'Expand Sidebar'
+                  : 'Развернуть боковую панель'
+                : isEn
+                ? 'Collapse Sidebar'
+                : 'Свернуть боковую панель'
+            }
+            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-[#8E8E93] hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen className="w-3.5 h-3.5" />
+            ) : (
+              <PanelLeftClose className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
 
-        {/* Navigation Links — Clean solid pill in Dark Mode and Slate-900 pill in Light Mode */}
-        <nav className="px-3 pt-2.5 pb-2 space-y-1">
-          <div className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6E6E77]">
-            {t('nav.workspaceSection')}
-          </div>
+        {/* Navigation Links */}
+        <nav className={`${isSidebarCollapsed ? 'px-2' : 'px-2.5'} pt-2.5 pb-2 space-y-1`}>
+          {!isSidebarCollapsed && (
+            <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6E6E77] truncate">
+              {t('nav.workspaceSection')}
+            </div>
+          )}
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
@@ -151,7 +206,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => onSelectSection(item.id)}
-                className={`tc-nav-item relative w-full flex items-center justify-between px-3 py-2 text-xs transition-all duration-150 ${
+                title={
+                  isSidebarCollapsed
+                    ? `${item.label}${hasPositiveBadge ? ` (${item.badge})` : ''}`
+                    : item.label
+                }
+                className={`tc-nav-item relative w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0 py-2.5' : 'justify-between px-2.5 py-2'
+                } text-xs transition-all duration-150 cursor-pointer ${
                   isActive
                     ? isLight
                       ? 'tc-nav-active-light bg-slate-900 text-white font-medium rounded-xl shadow-sm'
@@ -162,16 +224,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Icon
                     className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive
-                        ? 'tc-nav-active-icon text-white'
-                        : 'text-[#71717A]'
+                      isActive ? 'tc-nav-active-icon text-white' : 'text-[#71717A]'
                     }`}
                   />
-                  <span className="truncate">{item.label}</span>
+                  {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                 </div>
-                {hasPositiveBadge && (
+                {!isSidebarCollapsed && hasPositiveBadge && (
                   <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-md tabular-nums font-medium ${
+                    className={`text-[10px] px-1.5 py-0.5 rounded-md tabular-nums font-medium shrink-0 ${
                       isActive
                         ? isLight
                           ? 'bg-white/20 text-white'
@@ -182,6 +242,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {item.badge}
                   </span>
                 )}
+                {isSidebarCollapsed && hasPositiveBadge && (
+                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                )}
               </button>
             );
           })}
@@ -189,74 +252,50 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Bottom Profile + Sleek Control Bar */}
-      <div className="p-3 pb-3 shrink-0 space-y-2 border-t border-white/[0.05]">
+      <div className="p-2.5 pb-3 shrink-0 space-y-2 border-t border-white/[0.05]">
         {currentProfile ? (
           <button
             type="button"
             onClick={() => onSelectSection('profile')}
-            title={isEn ? 'Open Personal Profile' : 'Открыть Личный кабинет'}
-            className={`w-full text-left rounded-xl p-2.5 transition-colors flex items-center gap-2.5 group ${
-              activeSection === 'profile'
-                ? 'bg-white/[0.06]'
-                : 'hover:bg-white/[0.04]'
+            title={`${currentProfile.name} (${formatRole(currentProfile.role_type)})`}
+            className={`w-full text-left rounded-xl ${
+              isSidebarCollapsed ? 'p-1.5 justify-center' : 'p-2'
+            } transition-colors flex items-center gap-2.5 group cursor-pointer ${
+              activeSection === 'profile' ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'
             }`}
           >
             <UserAvatar
               name={currentProfile.name}
               avatarUrl={currentProfile.avatar_url}
-              size="md"
+              size="sm"
             />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs font-semibold text-white truncate group-hover:text-indigo-200 transition-colors">
-                  {currentProfile.name}
+            {!isSidebarCollapsed && (
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold text-white truncate group-hover:text-indigo-200 transition-colors">
+                    {currentProfile.name}
+                  </p>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                </div>
+                <p className="text-[10px] text-[#8E8E93] truncate">
+                  {formatRole(currentProfile.role_type)}
                 </p>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-400">
+                  <Shield className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
+                  <span className="truncate">{t(`accessShort.${accessLevel}`)}</span>
+                </div>
               </div>
-              <p className="text-[11px] text-[#8E8E93] truncate">
-                {formatRole(currentProfile.role_type)}
-              </p>
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-400">
-                <Shield className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
-                <span className="truncate">{t(`accessShort.${accessLevel}`)}</span>
-              </div>
-            </div>
+            )}
           </button>
         ) : (
-          <div className="px-2.5 py-2 text-xs text-[#8E8E93]">{t('profile.guestMode')}</div>
+          !isSidebarCollapsed && (
+            <div className="px-2 py-1.5 text-xs text-[#8E8E93]">{t('profile.guestMode')}</div>
+          )
         )}
 
-        {/* Unified Single-Row Utility Bar: RU/EN + Theme Toggle + Sign Out */}
-        <div className="flex items-center justify-between gap-1.5 pt-1 px-1">
-          <div
-            className="inline-flex items-center rounded-lg bg-white/[0.03] border border-white/[0.06] p-0.5"
-            aria-label="Language switcher"
-          >
-            <button
-              type="button"
-              onClick={() => setLanguage('ru')}
-              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-colors ${
-                language === 'ru'
-                  ? 'bg-white/[0.1] text-white'
-                  : 'text-[#8E8E93] hover:text-white'
-              }`}
-            >
-              RU
-            </button>
-            <button
-              type="button"
-              onClick={() => setLanguage('en')}
-              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-colors ${
-                language === 'en'
-                  ? 'bg-white/[0.1] text-white'
-                  : 'text-[#8E8E93] hover:text-white'
-              }`}
-            >
-              EN
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1">
+        {/* Utility Bar */}
+        {isSidebarCollapsed ? (
+          <div className="flex flex-col items-center gap-1.5 pt-1">
             <button
               type="button"
               onClick={toggleTheme}
@@ -269,8 +308,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ? 'Switch to Dark Mode'
                   : 'Включить темную тему'
               }
-              aria-label="Toggle theme"
-              className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-[#A1A1AA] hover:text-white transition-colors"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-[#A1A1AA] hover:text-white transition-colors"
             >
               {theme === 'dark' ? (
                 <Sun className="w-3.5 h-3.5 text-amber-400" />
@@ -278,24 +316,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Moon className="w-3.5 h-3.5 text-slate-700" />
               )}
             </button>
-
             {onRequestSignOut && (
               <button
                 type="button"
                 onClick={onRequestSignOut}
-                title={t('profile.switchAccount')}
-                aria-label={t('profile.switchAccount')}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-white/[0.03] hover:bg-red-500/10 border border-white/[0.06] hover:border-red-500/30 text-[11px] font-medium text-[#8E8E93] hover:text-red-400 transition-colors"
+                title={isEn ? 'Sign Out' : 'Выйти'}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.03] hover:bg-red-500/10 border border-white/[0.06] hover:border-red-500/30 text-[#8E8E93] hover:text-red-400 transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[88px]">
-                  {isEn ? 'Sign Out' : 'Выйти'}
-                </span>
               </button>
             )}
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between gap-1 pt-1 px-0.5">
+            <div
+              className="inline-flex items-center rounded-lg bg-white/[0.03] border border-white/[0.06] p-0.5"
+              aria-label="Language switcher"
+            >
+              <button
+                type="button"
+                onClick={() => setLanguage('ru')}
+                className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                  language === 'ru'
+                    ? 'bg-white/[0.1] text-white'
+                    : 'text-[#8E8E93] hover:text-white'
+                }`}
+              >
+                RU
+              </button>
+              <button
+                type="button"
+                onClick={() => setLanguage('en')}
+                className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                  language === 'en'
+                    ? 'bg-white/[0.1] text-white'
+                    : 'text-[#8E8E93] hover:text-white'
+                }`}
+              >
+                EN
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title={
+                  theme === 'dark'
+                    ? isEn
+                      ? 'Switch to Light Mode'
+                      : 'Включить светлую тему'
+                    : isEn
+                    ? 'Switch to Dark Mode'
+                    : 'Включить темную тему'
+                }
+                aria-label="Toggle theme"
+                className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-[#A1A1AA] hover:text-white transition-colors"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                ) : (
+                  <Moon className="w-3.5 h-3.5 text-slate-700" />
+                )}
+              </button>
+
+              {onRequestSignOut && (
+                <button
+                  type="button"
+                  onClick={onRequestSignOut}
+                  title={t('profile.switchAccount')}
+                  aria-label={t('profile.switchAccount')}
+                  className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-white/[0.03] hover:bg-red-500/10 border border-white/[0.06] hover:border-red-500/30 text-[11px] font-medium text-[#8E8E93] hover:text-red-400 transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="truncate max-w-[68px]">
+                    {isEn ? 'Sign Out' : 'Выйти'}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );
 };
+

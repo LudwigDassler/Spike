@@ -142,15 +142,21 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
   assert.ok(custom.reply.includes('ПАО Северсталь'));
 });
 
-test('calculateSubscriptionPricing & generateInvoiceNumber: computes -20% yearly discount and TC invoice number', () => {
+test('calculateSubscriptionPricing & generateInvoiceNumber: computes -20% yearly discount and TC invoice number from PRICING_PLANS', () => {
   const monthly = calculateSubscriptionPricing('Business', 'monthly');
-  assert.equal(monthly.totalAmountRub, 24900);
+  assert.equal(monthly.totalAmountRub, 9900);
   assert.equal(monthly.discountPercent, 0);
 
   const yearly = calculateSubscriptionPricing('Business', 'yearly');
   assert.equal(yearly.discountPercent, 20);
-  assert.equal(yearly.monthlyPriceRub, Math.round(24900 * 0.8));
-  assert.equal(yearly.totalAmountRub, Math.round(24900 * 0.8) * 12);
+  assert.equal(yearly.monthlyPriceRub, 7920);
+  assert.equal(yearly.totalAmountRub, 7920 * 12);
+
+  const entMonthly = calculateSubscriptionPricing('Enterprise', 'monthly');
+  assert.equal(entMonthly.totalAmountRub, 29900);
+
+  const entYearly = calculateSubscriptionPricing('Enterprise', 'yearly');
+  assert.equal(entYearly.monthlyPriceRub, 23920);
 
   const invNum = generateInvoiceNumber(new Date('2026-10-26T12:00:00Z'));
   assert.match(invNum, /^TC-20261026-\d{4}$/);

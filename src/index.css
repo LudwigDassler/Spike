@@ -276,11 +276,95 @@ body.theme-light,
   border-color: rgba(255, 255, 255, 0.14) !important;
 }
 
-/* Outgoing chat bubble in Light Mode keeps crisp white text on Indigo background */
-.theme-light .tc-bubble-outgoing,
-.theme-light .tc-bubble-outgoing span,
-.theme-light .tc-bubble-outgoing div {
+/* Outgoing chat card in Light Mode: clean architectural slate/graphite card */
+.theme-light .tc-bubble-outgoing {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
   color: #ffffff !important;
+}
+
+.theme-light .tc-bubble-outgoing > div,
+.theme-light .tc-bubble-outgoing > span {
+  color: #ffffff !important;
+}
+
+/* Attachment card & download button inside messages: guaranteed high contrast in both themes */
+.theme-light .tc-attachment-card {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.theme-light .tc-attachment-card span,
+.theme-light .tc-attachment-card div {
+  color: #0f172a !important;
+}
+
+.theme-light .tc-attachment-download-btn {
+  background-color: #0f172a !important;
+  border-color: #0f172a !important;
+  color: #ffffff !important;
+}
+
+.theme-light .tc-attachment-download-btn span,
+.theme-light .tc-attachment-download-btn svg {
+  color: #ffffff !important;
+}
+
+/* Strict White A4 Document Sheet (Invoices, Contracts, Acts) in ANY theme */
+.tc-a4-paper,
+.theme-light .tc-a4-paper,
+.theme-dark .tc-a4-paper {
+  background-color: #ffffff !important;
+  color: #09090b !important;
+}
+
+.tc-a4-paper h1,
+.tc-a4-paper h2,
+.tc-a4-paper h3,
+.tc-a4-paper p,
+.tc-a4-paper div:not(.tc-a4-badge),
+.tc-a4-paper span:not(.tc-a4-badge),
+.tc-a4-paper strong,
+.tc-a4-paper td {
+  color: #09090b !important;
+}
+
+.tc-a4-paper table,
+.tc-a4-paper th,
+.tc-a4-paper td {
+  border-color: #0f172a !important;
+}
+
+.tc-a4-paper thead tr,
+.tc-a4-paper th {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+/* Featured Pricing Plan Card (Business) in Light Mode: keep bright white text on dark/indigo surface */
+.theme-light .tc-pricing-featured {
+  background-color: #0f172a !important;
+  border-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+.theme-light .tc-pricing-featured h3,
+.theme-light .tc-pricing-featured p,
+.theme-light .tc-pricing-featured span:not(.tc-pricing-cta-text),
+.theme-light .tc-pricing-featured div:not(.tc-pricing-cta-btn),
+.theme-light .tc-pricing-featured li {
+  color: #ffffff !important;
+}
+
+.theme-light .tc-pricing-featured .tc-pricing-cta-btn {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.theme-light .tc-pricing-featured .tc-pricing-cta-btn span {
+  color: #0f172a !important;
 }
 
 /* Reply Banner in Light Mode */

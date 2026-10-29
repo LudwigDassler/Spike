@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { AttachmentItem } from '../types/database';
 import { formatAttachmentSize, isImageAttachment, normalizeAttachments } from '../utils/enterpriseLogic';
+import { useLocale } from '../i18n/LocaleContext';
 
 export const ACCEPTED_ATTACHMENT_TYPES =
   'image/png,image/jpeg,image/webp,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip';
@@ -139,12 +140,12 @@ export async function processAttachmentFiles(
 function getDocumentIcon(att: AttachmentItem) {
   const lower = `${att.name} ${att.mimeType}`.toLowerCase();
   if (lower.includes('xls') || lower.includes('csv') || lower.includes('spreadsheet')) {
-    return <FileSpreadsheet className="w-4 h-4 text-emerald-400 shrink-0" />;
+    return <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />;
   }
   if (lower.includes('zip') || lower.includes('archive') || lower.includes('rar')) {
-    return <FileArchive className="w-4 h-4 text-amber-400 shrink-0" />;
+    return <FileArchive className="w-4 h-4 text-amber-500 shrink-0" />;
   }
-  return <FileText className="w-4 h-4 text-sky-400 shrink-0" />;
+  return <FileText className="w-4 h-4 text-indigo-500 shrink-0" />;
 }
 
 interface PendingAttachmentsStripProps {
@@ -158,40 +159,61 @@ export const PendingAttachmentsStrip: React.FC<PendingAttachmentsStripProps> = (
   onRemove,
   className = '',
 }) => {
+  const { theme } = useLocale();
+  const isLight = theme === 'light';
+
   if (!attachments || attachments.length === 0) return null;
 
   return (
     <div
-      className={`flex items-center gap-2 overflow-x-auto no-scrollbar py-1.5 px-2.5 bg-zinc-900/80 border-t border-white/[0.08] ${className}`}
+      className={`flex items-center gap-2 overflow-x-auto no-scrollbar py-2 px-3 ${
+        isLight
+          ? 'bg-slate-100 border-t border-slate-200 text-slate-800'
+          : 'bg-zinc-900 border-t border-white/10 text-zinc-200'
+      } ${className}`}
     >
       {attachments.map((att) => {
         const isImg = isImageAttachment(att);
         return (
           <div
             key={att.id}
-            className="group relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-zinc-950/90 border border-white/10 shrink-0 max-w-[210px]"
+            className={`group relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border shrink-0 max-w-[220px] ${
+              isLight
+                ? 'bg-white border-slate-200 text-slate-800 shadow-2xs'
+                : 'bg-zinc-950/90 border-white/10 text-zinc-200'
+            }`}
           >
             {isImg ? (
               <img
                 src={att.url}
                 alt={att.name}
-                className="w-7 h-7 rounded object-cover border border-white/10 shrink-0"
+                className={`w-7 h-7 rounded object-cover border shrink-0 ${
+                  isLight ? 'border-slate-200' : 'border-white/10'
+                }`}
               />
             ) : (
               getDocumentIcon(att)
             )}
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-medium text-zinc-200 truncate">
+              <div
+                className={`text-[11px] font-medium truncate ${
+                  isLight ? 'text-slate-900' : 'text-zinc-200'
+                }`}
+              >
                 {att.name}
               </div>
-              <div className="text-[10px] text-zinc-500">
+              <div className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-zinc-500'}`}>
                 {formatAttachmentSize(att.size)}
               </div>
             </div>
             <button
               type="button"
               onClick={() => onRemove(att.id)}
-              className="w-5 h-5 rounded-md bg-white/[0.06] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 flex items-center justify-center transition shrink-0"
+              className={`w-5 h-5 rounded-md flex items-center justify-center transition shrink-0 ${
+                isLight
+                  ? 'bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600'
+                  : 'bg-white/[0.06] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300'
+              }`}
               title="Remove"
             >
               <X className="w-3 h-3" />
@@ -216,6 +238,8 @@ export const AttachmentListRenderer: React.FC<AttachmentListRendererProps> = ({
   onRemove,
   lang = 'ru',
 }) => {
+  const { theme } = useLocale();
+  const isLight = theme === 'light';
   const [lightboxAtt, setLightboxAtt] = useState<AttachmentItem | null>(null);
   const list = normalizeAttachments(attachments);
 
@@ -232,7 +256,11 @@ export const AttachmentListRenderer: React.FC<AttachmentListRendererProps> = ({
             {images.map((img) => (
               <div
                 key={img.id}
-                className="group relative rounded-xl overflow-hidden border border-white/10 bg-zinc-950/70 cursor-pointer"
+                className={`group relative rounded-xl overflow-hidden border cursor-pointer ${
+                  isLight
+                    ? 'border-slate-200 bg-slate-50'
+                    : 'border-white/10 bg-zinc-950/70'
+                }`}
                 onClick={(e) => {
                   e.stopPropagation();
                   setLightboxAtt(img);
@@ -275,17 +303,35 @@ export const AttachmentListRenderer: React.FC<AttachmentListRendererProps> = ({
               <div
                 key={doc.id}
                 onClick={(e) => e.stopPropagation()}
-                className="flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl bg-zinc-950/75 border border-white/10 hover:border-white/20 transition max-w-sm"
+                className={`tc-attachment-card flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl border transition max-w-sm ${
+                  isLight
+                    ? 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-900'
+                    : 'bg-zinc-950/85 border-white/10 hover:border-white/20 text-zinc-100'
+                }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0">
+                  <div
+                    className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${
+                      isLight
+                        ? 'bg-white border-slate-200'
+                        : 'bg-white/[0.04] border-white/[0.08]'
+                    }`}
+                  >
                     {getDocumentIcon(doc)}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-medium text-zinc-100 truncate">
+                    <div
+                      className={`text-xs font-semibold truncate ${
+                        isLight ? 'text-slate-900' : 'text-zinc-100'
+                      }`}
+                    >
                       {doc.name}
                     </div>
-                    <div className="text-[10px] text-zinc-500">
+                    <div
+                      className={`text-[10px] ${
+                        isLight ? 'text-slate-500' : 'text-zinc-400'
+                      }`}
+                    >
                       {formatAttachmentSize(doc.size)}
                     </div>
                   </div>
@@ -295,13 +341,15 @@ export const AttachmentListRenderer: React.FC<AttachmentListRendererProps> = ({
                     href={doc.url}
                     download={doc.name}
                     onClick={(e) => e.stopPropagation()}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-medium text-zinc-200 transition"
+                    className={`tc-attachment-download-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition ${
+                      isLight
+                        ? 'bg-slate-900 hover:bg-slate-800 border-slate-900 text-white'
+                        : 'bg-zinc-800 hover:bg-zinc-700 border-white/15 text-zinc-100'
+                    }`}
                     title={lang === 'en' ? 'Download file' : 'Скачать файл'}
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">
-                      {lang === 'en' ? 'Download' : 'Скачать'}
-                    </span>
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    <span>{lang === 'en' ? 'Download' : 'Скачать'}</span>
                   </a>
                   {onRemove && (
                     <button
@@ -310,7 +358,11 @@ export const AttachmentListRenderer: React.FC<AttachmentListRendererProps> = ({
                         e.stopPropagation();
                         onRemove(doc.id);
                       }}
-                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                      className={`p-1.5 rounded-lg transition ${
+                        isLight
+                          ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+                          : 'text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10'
+                      }`}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
