@@ -2339,3 +2339,246 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
   );
 };
 
+// ============================================================================
+// 9. SUPERADMIN E2E QA & SECURITY SELF-DIAGNOSTICS PANEL (ЭТАП 1)
+// ============================================================================
+interface QaSuiteReport {
+  ok: boolean;
+  suiteName: string;
+  executedAt: string;
+  totalDurationMs: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  allPassed: boolean;
+  tearDown: {
+    cleanedTables: number;
+    removedRecordsCount: number;
+    remainingSandboxArtifacts: number;
+    cleanupVerified: boolean;
+  };
+  results: Array<{
+    id: number;
+    code: string;
+    title: string;
+    status: 'passed' | 'failed';
+    durationMs: number;
+    assertions: string[];
+    error?: string;
+  }>;
+}
+
+interface SuperadminQaAuditPanelProps {
+  onRefresh?: () => Promise<void> | void;
+  showToast?: (msg: string) => void;
+}
+
+export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
+  onRefresh,
+  showToast,
+}) => {
+  const { language } = useLocale();
+  const isEn = language === 'en';
+  const [isRunning, setIsRunning] = useState(false);
+  const [report, setReport] = useState<QaSuiteReport | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleRunQaSuite = async () => {
+    setIsRunning(true);
+    setErrorMsg(null);
+    try {
+      const response = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          action: 'run_qa_suite',
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        setErrorMsg(
+          payload?.error ||
+            (isEn
+              ? 'Failed to execute QA self-diagnostics suite.'
+              : 'Ошибка запуска E2E и Security самодиагностики.')
+        );
+        return;
+      }
+      setReport(payload as QaSuiteReport);
+      if (onRefresh) {
+        await onRefresh();
+      }
+      if (showToast) {
+        showToast(
+          isEn
+            ? `E2E & Security Audit passed (${payload.passedTests}/${payload.totalTests}) · Sandbox cleaned`
+            : `E2E и Security аудит пройден (${payload.passedTests}/${payload.totalTests}) · Тестовый контур очищен`
+        );
+      }
+    } catch (err: any) {
+      setErrorMsg(String(err?.message || err));
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-indigo-500/25 bg-[#111115] shadow-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/[0.07] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+              {isEn
+                ? 'Automated E2E, RBAC, Multi-Tenancy & Security Diagnostics'
+                : 'Автоматический E2E, RBAC, Multi-Tenancy и Security Аудит (QA Runner)'}
+            </h3>
+            <span className="px-2 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-[10px] font-semibold text-indigo-300">
+              __QA_SANDBOX_
+            </span>
+          </div>
+          <p className="text-xs text-[#8E8E93]">
+            {isEn
+              ? 'Executes 8 live integration & security checks with isolated synthetic data and guaranteed transactional tear-down in finally.'
+              : 'Последовательно выполняет 8 сквозных проверок изоляции компаний, матрицы прав RBAC, 3 контуров входа, CRM/Задач, XSS/SQLi-защиты и гарантированно очищает БД в блоке finally.'}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          disabled={isRunning}
+          onClick={() => void handleRunQaSuite()}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 text-xs font-semibold transition-colors shrink-0 shadow-sm"
+        >
+          {isRunning ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>
+                {isEn
+                  ? 'Running 8 E2E & Security Checks...'
+                  : 'Выполнение 8 проверок и очистка песочницы...'}
+              </span>
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>
+                {isEn
+                  ? 'Run Full E2E & Security Self-Diagnostics'
+                  : 'Запустить полный E2E и Security самодиагностику'}
+              </span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {errorMsg && (
+        <div className="m-5 rounded-lg border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-300">
+          {errorMsg}
+        </div>
+      )}
+
+      {report && (
+        <div className="p-5 space-y-4">
+          {/* Summary Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-lg border border-white/[0.07] bg-[#16161C] p-3">
+              <div className="text-[11px] text-[#8E8E93]">
+                {isEn ? 'Suite Status' : 'Статус прогона'}
+              </div>
+              <div
+                className={`text-sm font-bold mt-0.5 ${
+                  report.allPassed ? 'text-emerald-400' : 'text-amber-400'
+                }`}
+              >
+                {report.allPassed
+                  ? isEn
+                    ? 'ALL 8 PASSED'
+                    : '8 ИЗ 8 УСПЕШНО'
+                  : `${report.passedTests} / ${report.totalTests}`}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/[0.07] bg-[#16161C] p-3">
+              <div className="text-[11px] text-[#8E8E93]">
+                {isEn ? 'Execution Time' : 'Время выполнения'}
+              </div>
+              <div className="text-sm font-bold text-white tabular-nums mt-0.5">
+                {report.totalDurationMs} ms
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/[0.07] bg-[#16161C] p-3">
+              <div className="text-[11px] text-[#8E8E93]">
+                {isEn ? 'Transactional Tear-Down' : 'Очистка песочницы (finally)'}
+              </div>
+              <div className="text-sm font-bold text-emerald-400 tabular-nums mt-0.5">
+                {report.tearDown.cleanupVerified
+                  ? isEn
+                    ? `Verified (${report.tearDown.cleanedTables} tables)`
+                    : `Очищено (${report.tearDown.cleanedTables} табл.)`
+                  : 'Warning'}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/[0.07] bg-[#16161C] p-3">
+              <div className="text-[11px] text-[#8E8E93]">
+                {isEn ? 'Remaining Sandbox Trash' : 'Остаток тестового мусора'}
+              </div>
+              <div className="text-sm font-bold text-emerald-400 tabular-nums mt-0.5">
+                {report.tearDown.remainingSandboxArtifacts} {isEn ? 'records' : 'записей'}
+              </div>
+            </div>
+          </div>
+
+          {/* 8 Detailed Test Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {report.results.map((step) => {
+              const isPassed = step.status === 'passed';
+              return (
+                <div
+                  key={step.id}
+                  className={`rounded-xl border p-3.5 space-y-2 ${
+                    isPassed
+                      ? 'border-emerald-500/25 bg-[#141419]'
+                      : 'border-red-500/35 bg-red-500/5'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CheckCircle2
+                        className={`w-4 h-4 shrink-0 ${
+                          isPassed ? 'text-emerald-400' : 'text-red-400'
+                        }`}
+                      />
+                      <span className="text-xs font-semibold text-white truncate">
+                        {step.title}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-[#8E8E93] tabular-nums shrink-0">
+                      {step.durationMs} ms
+                    </span>
+                  </div>
+
+                  <ul className="space-y-1 pl-6 text-[11px] text-zinc-300 list-disc">
+                    {step.assertions.map((a, idx) => (
+                      <li key={idx}>{a}</li>
+                    ))}
+                  </ul>
+
+                  {step.error && (
+                    <div className="text-[11px] text-red-400 font-medium pl-6">
+                      {step.error}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+

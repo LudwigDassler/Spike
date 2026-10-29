@@ -141,6 +141,7 @@ import {
   ExecutiveUnitEconomicsRadar,
   DashboardShiftsOverviewWidget,
   TimeAndAttendanceView,
+  SuperadminQaAuditPanel,
 } from './EnterpriseB2BFeatures';
 
 interface DashboardProps {
@@ -6289,6 +6290,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* АВТОМАТИЗИРОВАННЫЙ QA & SECURITY E2E САМОДИАГНОСТИЧЕСКИЙ РАННЕР (СУПЕРАДМИН) */}
+              <SuperadminQaAuditPanel onRefresh={onRefresh} showToast={showToast} />
             </div>
           )}
         </main>
