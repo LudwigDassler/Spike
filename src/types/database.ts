@@ -42,6 +42,7 @@ export type DashboardSection =
   | 'tasks'
   | 'crm'
   | 'communications'
+  | 'shifts'
   | 'team'
   | 'profile'
   | 'workspace';
@@ -96,11 +97,31 @@ export interface OrganizationNode {
   avatar_url?: string | null;
   telegram_chat_id?: string | null;
   invite_code?: string | null;
+  password?: string | null;
+  has_password?: boolean;
+  otp_code?: string | null;
+  shift_status?: 'online' | 'break' | 'offline' | string | null;
+  shift_started_at?: string | null;
   access_level?: AccessLevel;
   permissions?: EmployeePermissions;
   parent_id?: string | null;
   tree_path?: string | null;
   kpi_value?: number;
+  created_at?: string;
+}
+
+export interface WorkShiftRecord {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  employee_name?: string | null;
+  role_type?: string | null;
+  department?: string | null;
+  started_at: string;
+  ended_at?: string | null;
+  duration_minutes: number;
+  tasks_completed?: number;
+  summary?: string | null;
   created_at?: string;
 }
 

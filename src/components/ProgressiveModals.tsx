@@ -32,6 +32,7 @@ import {
   PaymentGatewayRegion,
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
+import { UserAvatar } from './UserAvatar';
 
 export const PRIMARY_BTN_CLASS =
   'tc-btn-primary inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-b from-white to-zinc-200 text-zinc-950 font-medium text-xs shadow-[0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.9)] hover:from-white hover:to-white transition-all whitespace-nowrap disabled:opacity-50';
@@ -249,7 +250,7 @@ export const MyPermissionsModal: React.FC<MyPermissionsModalProps> = ({
 };
 
 /* ============================================================================
- * 2. МОДАЛЬНОЕ ОКНО: «Ключи входа и Telegram» (Персональный код TC-XXXX, Веб-ссылка, Бот)
+ * 2. МОДАЛЬНОЕ ОКНО: «Цифровой пропуск сотрудника» (БЛОК 1.1: без текстовых <input> со ссылками)
  * ========================================================================== */
 interface MyAccessKeysModalProps {
   isOpen: boolean;
@@ -268,38 +269,44 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
   copiedToken,
   onCopy,
 }) => {
-  const { language, t } = useLocale();
+  const { language, theme, t, formatRole } = useLocale();
   const isEn = language === 'en';
+  const isLight = theme === 'light';
 
   if (!isOpen) return null;
 
   const inviteCode = profile.invite_code || 'TC-0000';
-  const webPassUrl = `${window.location.origin}/?invite=${inviteCode}`;
+  const webPassUrl = `${window.location.origin}/?invite=${encodeURIComponent(inviteCode)}`;
   const cleanBot = String(botUsername || '').trim().replace(/^@/, '');
-  const tgDeepLink = cleanBot ? `https://t.me/${cleanBot}?start=${inviteCode}` : '';
+  const validBot = cleanBot && cleanBot !== 'TedCloudEnterpriseBot' ? cleanBot : '';
+  const tgDeepLink = validBot ? `https://t.me/${validBot}?start=${inviteCode}` : '';
+  const tgCmd = `/start ${inviteCode}`;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto font-sans"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#101014] shadow-2xl overflow-hidden"
+        className="w-full max-w-lg my-auto rounded-2xl border border-white/[0.1] bg-[#111115] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0">
-              <KeyRound className="w-4 h-4 text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-white">
-                {isEn ? 'Login Keys & Telegram Sync' : 'Ключи входа и Telegram'}
-              </h3>
-              <p className="text-[11px] text-[#8E8E93]">
-                {isEn
-                  ? 'Personal browser web pass & instant Telegram bot binding'
-                  : 'Веб-пропуск для браузера и синхронизация с Telegram-ботом'}
+        {/* Top Header: Employee Avatar, Full Name, Job Title */}
+        <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <UserAvatar name={profile.name} avatarUrl={profile.avatar_url} size="md" />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-white truncate">
+                  {profile.name}
+                </h3>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-[10px] font-semibold text-indigo-300 shrink-0">
+                  {isEn ? 'Digital Pass' : 'Цифровой пропуск'}
+                </span>
+              </div>
+              <p className="text-xs text-[#8E8E93] truncate mt-0.5">
+                {formatRole(profile.role_type)}
+                {profile.department ? ` · ${formatRole(profile.department)}` : ''}
               </p>
             </div>
           </div>
@@ -307,179 +314,172 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#8E8E93] hover:text-white hover:bg-white/[0.06] transition-colors"
+            aria-label={t('invite.close')}
+            className="p-1.5 rounded-xl text-[#8E8E93] hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Блок 1: Персональный код и Веб-пропуск */}
-          <div className="rounded-xl border border-white/[0.07] bg-[#141419] p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-[#A1A1AA]">
-                {isEn ? 'Personal Access Code' : 'Персональный код доступа'}
-              </span>
-              <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/[0.06] border border-white/[0.1] text-xs font-semibold text-white tabular-nums">
-                {inviteCode}
-              </span>
-            </div>
-
-            <p className="text-xs text-[#8E8E93] leading-relaxed">
-              {isEn
-                ? 'Use your personal access code or 1-click web link to sign in from any desktop or mobile browser.'
-                : 'Используйте персональный код или прямую ссылку для мгновенного входа в систему с любого компьютера или телефона.'}
-            </p>
-
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => onCopy(webPassUrl, 'modal-profile-web-link')}
-                className={PRIMARY_BTN_CLASS}
-              >
-                {copiedToken === 'modal-profile-web-link' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{t('invite.copied')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="w-3.5 h-3.5" />
-                    <span>
-                      {isEn ? 'Copy 1-Click Web Login Link' : 'Скопировать веб-ссылку входа'}
-                    </span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onCopy(inviteCode, 'modal-profile-code')}
-                className={SECONDARY_BTN_CLASS}
-              >
-                {copiedToken === 'modal-profile-code' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{t('invite.copied')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                    <span>{t('invite.copyCode')}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Блок 2: Синхронизация с Telegram */}
-          <div className="rounded-xl border border-white/[0.07] bg-[#141419] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Send className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-xs font-semibold text-white">
-                  {isEn ? 'Telegram Synchronization' : 'Синхронизация с Telegram'}
-                </span>
+          {/* Center: Large Interactive Invite Code Plate (TC-XXXX) */}
+          <div className="rounded-2xl border border-white/[0.1] bg-[#16161C] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="text-[11px] font-medium text-[#8E8E93]">
+                {isEn ? 'Personal Employee Invite Code' : 'Персональный инвайт-код сотрудника'}
               </div>
-              <span
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border tabular-nums ${
-                  profile.telegram_chat_id
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                    : 'bg-white/[0.04] border-white/[0.08] text-[#A1A1AA]'
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    profile.telegram_chat_id ? 'bg-emerald-400' : 'bg-zinc-500'
-                  }`}
-                />
-                <span>
-                  {profile.telegram_chat_id
-                    ? `ID: ${profile.telegram_chat_id}`
-                    : isEn
-                    ? 'Not linked'
-                    : 'Ожидает привязки'}
-                </span>
-              </span>
+              <div className="text-2xl font-bold tracking-tight text-white tabular-nums">
+                {inviteCode}
+              </div>
+              <div className="text-[11px] text-[#8E8E93]">
+                {isEn
+                  ? 'Sign in without password or pair Telegram bot'
+                  : 'Для быстрого входа без пароля и привязки бота'}
+              </div>
             </div>
 
-            <p className="text-xs text-[#8E8E93] leading-relaxed">
-              {profile.telegram_chat_id
-                ? isEn
-                  ? 'Your profile is actively linked to Telegram. Instant push notifications for tasks and direct messages are enabled.'
-                  : 'Ваш профиль синхронизирован с Telegram. Мгновенные пуш-уведомления по задачам и личным сообщениям активны.'
-                : isEn
-                ? 'Connect your Telegram account to receive real-time notifications and manage tasks directly from the bot.'
-                : 'Привяжите ваш аккаунт Telegram для получения мгновенных уведомлений и работы с поручениями прямо из бота.'}
-            </p>
-
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              {tgDeepLink ? (
+            <button
+              type="button"
+              onClick={() => onCopy(inviteCode, 'modal-profile-code')}
+              className={`inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                copiedToken === 'modal-profile-code'
+                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                  : isLight
+                  ? 'bg-slate-900 text-white hover:bg-slate-800 shadow-sm'
+                  : 'bg-white text-black hover:bg-zinc-200'
+              }`}
+            >
+              {copiedToken === 'modal-profile-code' ? (
                 <>
-                  <a
-                    href={tgDeepLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={SECONDARY_BTN_CLASS}
-                  >
-                    <Send className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>
-                      {profile.telegram_chat_id
-                        ? isEn
-                          ? 'Re-link in Telegram'
-                          : 'Перепривязать в Telegram'
-                        : isEn
-                        ? 'Connect Telegram Bot'
-                        : 'Подключить Telegram-бота'}
-                    </span>
-                    <ArrowUpRight className="w-3 h-3 text-zinc-400" />
-                  </a>
-
-                  <button
-                    type="button"
-                    onClick={() => onCopy(tgDeepLink, 'modal-profile-tg-link')}
-                    className={SECONDARY_BTN_CLASS}
-                  >
-                    {copiedToken === 'modal-profile-tg-link' ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{t('invite.copied')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                        <span>
-                          {isEn ? 'Copy Bot Link' : 'Скопировать ссылку привязки'}
-                        </span>
-                      </>
-                    )}
-                  </button>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>{t('invite.copied')}</span>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => onCopy(`/start ${inviteCode}`, 'modal-profile-tg-cmd')}
-                  className={SECONDARY_BTN_CLASS}
-                >
-                  {copiedToken === 'modal-profile-tg-cmd' ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{t('invite.copied')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5 text-[#A1A1AA]" />
-                      <span>
-                        {isEn
-                          ? `Copy Bot Activation (/start ${inviteCode})`
-                          : `Скопировать команду (/start ${inviteCode})`}
-                      </span>
-                    </>
-                  )}
-                </button>
+                <>
+                  <Copy className="w-4 h-4" />
+                  <span>{isEn ? 'Copy Code' : 'Копировать код'}</span>
+                </>
               )}
-            </div>
+            </button>
           </div>
+
+          {/* Bottom: 2 Handsome Card-Buttons in a 2-Column Grid (Zero Raw URLs) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Card 1: 1-Click Web Pass */}
+            <button
+              type="button"
+              onClick={() => onCopy(webPassUrl, 'modal-profile-web-link')}
+              className={`group text-left rounded-2xl border p-4 transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+                copiedToken === 'modal-profile-web-link'
+                  ? 'border-emerald-500/40 bg-emerald-500/10'
+                  : isLight
+                  ? 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'
+                  : 'border-white/[0.09] bg-[#16161C] hover:bg-[#1C1C24] hover:border-white/20'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 w-full">
+                <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                  {copiedToken === 'modal-profile-web-link' ? (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Link2 className="w-4 h-4" />
+                  )}
+                </div>
+                <span className="text-[11px] font-medium text-indigo-400 group-hover:translate-x-0.5 transition-transform">
+                  {copiedToken === 'modal-profile-web-link'
+                    ? t('invite.copied')
+                    : isEn
+                    ? 'Copy Link →'
+                    : 'Скопировать →'}
+                </span>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-white leading-snug">
+                  {isEn
+                    ? 'Copy Web Pass (1-Click Login)'
+                    : 'Скопировать веб-пропуск (Вход в 1 клик)'}
+                </div>
+                <p className="text-[11px] text-[#8E8E93] mt-1 leading-relaxed">
+                  {isEn
+                    ? 'Direct sign-in link for desktop or smartphone browser'
+                    : 'Прямая ссылка для браузера ПК или смартфона'}
+                </p>
+              </div>
+            </button>
+
+            {/* Card 2: Telegram Bot Synchronization */}
+            <button
+              type="button"
+              onClick={() => {
+                if (tgDeepLink) {
+                  onCopy(tgDeepLink, 'modal-profile-tg-link');
+                } else {
+                  onCopy(tgCmd, 'modal-profile-tg-cmd');
+                }
+              }}
+              className={`group text-left rounded-2xl border p-4 transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+                copiedToken === 'modal-profile-tg-link' || copiedToken === 'modal-profile-tg-cmd'
+                  ? 'border-emerald-500/40 bg-emerald-500/10'
+                  : isLight
+                  ? 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'
+                  : 'border-white/[0.09] bg-[#16161C] hover:bg-[#1C1C24] hover:border-white/20'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 w-full">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  {copiedToken === 'modal-profile-tg-link' ||
+                  copiedToken === 'modal-profile-tg-cmd' ? (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </div>
+                <span className="text-[11px] font-medium text-emerald-400 group-hover:translate-x-0.5 transition-transform">
+                  {copiedToken === 'modal-profile-tg-link' ||
+                  copiedToken === 'modal-profile-tg-cmd'
+                    ? t('invite.copied')
+                    : profile.telegram_chat_id
+                    ? `ID: ${profile.telegram_chat_id}`
+                    : isEn
+                    ? '1-Click Bind →'
+                    : 'Привязать →'}
+                </span>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-white leading-snug">
+                  {isEn
+                    ? 'Synchronize with Telegram Bot'
+                    : 'Синхронизация с Telegram-ботом'}
+                </div>
+                <p className="text-[11px] text-[#8E8E93] mt-1 leading-relaxed">
+                  {isEn
+                    ? '1-click notification & 2FA binding'
+                    : 'Привязка уведомлений в 1 клик'}
+                </p>
+              </div>
+            </button>
+          </div>
+
+          {tgDeepLink && (
+            <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-2.5 text-xs">
+              <span className="text-[#8E8E93]">
+                {isEn
+                  ? 'Need to launch Telegram directly on this device?'
+                  : 'Открыть Telegram-бота прямо сейчас на этом устройстве?'}
+              </span>
+              <a
+                href={tgDeepLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                <span>{isEn ? 'Open Bot' : 'Открыть бота'}</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          )}
         </div>
 
         <div className="px-5 py-3.5 border-t border-white/[0.07] bg-[#0c0c10] flex justify-end">

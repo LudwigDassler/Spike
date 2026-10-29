@@ -11,6 +11,7 @@ import {
   UserCircle2,
   Sun,
   Moon,
+  Clock,
 } from 'lucide-react';
 import {
   DashboardSection,
@@ -85,6 +86,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: t('nav.communications'),
       icon: MessageSquare,
       badge: counts.messages,
+      visible: true,
+    },
+    {
+      id: 'shifts',
+      label: t('nav.shifts'),
+      icon: Clock,
       visible: true,
     },
     {
@@ -182,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Bottom Profile + Sleek Control Bar */}
-      <div className="p-3 space-y-2 border-t border-white/[0.05]">
+      <div className="p-3 pb-3 shrink-0 space-y-2 border-t border-white/[0.05]">
         {currentProfile ? (
           <button
             type="button"

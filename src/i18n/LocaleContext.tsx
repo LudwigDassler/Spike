@@ -22,6 +22,7 @@ const ru: Dictionary = {
   'nav.tasks': 'Задачи',
   'nav.crm': 'Сделки',
   'nav.communications': 'Инфополе и Связь',
+  'nav.shifts': 'Смены и Время',
   'nav.team': 'Штат и Доступы',
   'nav.profile': 'Личный кабинет',
   'nav.workspace': 'Организация и Биллинг',
@@ -67,6 +68,8 @@ const ru: Dictionary = {
   'header.crmSubtitle': 'Управление контрактами, юридическими реквизитами, стадиями переговоров и выручкой',
   'header.communicationsTitle': 'Единое инфополе и Связь',
   'header.communicationsSubtitle': 'Мгновенный обмен сообщениями между сотрудниками, подразделениями и Telegram-ботом',
+  'header.shiftsTitle': 'Учет рабочего времени и Табель смен',
+  'header.shiftsSubtitle': 'Живое табло присутствия сотрудников, контроль перерывов и архив отработанных смен',
   'header.teamTitle': 'Штат сотрудников и Матрица доступов',
   'header.teamSubtitle': 'Конструктор подразделений, свободные должности, матрица разрешений и коды привязки',
   'header.profileTitle': 'Личный кабинет сотрудника',
@@ -477,6 +480,7 @@ const en: Dictionary = {
   'auth.registering': 'Provisioning workspace...',
 
   // Section Headers
+  'nav.shifts': 'Time & Shifts',
   'header.overviewTitle': 'Executive Overview',
   'header.overviewSubtitle': 'Key performance metrics and active task summary',
   'header.tasksTitle': 'Corporate Task Registry',
@@ -485,6 +489,8 @@ const en: Dictionary = {
   'header.crmSubtitle': 'Manage B2B contracts, legal tax requisites, negotiation stages, and pipeline value',
   'header.communicationsTitle': 'Workspace Feed & Communications',
   'header.communicationsSubtitle': 'Real-time messaging across employees, departments, and the corporate Telegram bot',
+  'header.shiftsTitle': 'Time & Attendance Roster',
+  'header.shiftsSubtitle': 'Live employee attendance roster, break tracking, and completed shift logs',
   'header.teamTitle': 'Team Directory & Access Matrix',
   'header.teamSubtitle': 'Custom department constructor, job titles, granular 7-flag permission matrix, and invite codes',
   'header.profileTitle': 'My Employee Profile',

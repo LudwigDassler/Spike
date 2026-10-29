@@ -57,6 +57,7 @@ import {
   Smile,
   Reply,
   CheckCheck,
+  CheckSquare,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -81,6 +82,7 @@ import {
   TaskPriority,
   TaskRecord,
   TaskStatus,
+  WorkShiftRecord,
   WorkspaceMessageRecord,
   computeDashboardKpis,
   extractCompanyDepartments,
@@ -137,6 +139,8 @@ import {
   LegalDocumentGeneratorModal,
   ClientDealRoomView,
   ExecutiveUnitEconomicsRadar,
+  DashboardShiftsOverviewWidget,
+  TimeAndAttendanceView,
 } from './EnterpriseB2BFeatures';
 
 interface DashboardProps {
@@ -150,6 +154,7 @@ interface DashboardProps {
   messages?: WorkspaceMessageRecord[];
   invoices?: BillingInvoiceRecord[];
   auditLogs?: AuditLogRecord[];
+  workShifts?: WorkShiftRecord[];
   isSyncing: boolean;
   onRefresh: () => Promise<void> | void;
   onPatchRecord: (
@@ -173,6 +178,7 @@ interface DashboardProps {
   onCreateInvoice?: (
     payload: Record<string, any>
   ) => Promise<{ ok: boolean; invoice?: BillingInvoiceRecord }>;
+  onCreateWorkShift?: (shift: Partial<WorkShiftRecord>) => Promise<void>;
   onResetSession?: () => void;
 }
 
@@ -196,12 +202,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   messages = [],
   invoices = [],
   auditLogs = [],
+  workShifts = [],
   isSyncing,
   onRefresh,
   onPatchRecord,
   onDeleteRecord,
   onSendMessage,
   onCreateInvoice,
+  onCreateWorkShift,
   onResetSession,
 }) => {
   const {
@@ -262,6 +270,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
         (log) => !companyId || !log?.company_id || String(log.company_id) === String(companyId)
       ),
     [auditLogs, companyId]
+  );
+  const safeWorkShifts = useMemo(
+    () =>
+      (Array.isArray(workShifts) ? workShifts : []).filter(
+        (sh) => !companyId || !sh?.company_id || String(sh.company_id) === String(companyId)
+      ),
+    [workShifts, companyId]
   );
 
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
@@ -458,6 +473,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [profileRoleTitle, setProfileRoleTitle] = useState(currentProfile?.role_type || '');
   const [profileDepartment, setProfileDepartment] = useState(currentProfile?.department || '');
   const [profileEmail, setProfileEmail] = useState(currentProfile?.email || '');
+  const [profilePassword, setProfilePassword] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   useEffect(() => {
@@ -466,6 +482,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setProfileRoleTitle(currentProfile.role_type || '');
       setProfileDepartment(currentProfile.department || '');
       setProfileEmail(currentProfile.email || '');
+      setProfilePassword('');
     }
   }, [currentProfile]);
 
@@ -571,7 +588,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return safeMessages.filter((msg) => canUserSeeWorkspaceMessage(msg, currentProfile));
   }, [safeMessages, currentProfile]);
 
-  // Active thread messages in the Split-View Messenger (strictly chronological ascending: oldest at top, newest at bottom)
+  // Active thread messages in the Split-View Messenger (strictly chronological ascending by calendar date and timestamp: oldest at top, newest at bottom)
   const activeThreadMessages = useMemo(() => {
     const list = filterMessagesForActiveThread(visibleMessages, activeCommThread, currentProfile);
     const getSafeTime = (m: any): number => {
@@ -580,7 +597,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const t = new Date(raw).getTime();
       return Number.isNaN(t) ? 0 : t;
     };
-    return [...list].sort((a, b) => getSafeTime(a) - getSafeTime(b));
+    const getDayRank = (m: any): number => {
+      const ts = getSafeTime(m);
+      if (!ts) return 0;
+      const d = new Date(ts);
+      return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    };
+    return [...list].sort((a, b) => {
+      const dayDiff = getDayRank(a) - getDayRank(b);
+      if (dayDiff !== 0) return dayDiff;
+      const timeDiff = getSafeTime(a) - getSafeTime(b);
+      if (timeDiff !== 0) return timeDiff;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
   }, [visibleMessages, activeCommThread, currentProfile]);
 
   // Auto-scroll to bottom when opening a dialog or receiving/sending a message
@@ -1264,6 +1293,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         name: profileName.trim(),
         email: profileEmail.trim() || null,
       };
+      if (profilePassword.trim()) {
+        updates.password = profilePassword.trim();
+      }
       if (perms.team_manage && profileRoleTitle.trim()) {
         updates.role_type = profileRoleTitle.trim();
         updates.department = profileDepartment.trim() || null;
@@ -1271,6 +1303,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       const res = await onPatchRecord('organization_nodes', currentProfile.id, updates);
       if (res.ok) {
+        setProfilePassword('');
         showToast(t('profile.savedToast'));
       }
     } finally {
@@ -1974,6 +2007,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           currentProfile={currentProfile}
           tasks={visibleTasks}
+          onSyncShiftState={async (status, startedAt) => {
+            if (currentProfile) {
+              await onPatchRecord('organization_nodes', currentProfile.id, {
+                shift_status: status,
+                shift_started_at: startedAt,
+              });
+            }
+          }}
+          onCreateWorkShift={onCreateWorkShift}
           onPostShiftSummary={async (summaryText) => {
             if (onSendMessage) {
               await onSendMessage({
@@ -2020,6 +2062,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {activeSection === 'tasks' && t('header.tasksTitle')}
                 {activeSection === 'crm' && t('header.crmTitle')}
                 {activeSection === 'communications' && t('header.communicationsTitle')}
+                {activeSection === 'shifts' && t('header.shiftsTitle')}
                 {activeSection === 'team' && t('header.teamTitle')}
                 {activeSection === 'profile' && t('header.profileTitle')}
                 {activeSection === 'workspace' && t('header.workspaceTitle')}
@@ -2478,14 +2521,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   )}
 
-                  {/* НИЖНИЙ РЯД BENTO-СЕТКИ: 7 КОЛОНОК СЛЕВА (ЗАДАЧИ + БЫСТРЫЙ ВВОД + ЧЕК-ЛИСТ) И 5 КОЛОНОК СПРАВА (ВОРОНКА + ПУЛЬС КОМАНДЫ) */}
+                  {/* НИЖНИЙ РЯД BENTO-СЕТКИ: 7 КОЛОНОК СЛЕВА (ЗАДАЧИ + АКТИВНЫЕ СМЕНЫ) И 5 КОЛОНОК СПРАВА (ВОРОНКА + ПУЛЬС КОМАНДЫ) */}
                   <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-                    {/* ЛЕВАЯ КОЛОНКА (xl:col-span-7): Приоритетные задачи и поручения */}
-                    <div className="xl:col-span-7 rounded-xl border border-white/[0.08] bg-[#111114] shadow-xl overflow-hidden">
-                      <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5">
-                          <CheckCircle2 className="w-4 h-4 text-indigo-400" />
-                          <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
+                    {/* ЛЕВАЯ КОЛОНКА (xl:col-span-7): Приоритетные задачи + Активные смены и табель сегодня */}
+                    <div className="xl:col-span-7 space-y-6">
+                      <div className="rounded-xl border border-white/[0.08] bg-[#111114] shadow-xl overflow-hidden">
+                        <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+                            <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
                             {isEn
                               ? 'Priority Tasks & Assignments'
                               : 'Приоритетные задачи и поручения'}
@@ -2754,6 +2798,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           })}
                         </div>
                       )}
+                      </div>
+
+                      {/* Виджет «Активные смены и табель сегодня» под блоком Приоритетные задачи — выравнивает высоту левой и правой колонок */}
+                      <DashboardShiftsOverviewWidget
+                        nodes={safeNodes}
+                        workShifts={safeWorkShifts}
+                        onOpenShiftsSection={() => setActiveSection('shifts')}
+                      />
                     </div>
 
                     {/* ПРАВАЯ КОЛОНКА (xl:col-span-5): 2 АНАЛИТИЧЕСКИХ EXECUTIVE-БЛОКА */}
@@ -4752,18 +4804,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       : 'rounded-[20px] rounded-bl-[5px] bg-zinc-800/90 text-zinc-100'
                                   }`}
                                 >
-                                  {/* Боковая всплывающая панель быстрых реакций и действий (Сбоку от баббла — никогда не перекрывает соседние сообщения и не сжимает "+ В задачу") */}
+                                  {/* Компактная мини-капсула быстрых реакций прямо НАД верхним углом сообщения (-top-8 right-0 / left-0): 4 эмодзи + 2 аккуратные круглые иконки с тултипами */}
                                   <div
-                                    className={`tc-reaction-pill absolute z-30 hidden group-hover:flex focus-within:flex items-center gap-1 px-2 py-1 rounded-full w-max whitespace-nowrap shadow-lg backdrop-blur-md bg-zinc-900/95 text-white border border-white/10 transition-all duration-150 top-1/2 -translate-y-1/2 ${
-                                      isOutgoing ? 'right-full mr-2' : 'left-full ml-2'
-                                    }`}
+                                    className={`tc-reaction-pill absolute z-30 -top-8 ${
+                                      isOutgoing ? 'right-0' : 'left-0'
+                                    } hidden group-hover:flex focus-within:flex items-center gap-0.5 px-1.5 py-0.5 rounded-full w-max whitespace-nowrap shadow-xl backdrop-blur-md bg-zinc-900/95 text-white border border-white/15 transition-all duration-150`}
                                   >
                                     {(['👍', '🔥', '❤️', '✅'] as const).map((emoji) => (
                                       <button
                                         key={emoji}
                                         type="button"
                                         onClick={() => void handleToggleMessageReaction(msg, emoji)}
-                                        className="whitespace-nowrap shrink-0 text-xs px-1.5 py-0.5 rounded hover:bg-white/15 transition-transform hover:scale-110"
+                                        className="w-6 h-6 rounded-full inline-flex items-center justify-center text-xs hover:bg-white/15 transition-transform hover:scale-110 shrink-0"
                                         title={emoji}
                                       >
                                         {emoji}
@@ -4781,25 +4833,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                           text: messageBody.slice(0, 140),
                                         })
                                       }
-                                      className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 text-xs px-1.5 py-0.5 rounded hover:bg-white/15 text-zinc-100 transition-colors"
-                                      title={isEn ? 'Reply to message' : 'Ответить на сообщение'}
+                                      className="w-6 h-6 rounded-full inline-flex items-center justify-center hover:bg-white/15 text-zinc-200 hover:text-white transition-colors shrink-0"
+                                      title={isEn ? 'Reply' : 'Ответить'}
+                                      aria-label={isEn ? 'Reply' : 'Ответить'}
                                     >
-                                      <Reply className="w-3 h-3 shrink-0" />
-                                      <span>{isEn ? 'Reply' : 'Ответить'}</span>
+                                      <Reply className="w-3 h-3" />
                                     </button>
 
                                     {canCreateOrEditTasks && (
                                       <button
                                         type="button"
                                         onClick={() => handleConvertMessageToTask(msg)}
-                                        className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 text-xs px-1.5 py-0.5 rounded hover:bg-white/15 text-indigo-300 transition-colors"
-                                        title={
-                                          isEn
-                                            ? 'Convert message into task'
-                                            : 'Создать задачу из сообщения'
-                                        }
+                                        className="w-6 h-6 rounded-full inline-flex items-center justify-center hover:bg-indigo-500/25 text-indigo-300 hover:text-indigo-200 transition-colors shrink-0"
+                                        title={isEn ? 'Create Task' : 'Создать задачу'}
+                                        aria-label={isEn ? 'Create Task' : 'Создать задачу'}
                                       >
-                                        <span>{isEn ? '+ To Task' : '+ В задачу'}</span>
+                                        <CheckSquare className="w-3 h-3" />
                                       </button>
                                     )}
                                   </div>
@@ -5456,6 +5505,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {/* =================================================================
+              TAB: СМЕНЫ И ТАБЕЛЬ ВРЕМЕНИ / TIME & ATTENDANCE (БЛОК 2)
+          ================================================================== */}
+          {activeSection === 'shifts' && (
+            <TimeAndAttendanceView
+              company={company}
+              currentProfile={currentProfile}
+              nodes={safeNodes}
+              tasks={visibleTasks}
+              workShifts={safeWorkShifts}
+              onSyncShiftState={async (status, startedAt) => {
+                if (currentProfile) {
+                  await onPatchRecord('organization_nodes', currentProfile.id, {
+                    shift_status: status,
+                    shift_started_at: startedAt,
+                  });
+                }
+              }}
+              onCreateWorkShift={onCreateWorkShift}
+              showToast={showToast}
+            />
+          )}
+
+          {/* =================================================================
               TAB 6: ЛИЧНЫЙ КАБИНЕТ / MY PROFILE (БЛОК 1: Progressive Disclosure — Чистая единая центральная композиция без перегруза)
           ================================================================== */}
           {activeSection === 'profile' && currentProfile && (
@@ -5686,6 +5758,44 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     </>
                   )}
+
+                  {/* Персональный пароль для входа по Email / ФИО или Telegram ID */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                      {isEn
+                        ? 'Personal Account Password (for Email / Name or Telegram ID login)'
+                        : 'Персональный пароль для входа (по Email / ФИО или Telegram ID)'}
+                    </label>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                      <input
+                        type="password"
+                        value={profilePassword}
+                        onChange={(e) => setProfilePassword(e.target.value)}
+                        placeholder={
+                          currentProfile.has_password || currentProfile.password
+                            ? isEn
+                              ? '•••••••• (Password set — enter new to change)'
+                              : '•••••••• (Пароль установлен — введите новый для смены)'
+                            : isEn
+                            ? 'Set a password for secure login...'
+                            : 'Задайте пароль для защищенного входа...'
+                        }
+                        className="flex-1 rounded-lg border border-white/[0.08] bg-[#17171B] px-3.5 py-2 text-sm text-white placeholder-[#52525B] focus:border-white/40 focus:outline-none"
+                      />
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[11px] text-[#A1A1AA] whitespace-nowrap">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>
+                          {currentProfile.has_password || currentProfile.password
+                            ? isEn
+                              ? 'Password Protected'
+                              : 'Пароль активен'
+                            : isEn
+                            ? 'No Password Set'
+                            : 'Пароль еще не задан'}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="pt-2 border-t border-white/[0.07] flex items-center justify-between gap-3">
@@ -6601,130 +6711,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onMarkPaid={handleMarkInvoicePaid}
       />
 
-      {/* Inspect Employee Invite Deep-Link Modal */}
+      {/* Цифровой пропуск сотрудника (Digital Employee Pass — Единый компонент без сырых <input> URL) */}
       {inspectInviteNode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans">
-          <div className="w-full max-w-lg rounded-xl border border-[#262626] bg-[#121212] shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#262626]">
-              <div className="flex items-center gap-2.5">
-                <KeyRound className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-semibold text-white tracking-tight">
-                  {t('invite.modalTitle')} — {inspectInviteNode.name}
-                </h3>
-              </div>
-              <button
-                onClick={() => setInspectInviteNode(null)}
-                className="text-[#8E8E93] hover:text-white p-1 rounded-lg hover:bg-[#1F1F1F]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <p className="text-xs text-[#A1A1AA] leading-relaxed">
-                {t('invite.modalSubtitle')}
-              </p>
-              <div className="rounded-lg border border-[#262626] bg-[#171717] p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider">
-                    {t('invite.codeLabel')}
-                  </span>
-                  <span className="text-xs text-white font-semibold bg-[#242424] px-2.5 py-1 rounded border border-[#333333] whitespace-nowrap">
-                    {inspectInviteNode.invite_code || 'TC-0000'}
-                  </span>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider mb-1.5">
-                    {isEn ? '1-Click Browser Web Login Link' : 'Веб-ссылка для быстрого входа (1 клик)'}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}/?invite=${
-                        inspectInviteNode.invite_code || 'TC-0000'
-                      }`}
-                      className="w-full rounded-lg border border-[#2A2A2A] bg-[#0D0D0D] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        copyToClipboard(
-                          `${window.location.origin}/?invite=${
-                            inspectInviteNode.invite_code || 'TC-0000'
-                          }`,
-                          'modal-web-link'
-                        )
-                      }
-                      className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white text-black hover:bg-[#E4E4E7] transition-colors whitespace-nowrap"
-                    >
-                      {copiedToken === 'modal-web-link' ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>{t('invite.copied')}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>{t('invite.copyLink')}</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-                {botUsername && (
-                  <div>
-                    <label className="block text-[11px] font-medium text-[#8E8E93] uppercase tracking-wider mb-1.5">
-                      {t('invite.deepLinkLabel')}
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={`https://t.me/${botUsername}?start=${
-                          inspectInviteNode.invite_code || 'TC-0000'
-                        }`}
-                        className="w-full rounded-lg border border-[#2A2A2A] bg-[#0D0D0D] px-3 py-2 text-xs text-[#E4E4E7] focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(
-                            `https://t.me/${botUsername}?start=${
-                              inspectInviteNode.invite_code || 'TC-0000'
-                            }`,
-                            'modal-deep-link'
-                          )
-                        }
-                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-[#333333] bg-[#222222] text-white hover:bg-[#2C2C2C] transition-colors whitespace-nowrap"
-                      >
-                        {copiedToken === 'modal-deep-link' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>{t('invite.copied')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>{t('invite.copyLink')}</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setInspectInviteNode(null)}
-                  className="px-4 py-2 rounded-lg bg-white text-black hover:bg-[#E4E4E7] text-xs font-semibold transition-colors"
-                >
-                  {t('invite.doneBtn')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <MyAccessKeysModal
+          isOpen={Boolean(inspectInviteNode)}
+          onClose={() => setInspectInviteNode(null)}
+          profile={inspectInviteNode}
+          botUsername={botUsername}
+          copiedToken={copiedToken}
+          onCopy={copyToClipboard}
+        />
       )}
 
       {/* Progressive Disclosure Modals (БЛОК 1: Полномочия, Ключи входа, Реквизиты плательщика, Аудит безопасности) */}

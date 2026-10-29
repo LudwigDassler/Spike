@@ -9,6 +9,7 @@ import {
   CrmLeadRecord,
   OrganizationNode,
   TaskRecord,
+  WorkShiftRecord,
   WorkspaceMessageRecord,
 } from './types/database';
 import { LocaleProvider, useLocale } from './i18n/LocaleContext';
@@ -108,6 +109,7 @@ function AppContent() {
   const [leads, setLeads] = useState<CrmLeadRecord[]>([]);
   const [messages, setMessages] = useState<WorkspaceMessageRecord[]>([]);
   const [invoices, setInvoices] = useState<BillingInvoiceRecord[]>([]);
+  const [workShifts, setWorkShifts] = useState<WorkShiftRecord[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -214,6 +216,7 @@ function AppContent() {
           : serverList;
       });
       setInvoices(Array.isArray(payload.invoices) ? payload.invoices : []);
+      setWorkShifts(Array.isArray(payload.workShifts) ? payload.workShifts : []);
       setAuditLogs(Array.isArray(payload.auditLogs) ? payload.auditLogs : []);
 
       if (typeof payload.botUsername === 'string' && payload.botUsername.trim()) {
@@ -314,6 +317,7 @@ function AppContent() {
       setLeads([]);
       setMessages([]);
       setInvoices([]);
+      setWorkShifts([]);
       setAuditLogs([]);
       setCurrentProfile(profile);
       setCompany(authCompany);
@@ -485,6 +489,49 @@ function AppContent() {
     [currentProfile, loadWorkspaceData]
   );
 
+  const handleCreateWorkShift = useCallback(
+    async (shiftPayload: Partial<WorkShiftRecord>): Promise<void> => {
+      const optimisticShift: WorkShiftRecord = {
+        id: `shift_${Date.now()}`,
+        company_id: shiftPayload.company_id || company?.id || 'default',
+        employee_id: shiftPayload.employee_id || currentProfile?.id || 'root',
+        employee_name: shiftPayload.employee_name || currentProfile?.name || 'Сотрудник',
+        role_type: shiftPayload.role_type || currentProfile?.role_type || 'Специалист',
+        department: shiftPayload.department ?? currentProfile?.department ?? null,
+        started_at: shiftPayload.started_at || new Date().toISOString(),
+        ended_at: shiftPayload.ended_at || new Date().toISOString(),
+        duration_minutes: Math.max(1, Number(shiftPayload.duration_minutes ?? 1)),
+        tasks_completed: Number(shiftPayload.tasks_completed ?? 0),
+        summary: shiftPayload.summary || null,
+        created_at: new Date().toISOString(),
+      };
+      setWorkShifts((prev) => [optimisticShift, ...(Array.isArray(prev) ? prev : [])]);
+
+      try {
+        const response = await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table: 'work_shifts',
+            payload: optimisticShift,
+          }),
+        });
+        const result = await safeParseJson(response);
+        if (response.ok && result?.data) {
+          setWorkShifts((prev) =>
+            (Array.isArray(prev) ? prev : []).map((s) =>
+              s.id === optimisticShift.id ? result.data : s
+            )
+          );
+        }
+        void loadWorkspaceData(false, true);
+      } catch (err) {
+        console.warn('[App] POST work_shifts warning:', err);
+      }
+    },
+    [company?.id, currentProfile, loadWorkspaceData]
+  );
+
   const handleSendMessage = useCallback(
     async (
       messagePayload: Record<string, any>
@@ -617,6 +664,7 @@ function AppContent() {
     setLeads([]);
     setMessages([]);
     setInvoices([]);
+    setWorkShifts([]);
     setAuditLogs([]);
   }, []);
 
@@ -690,6 +738,7 @@ function AppContent() {
       leads={leads}
       messages={messages}
       invoices={invoices}
+      workShifts={workShifts}
       auditLogs={auditLogs}
       isSyncing={isSyncing}
       onRefresh={() => loadWorkspaceData(false)}
@@ -697,6 +746,7 @@ function AppContent() {
       onDeleteRecord={handleDeleteRecord}
       onSendMessage={handleSendMessage}
       onCreateInvoice={handleCreateInvoice}
+      onCreateWorkShift={handleCreateWorkShift}
       onResetSession={handleResetSession}
     />
   );

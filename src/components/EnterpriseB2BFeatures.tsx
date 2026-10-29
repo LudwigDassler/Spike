@@ -21,6 +21,11 @@ import {
   CheckCircle2,
   Sparkles,
   Building2,
+  Download,
+  Users,
+  Coffee,
+  Activity,
+  ArrowRight,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -30,17 +35,21 @@ import {
   TaskPriority,
   TaskRecord,
   TaskStatus,
+  WorkShiftRecord,
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
+import { UserAvatar } from './UserAvatar';
 
 // ============================================================================
-// 1. LIVE WORKDAY SHIFT TRACKER (Трекер рабочей смены в шапке с авто-отчетом)
+// 1. LIVE WORKDAY SHIFT TRACKER (Трекер рабочей смены в шапке с авто-отчетом и БД)
 // ============================================================================
 interface WorkdayShiftWidgetProps {
   companyId: string;
   currentProfile: OrganizationNode | null;
   tasks: TaskRecord[];
   onPostShiftSummary?: (summaryText: string) => Promise<void>;
+  onSyncShiftState?: (status: 'online' | 'break' | 'offline', startedAt: string | null) => Promise<void>;
+  onCreateWorkShift?: (shift: Partial<WorkShiftRecord>) => Promise<void>;
   showToast?: (msg: string) => void;
 }
 
@@ -49,10 +58,13 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
   currentProfile,
   tasks,
   onPostShiftSummary,
+  onSyncShiftState,
+  onCreateWorkShift,
   showToast,
 }) => {
-  const { language } = useLocale();
+  const { language, theme } = useLocale();
   const isEn = language === 'en';
+  const isLight = theme === 'light';
   const storageKey = `tedcloud_workday_shift_${companyId}_${currentProfile?.id || 'root'}`;
 
   const [shiftState, setShiftState] = useState<{
@@ -118,9 +130,31 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
     return `${mm}:${ss}`;
   };
 
+  // Sync with DB shift_status if changed remotely
+  useEffect(() => {
+    const dbStatus = currentProfile?.shift_status;
+    const dbStarted = currentProfile?.shift_started_at
+      ? new Date(currentProfile.shift_started_at).getTime()
+      : null;
+    if (dbStatus === 'online' && dbStarted && !Number.isNaN(dbStarted)) {
+      setShiftState((prev) =>
+        prev.status === 'active' ? prev : { status: 'active', startedAt: dbStarted }
+      );
+    } else if (dbStatus === 'break' && dbStarted && !Number.isNaN(dbStarted)) {
+      setShiftState((prev) =>
+        prev.status === 'break' ? prev : { status: 'break', startedAt: dbStarted }
+      );
+    }
+  }, [currentProfile?.shift_status, currentProfile?.shift_started_at]);
+
   const handleStartShift = () => {
-    setShiftState({ status: 'active', startedAt: Date.now() });
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    setShiftState({ status: 'active', startedAt: nowMs });
     setMenuOpen(false);
+    if (onSyncShiftState) {
+      void onSyncShiftState('online', nowIso);
+    }
     showToast?.(
       isEn
         ? 'Workday shift started · Status: Online'
@@ -129,14 +163,30 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
   };
 
   const handleToggleBreak = () => {
+    const nextIsBreak = shiftState.status !== 'break';
+    const startedIso = new Date(shiftState.startedAt || Date.now()).toISOString();
     setShiftState((prev) => ({
       ...prev,
-      status: prev.status === 'break' ? 'active' : 'break',
+      status: nextIsBreak ? 'break' : 'active',
     }));
     setMenuOpen(false);
+    if (onSyncShiftState) {
+      void onSyncShiftState(nextIsBreak ? 'break' : 'online', startedIso);
+    }
+    showToast?.(
+      nextIsBreak
+        ? isEn
+          ? 'Shift paused · Status: On Break'
+          : 'Перерыв включен · Статус обновлен в табеле'
+        : isEn
+        ? 'Shift resumed · Status: Online'
+        : 'Вы вернулись на линию · Смена продолжается'
+    );
   };
 
   const handleFinishShift = async () => {
+    const startedAtMs = shiftState.startedAt || Date.now() - 60000;
+    const endedAtIso = new Date().toISOString();
     const durationMin = Math.max(1, Math.round(elapsedSec / 60));
     const hrs = Math.floor(durationMin / 60);
     const mins = durationMin % 60;
@@ -165,13 +215,30 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
     setShiftState({ status: 'idle', startedAt: null });
     setMenuOpen(false);
 
+    if (onSyncShiftState) {
+      await onSyncShiftState('offline', null);
+    }
+    if (onCreateWorkShift) {
+      await onCreateWorkShift({
+        company_id: companyId,
+        employee_id: currentProfile?.id || 'root',
+        employee_name: currentProfile?.name || 'Сотрудник',
+        role_type: currentProfile?.role_type || 'Специалист',
+        department: currentProfile?.department || null,
+        started_at: new Date(startedAtMs).toISOString(),
+        ended_at: endedAtIso,
+        duration_minutes: durationMin,
+        tasks_completed: doneTasks.length,
+        summary,
+      });
+    }
     if (onPostShiftSummary) {
       await onPostShiftSummary(summary);
     }
     showToast?.(
       isEn
-        ? 'Shift completed · Daily summary posted to workspace stream'
-        : 'Смена завершена · Авто-отчет опубликован в общем инфополе'
+        ? 'Shift completed · Saved to Time & Attendance Roster'
+        : 'Смена завершена · Запись сохранена в табеле рабочего времени'
     );
   };
 
@@ -180,7 +247,11 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
       <button
         type="button"
         onClick={handleStartShift}
-        className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg border border-white/[0.08] bg-[#111114] hover:bg-zinc-800/80 text-xs font-medium text-zinc-200 transition-colors whitespace-nowrap shrink-0"
+        className={`inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+          isLight
+            ? 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800 shadow-xs'
+            : 'border-white/[0.08] bg-[#111114] hover:bg-zinc-800/80 text-zinc-200'
+        }`}
         title={
           isEn
             ? 'Start workday shift & attendance timer'
@@ -1567,3 +1638,704 @@ export const ExecutiveUnitEconomicsRadar: React.FC<ExecutiveUnitEconomicsRadarPr
     </div>
   );
 };
+
+// ============================================================================
+// 7. DASHBOARD SHIFTS OVERVIEW WIDGET (БЛОК 1.3: Заполнение пустоты на Дашборде слева)
+// ============================================================================
+interface DashboardShiftsOverviewWidgetProps {
+  nodes: OrganizationNode[];
+  workShifts: WorkShiftRecord[];
+  onOpenShiftsSection: () => void;
+}
+
+export const DashboardShiftsOverviewWidget: React.FC<DashboardShiftsOverviewWidgetProps> = ({
+  nodes,
+  workShifts,
+  onOpenShiftsSection,
+}) => {
+  const { language, formatRole } = useLocale();
+  const isEn = language === 'en';
+
+  const onlineNodes = useMemo(
+    () =>
+      nodes.filter(
+        (n) => n.shift_status === 'online' || n.shift_status === 'active'
+      ),
+    [nodes]
+  );
+  const breakNodes = useMemo(
+    () => nodes.filter((n) => n.shift_status === 'break'),
+    [nodes]
+  );
+
+  const totalHoursToday = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const completedMins = workShifts
+      .filter((ws) => String(ws.started_at || ws.created_at || '').startsWith(todayStr))
+      .reduce((acc, ws) => acc + Math.max(0, Number(ws.duration_minutes || 0)), 0);
+    const activeMins = [...onlineNodes, ...breakNodes].reduce((acc, n) => {
+      if (!n.shift_started_at) return acc + 15;
+      const diff = Math.max(
+        1,
+        Math.round((Date.now() - new Date(n.shift_started_at).getTime()) / 60000)
+      );
+      return acc + (Number.isFinite(diff) ? diff : 15);
+    }, 0);
+    return ((completedMins + activeMins) / 60).toFixed(1);
+  }, [workShifts, onlineNodes, breakNodes]);
+
+  const rosterPreview = useMemo(() => {
+    const activeFirst = [...nodes].sort((a, b) => {
+      const score = (st?: string | null) =>
+        st === 'online' || st === 'active' ? 2 : st === 'break' ? 1 : 0;
+      return score(b.shift_status) - score(a.shift_status);
+    });
+    return activeFirst.slice(0, 4);
+  }, [nodes]);
+
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-[#121215] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
+      <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+          <h3 className="text-sm font-semibold text-white tracking-tight truncate">
+            {isEn ? 'Active Shifts & Attendance Today' : 'Активные смены и табель сегодня'}
+          </h3>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenShiftsSection}
+          className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors shrink-0"
+        >
+          <span>{isEn ? 'Open Roster' : 'Табель смен'}</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Mini KPI Strip */}
+      <div className="grid grid-cols-3 divide-x divide-white/[0.06] border-b border-white/[0.06] bg-white/[0.01]">
+        <div className="px-4 py-2.5">
+          <div className="text-[11px] text-[#8E8E93]">
+            {isEn ? 'Online Now' : 'На линии'}
+          </div>
+          <div className="text-sm font-bold text-emerald-400 tabular-nums mt-0.5 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span>{onlineNodes.length}</span>
+          </div>
+        </div>
+        <div className="px-4 py-2.5">
+          <div className="text-[11px] text-[#8E8E93]">
+            {isEn ? 'On Break' : 'На перерыве'}
+          </div>
+          <div className="text-sm font-bold text-amber-400 tabular-nums mt-0.5">
+            {breakNodes.length}
+          </div>
+        </div>
+        <div className="px-4 py-2.5">
+          <div className="text-[11px] text-[#8E8E93]">
+            {isEn ? 'Hours Today' : 'Часов за день'}
+          </div>
+          <div className="text-sm font-bold text-white tabular-nums mt-0.5">
+            {totalHoursToday} {isEn ? 'h' : 'ч'}
+          </div>
+        </div>
+      </div>
+
+      {/* Compact Live Roster */}
+      <div className="divide-y divide-white/[0.05]">
+        {rosterPreview.map((emp) => {
+          const isOnline = emp.shift_status === 'online' || emp.shift_status === 'active';
+          const isBreak = emp.shift_status === 'break';
+          const startedTime = emp.shift_started_at
+            ? new Date(emp.shift_started_at).toLocaleTimeString(isEn ? 'en-US' : 'ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : null;
+          return (
+            <div
+              key={emp.id}
+              onClick={onOpenShiftsSection}
+              className="px-5 py-2.5 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <UserAvatar name={emp.name} avatarUrl={emp.avatar_url} size="sm" />
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-white truncate">{emp.name}</div>
+                  <div className="text-[11px] text-[#8E8E93] truncate">
+                    {formatRole(emp.role_type)}
+                    {emp.department ? ` · ${formatRole(emp.department)}` : ''}
+                  </div>
+                </div>
+              </div>
+
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border shrink-0 ${
+                  isOnline
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : isBreak
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                    : 'bg-white/[0.03] border-white/[0.08] text-[#8E8E93]'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isOnline
+                      ? 'bg-emerald-400'
+                      : isBreak
+                      ? 'bg-amber-400'
+                      : 'bg-zinc-500'
+                  }`}
+                />
+                <span>
+                  {isOnline
+                    ? startedTime
+                      ? isEn
+                        ? `On shift since ${startedTime}`
+                        : `На смене с ${startedTime}`
+                      : isEn
+                      ? 'Online'
+                      : 'На линии'
+                    : isBreak
+                    ? isEn
+                      ? 'On Break'
+                      : 'Перерыв'
+                    : isEn
+                    ? 'Offline'
+                    : 'Не в сети'}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 8. TIME & ATTENDANCE ROSTER PAGE (БЛОК 2: ОТДЕЛЬНАЯ СТРАНИЦА «СМЕНЫ И ВРЕМЯ»)
+// ============================================================================
+interface TimeAndAttendanceViewProps {
+  company: Company | null;
+  currentProfile: OrganizationNode | null;
+  nodes: OrganizationNode[];
+  tasks: TaskRecord[];
+  workShifts: WorkShiftRecord[];
+  onSyncShiftState?: (status: 'online' | 'break' | 'offline', startedAt: string | null) => Promise<void>;
+  onCreateWorkShift?: (shift: Partial<WorkShiftRecord>) => Promise<void>;
+  showToast?: (msg: string) => void;
+}
+
+export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
+  company,
+  currentProfile,
+  nodes,
+  tasks,
+  workShifts,
+  onSyncShiftState,
+  onCreateWorkShift,
+  showToast,
+}) => {
+  const { language, theme, formatRole } = useLocale();
+  const isEn = language === 'en';
+  const isLight = theme === 'light';
+
+  const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<string>('ALL');
+  const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const onlineEmployees = useMemo(
+    () =>
+      nodes.filter(
+        (n) => n.shift_status === 'online' || n.shift_status === 'active'
+      ),
+    [nodes]
+  );
+
+  const breakEmployees = useMemo(
+    () => nodes.filter((n) => n.shift_status === 'break'),
+    [nodes]
+  );
+
+  const weeklyHours = useMemo(() => {
+    const weekAgoMs = Date.now() - 7 * 24 * 3600 * 1000;
+    const completedMins = workShifts
+      .filter((ws) => {
+        const ts = new Date(ws.started_at || ws.created_at || Date.now()).getTime();
+        return !Number.isNaN(ts) && ts >= weekAgoMs;
+      })
+      .reduce((acc, ws) => acc + Math.max(0, Number(ws.duration_minutes || 0)), 0);
+
+    const liveMins = [...onlineEmployees, ...breakEmployees].reduce((acc, emp) => {
+      if (!emp.shift_started_at) return acc + 20;
+      const diff = Math.max(
+        1,
+        Math.round((nowTick - new Date(emp.shift_started_at).getTime()) / 60000)
+      );
+      return acc + (Number.isFinite(diff) ? diff : 20);
+    }, 0);
+
+    return ((completedMins + liveMins) / 60).toFixed(1);
+  }, [workShifts, onlineEmployees, breakEmployees, nowTick]);
+
+  const completedTasksCount = useMemo(() => {
+    const fromShifts = workShifts.reduce(
+      (acc, ws) => acc + Math.max(0, Number(ws.tasks_completed || 0)),
+      0
+    );
+    const doneTasks = tasks.filter((t) => t.status === 'Done').length;
+    return Math.max(fromShifts, doneTasks);
+  }, [workShifts, tasks]);
+
+  const departments = useMemo(() => {
+    const set = new Set<string>();
+    nodes.forEach((n) => {
+      if (n.department && n.department.trim()) set.add(n.department.trim());
+    });
+    return Array.from(set);
+  }, [nodes]);
+
+  const filteredRoster = useMemo(() => {
+    return nodes.filter((n) => {
+      if (selectedEmployeeFilter !== 'ALL' && n.id !== selectedEmployeeFilter) return false;
+      if (departmentFilter !== 'ALL' && (n.department || '') !== departmentFilter) return false;
+      return true;
+    });
+  }, [nodes, selectedEmployeeFilter, departmentFilter]);
+
+  const filteredShiftsHistory = useMemo(() => {
+    return workShifts.filter((ws) => {
+      if (selectedEmployeeFilter !== 'ALL' && ws.employee_id !== selectedEmployeeFilter) {
+        return false;
+      }
+      if (departmentFilter !== 'ALL' && (ws.department || '') !== departmentFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [workShifts, selectedEmployeeFilter, departmentFilter]);
+
+  const formatDurationLabel = (minsRaw: number) => {
+    const mins = Math.max(1, Math.round(minsRaw || 1));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h > 0) {
+      return isEn ? `${h}h ${m}m` : `${h} ч ${m} мин`;
+    }
+    return isEn ? `${m}m` : `${m} мин`;
+  };
+
+  const formatElapsedSince = (startedAtIso?: string | null) => {
+    if (!startedAtIso) return isEn ? 'Active' : 'На линии';
+    const ts = new Date(startedAtIso).getTime();
+    if (Number.isNaN(ts)) return isEn ? 'Active' : 'На линии';
+    const diffMins = Math.max(1, Math.round((nowTick - ts) / 60000));
+    return formatDurationLabel(diffMins);
+  };
+
+  const handleExportShiftsCsv = () => {
+    const headers = isEn
+      ? ['Date', 'Employee', 'Role', 'Department', 'Start Time', 'End Time', 'Duration (min)', 'Tasks Completed', 'Shift Summary']
+      : ['Дата', 'Сотрудник', 'Должность', 'Подразделение', 'Начало смены', 'Окончание смены', 'Длительность (мин)', 'Закрыто задач', 'Итоговый отчет за смену'];
+
+    const rows = filteredShiftsHistory.map((ws) => {
+      const startDt = ws.started_at ? new Date(ws.started_at) : new Date();
+      const endDt = ws.ended_at ? new Date(ws.ended_at) : new Date();
+      return [
+        startDt.toLocaleDateString(isEn ? 'en-US' : 'ru-RU'),
+        ws.employee_name || 'Сотрудник',
+        ws.role_type || 'Специалист',
+        ws.department || '—',
+        startDt.toLocaleTimeString(isEn ? 'en-US' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }),
+        endDt.toLocaleTimeString(isEn ? 'en-US' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }),
+        String(ws.duration_minutes || 1),
+        String(ws.tasks_completed ?? 0),
+        String(ws.summary || '').replace(/\r?\n/g, ' '),
+      ];
+    });
+
+    const csvContent =
+      '\uFEFF' +
+      [headers, ...rows]
+        .map((row) =>
+          row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';')
+        )
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `tedcloud_timesheet_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast?.(
+      isEn
+        ? 'Time & Attendance CSV exported'
+        : 'Табель рабочего времени выгружен в CSV'
+    );
+  };
+
+  return (
+    <div className="space-y-6 font-sans">
+      {/* 1. ВЕРХНИЕ 4 KPI КАРТОЧКИ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+            <span>{isEn ? 'Online Now' : 'Сейчас на линии (Online)'}</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          </div>
+          <div className="text-2xl font-bold text-white tabular-nums">
+            {onlineEmployees.length}{' '}
+            <span className="text-xs font-normal text-[#8E8E93]">
+              / {nodes.length} {isEn ? 'staff' : 'сотр.'}
+            </span>
+          </div>
+          <div className="text-[11px] text-emerald-400">
+            {isEn ? 'Real-time shift telemetry' : 'Живой мониторинг присутствия'}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+            <span>{isEn ? 'On Break / Meeting' : 'На перерыве'}</span>
+            <Coffee className="w-3.5 h-3.5 text-amber-400" />
+          </div>
+          <div className="text-2xl font-bold text-amber-400 tabular-nums">
+            {breakEmployees.length}
+          </div>
+          <div className="text-[11px] text-[#8E8E93]">
+            {isEn ? 'Paused timer or in meeting' : 'Таймер смены на паузе'}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+            <span>{isEn ? 'Hours Worked (Week)' : 'Отработано часов за неделю'}</span>
+            <Clock className="w-3.5 h-3.5 text-indigo-400" />
+          </div>
+          <div className="text-2xl font-bold text-white tabular-nums">
+            {weeklyHours}{' '}
+            <span className="text-xs font-normal text-[#8E8E93]">{isEn ? 'hrs' : 'ч'}</span>
+          </div>
+          <div className="text-[11px] text-[#8E8E93]">
+            {isEn
+              ? `${workShifts.length} completed shifts in log`
+              : `Зафиксировано смен в базе: ${workShifts.length}`}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+            <span>{isEn ? 'Tasks Closed in Shifts' : 'Выполнено задач за смену'}</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          </div>
+          <div className="text-2xl font-bold text-emerald-400 tabular-nums">
+            {completedTasksCount}
+          </div>
+          <div className="text-[11px] text-[#8E8E93]">
+            {isEn ? 'Verified deliverables' : 'Подтвержденный результат по задачам'}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. ПАНЕЛЬ ФИЛЬТРАЦИИ И ВЫГРУЗКИ CSV */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#121215] p-4">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <select
+            value={selectedEmployeeFilter}
+            onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
+            className="h-9 rounded-xl border border-white/10 bg-[#18181D] px-3 text-xs text-white focus:border-white/25 focus:outline-none"
+          >
+            <option value="ALL">
+              {isEn ? 'All Employees' : 'Все сотрудники компании'} ({nodes.length})
+            </option>
+            {nodes.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name} — {formatRole(emp.role_type)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            className="h-9 rounded-xl border border-white/10 bg-[#18181D] px-3 text-xs text-white focus:border-white/25 focus:outline-none"
+          >
+            <option value="ALL">
+              {isEn ? 'All Departments' : 'Все подразделения'}
+            </option>
+            {departments.map((dept) => (
+              <option key={dept} value={dept}>
+                {formatRole(dept)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportShiftsCsv}
+            className={`inline-flex items-center gap-2 h-9 px-3.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+              isLight
+                ? 'bg-slate-900 text-white hover:bg-slate-800 shadow-xs'
+                : 'bg-white text-black hover:bg-zinc-200'
+            }`}
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{isEn ? 'Export Timesheet CSV' : 'Выгрузить табель в CSV'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 3. ЖИВОЕ ТАБЛО ПРИСУТСТВИЯ (LIVE ROSTER) */}
+      <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-white tracking-tight">
+              {isEn ? 'Live Attendance Roster' : 'Живое табло присутствия сотрудников'}
+            </h3>
+            <p className="text-xs text-[#8E8E93] mt-0.5">
+              {isEn
+                ? 'Real-time employee shift status, start timestamp, and elapsed work time'
+                : 'Текущий статус каждого сотрудника, время открытия смены и живой таймер на линии'}
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-medium text-emerald-300">
+            <Activity className="w-3.5 h-3.5" />
+            <span>
+              {isEn
+                ? `${onlineEmployees.length} Active`
+                : `На смене: ${onlineEmployees.length}`}
+            </span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {filteredRoster.map((emp) => {
+            const isOnline = emp.shift_status === 'online' || emp.shift_status === 'active';
+            const isBreak = emp.shift_status === 'break';
+            const startedClock = emp.shift_started_at
+              ? new Date(emp.shift_started_at).toLocaleTimeString(
+                  isEn ? 'en-US' : 'ru-RU',
+                  { hour: '2-digit', minute: '2-digit' }
+                )
+              : null;
+            const empActiveTasks = tasks.filter(
+              (t) =>
+                (t.assigned_to === emp.id || t.owner_node_id === emp.id) &&
+                t.status !== 'Done' &&
+                t.status !== 'Cancelled'
+            ).length;
+            const empDoneTasks = tasks.filter(
+              (t) =>
+                (t.assigned_to === emp.id || t.owner_node_id === emp.id) &&
+                t.status === 'Done'
+            ).length;
+
+            return (
+              <div
+                key={emp.id}
+                className="rounded-xl border border-white/[0.08] bg-[#16161B] p-4 flex flex-col justify-between gap-3 hover:border-white/20 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <UserAvatar name={emp.name} avatarUrl={emp.avatar_url} size="md" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-white truncate">
+                        {emp.name}
+                      </div>
+                      <div className="text-[11px] text-[#8E8E93] truncate">
+                        {formatRole(emp.role_type)}
+                      </div>
+                      {emp.department && (
+                        <div className="text-[10px] text-zinc-400 truncate mt-0.5">
+                          {formatRole(emp.department)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border shrink-0 ${
+                      isOnline
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        : isBreak
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                        : 'bg-white/[0.04] border-white/[0.08] text-[#8E8E93]'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isOnline
+                          ? 'bg-emerald-400 animate-pulse'
+                          : isBreak
+                          ? 'bg-amber-400'
+                          : 'bg-zinc-500'
+                      }`}
+                    />
+                    <span>
+                      {isOnline
+                        ? startedClock
+                          ? isEn
+                            ? `Since ${startedClock}`
+                            : `На смене с ${startedClock}`
+                          : isEn
+                          ? 'Online'
+                          : 'На смене'
+                        : isBreak
+                        ? isEn
+                          ? 'Break'
+                          : 'Перерыв'
+                        : isEn
+                        ? 'Offline'
+                        : 'Не в сети'}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#8E8E93]">
+                  <span className="tabular-nums">
+                    {isOnline || isBreak ? (
+                      <>
+                        {isEn ? 'Duration: ' : 'В смене: '}
+                        <strong className="text-white font-semibold">
+                          {formatElapsedSince(emp.shift_started_at)}
+                        </strong>
+                      </>
+                    ) : (
+                      <span>{isEn ? 'Shift closed' : 'Смена не открыта'}</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums">
+                    {isEn
+                      ? `Tasks: ${empActiveTasks} open · ${empDoneTasks} done`
+                      : `Задач: ${empActiveTasks} в раб. · ${empDoneTasks} закр.`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. ЖУРНАЛ И ТАБЕЛЬ ЗАВЕРШЕННЫХ СМЕН (WORK_SHIFTS TABLE) */}
+      <div className="rounded-xl border border-white/[0.07] bg-[#121215] overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-white tracking-tight">
+              {isEn ? 'Completed Shifts & Timesheet Log' : 'Журнал и Табель отработанных смен'}
+            </h3>
+            <p className="text-xs text-[#8E8E93] mt-0.5">
+              {isEn
+                ? 'Archive of completed employee shifts with duration, closed tasks, and shift reports'
+                : 'Архив завершенных рабочих смен с точным временем, длительностью и итоговым отчетом сотрудника'}
+            </p>
+          </div>
+          <span className="text-xs text-[#8E8E93] tabular-nums">
+            {isEn
+              ? `Records: ${filteredShiftsHistory.length}`
+              : `Записей: ${filteredShiftsHistory.length}`}
+          </span>
+        </div>
+
+        {filteredShiftsHistory.length === 0 ? (
+          <div className="p-8 text-center space-y-2">
+            <Clock className="w-6 h-6 text-indigo-400 mx-auto" />
+            <div className="text-xs font-semibold text-white">
+              {isEn
+                ? 'No completed shift records yet'
+                : 'Завершенных смен в табеле пока нет'}
+            </div>
+            <p className="text-[11px] text-[#8E8E93] max-w-md mx-auto">
+              {isEn
+                ? 'Start a shift using the timer in the top bar and click "End Shift with Auto-Report" to record your first timesheet entry.'
+                : 'Нажмите «Начать смену» в верхней панели управления и завершите ее с авто-отчетом — запись мгновенно появится в этом табеле.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/[0.07] text-[11px] font-semibold text-[#8E8E93] bg-white/[0.02]">
+                  <th className="py-3 px-4">{isEn ? 'Date' : 'Дата'}</th>
+                  <th className="py-3 px-4">{isEn ? 'Employee' : 'Сотрудник'}</th>
+                  <th className="py-3 px-4">{isEn ? 'Department' : 'Отдел'}</th>
+                  <th className="py-3 px-4">{isEn ? 'Shift Window' : 'Начало и окончание'}</th>
+                  <th className="py-3 px-4">{isEn ? 'Duration' : 'Длительность'}</th>
+                  <th className="py-3 px-4">{isEn ? 'Closed Tasks' : 'Закрыто задач'}</th>
+                  <th className="py-3 px-4">{isEn ? 'Shift Report' : 'Итоговый отчет за смену'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.06] text-xs">
+                {filteredShiftsHistory.map((ws) => {
+                  const startDt = ws.started_at ? new Date(ws.started_at) : new Date();
+                  const endDt = ws.ended_at ? new Date(ws.ended_at) : new Date();
+                  const dateFormatted = startDt.toLocaleDateString(
+                    isEn ? 'en-US' : 'ru-RU',
+                    { day: '2-digit', month: 'short', year: 'numeric' }
+                  );
+                  const startClock = startDt.toLocaleTimeString(
+                    isEn ? 'en-US' : 'ru-RU',
+                    { hour: '2-digit', minute: '2-digit' }
+                  );
+                  const endClock = endDt.toLocaleTimeString(
+                    isEn ? 'en-US' : 'ru-RU',
+                    { hour: '2-digit', minute: '2-digit' }
+                  );
+
+                  return (
+                    <tr key={ws.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-3 px-4 text-zinc-300 whitespace-nowrap tabular-nums">
+                        {dateFormatted}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-white">{ws.employee_name}</div>
+                        <div className="text-[11px] text-[#8E8E93]">
+                          {formatRole(ws.role_type || 'Специалист')}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-zinc-300">
+                        {ws.department ? formatRole(ws.department) : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-zinc-300 whitespace-nowrap tabular-nums">
+                        {startClock} — {endClock}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-semibold text-emerald-300 tabular-nums">
+                          {formatDurationLabel(ws.duration_minutes)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-white font-semibold tabular-nums">
+                        {ws.tasks_completed ?? 0}
+                      </td>
+                      <td className="py-3 px-4 text-zinc-300 max-w-md">
+                        <div className="line-clamp-2 leading-snug">
+                          {ws.summary || (isEn ? 'Standard shift completed' : 'Плановая смена завершена')}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+

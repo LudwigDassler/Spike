@@ -12,6 +12,9 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  Lock,
+  Link2,
+  Send,
 } from 'lucide-react';
 import {
   AccessLevel,
@@ -66,6 +69,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
   const [isCustomDept, setIsCustomDept] = useState(false);
   const [email, setEmail] = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
+  const [newPassword, setNewPassword] = useState('');
 
   const [selectedLevel, setSelectedLevel] = useState<AccessLevel>('member');
   const [permissions, setPermissions] = useState<EmployeePermissions>(() =>
@@ -84,6 +88,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
       setIsCustomDept(false);
       setEmail(node.email || '');
       setTelegramChatId(node.telegram_chat_id ? String(node.telegram_chat_id) : '');
+      setNewPassword('');
 
       const normalized = normalizeEmployeePermissions(
         node.access_level,
@@ -199,6 +204,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
         department: resolvedDept || null,
         email: email.trim() || null,
         telegram_chat_id: telegramChatId.trim() ? telegramChatId.trim() : null,
+        ...(newPassword.trim() ? { password: newPassword.trim() } : {}),
       };
 
       await onSave(
@@ -513,136 +519,169 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: ACCESS & INVITES */}
+          {/* TAB 3: ACCESS & INVITES (Цифровой пропуск сотрудника + Пароль) */}
           {activeTab === 'access' && (
             <div className="space-y-3.5">
-              {/* Personal Login Code + 1-Click Web Link */}
-              <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3.5 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <div className="text-xs font-semibold text-white">
-                      {isEn ? 'Personal Access Code' : 'Персональный код входа'}
-                    </div>
-                    <div className="text-[11px] text-zinc-400">
-                      {isEn
-                        ? 'Used for instant browser login or Telegram bot pairing'
-                        : 'Для входа с браузера или привязки Telegram-бота'}
-                    </div>
+              {/* Digital Employee Pass Plate */}
+              <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-[11px] font-medium text-zinc-400">
+                    {isEn ? 'Personal Invite Code' : 'Персональный инвайт-код сотрудника'}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1.5 rounded-lg bg-zinc-950 border border-white/10 text-xs font-bold text-white tabular-nums">
-                      {inviteCode}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(inviteCode, 'code')}
-                      className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-medium text-white inline-flex items-center gap-1.5 transition"
-                    >
-                      {copiedKey === 'code' ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                      <span>{copiedKey === 'code' ? t('invite.copied') : t('invite.copyCode')}</span>
-                    </button>
+                  <div className="text-2xl font-bold tracking-tight text-white tabular-nums">
+                    {inviteCode}
+                  </div>
+                  <div className="text-[11px] text-zinc-400">
+                    {isEn
+                      ? 'Instant login without password or bot pairing'
+                      : 'Быстрый вход без пароля и синхронизация с ботом'}
                   </div>
                 </div>
-
-                <div className="pt-2 border-t border-white/[0.06]">
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(webLoginUrl, 'web')}
-                    className="w-full h-10 px-3.5 rounded-xl bg-white text-black hover:bg-zinc-200 text-xs font-semibold inline-flex items-center justify-center gap-2 transition"
-                  >
-                    {copiedKey === 'web' ? (
-                      <>
-                        <Check className="w-4 h-4 text-emerald-600" />
-                        <span>
-                          {isEn ? 'Direct Web Login Link Copied!' : 'Прямая веб-ссылка скопирована!'}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        <span>
-                          {isEn
-                            ? 'Copy Direct Web Login Link for Employee'
-                            : 'Скопировать прямую веб-ссылку для входа сотрудника'}
-                        </span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(inviteCode, 'code')}
+                  className="h-10 px-4 rounded-xl bg-white text-black hover:bg-zinc-200 text-xs font-semibold inline-flex items-center justify-center gap-2 transition shrink-0 cursor-pointer"
+                >
+                  {copiedKey === 'code' ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      <span>{t('invite.copied')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>{isEn ? 'Copy Code' : 'Копировать код'}</span>
+                    </>
+                  )}
+                </button>
               </div>
 
-              {/* Telegram Bot Binding */}
-              <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3.5 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-white">
-                    {isEn ? 'Telegram Synchronization' : 'Привязка Telegram-бота'}
+              {/* 2 Handsome Card-Buttons in a 2-Column Grid (Zero Raw URLs) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleCopy(webLoginUrl, 'web')}
+                  className="group text-left rounded-2xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-white/20 p-3.5 transition-all flex flex-col justify-between gap-2.5 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                      {copiedKey === 'web' ? (
+                        <Check className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Link2 className="w-4 h-4" />
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-indigo-400">
+                      {copiedKey === 'web'
+                        ? t('invite.copied')
+                        : isEn
+                        ? 'Copy →'
+                        : 'Скопировать →'}
+                    </span>
                   </div>
-                  {telegramChatId ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-medium text-emerald-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      ID: {telegramChatId}
+                  <div>
+                    <div className="text-xs font-semibold text-white leading-snug">
+                      {isEn
+                        ? 'Copy Web Pass (1-Click Login)'
+                        : 'Скопировать веб-пропуск (Вход в 1 клик)'}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
+                      {isEn
+                        ? 'Direct link for PC or smartphone browser'
+                        : 'Прямая ссылка для браузера ПК или смартфона'}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleCopy(tgDeepLink || tgStartCmd, 'tg')}
+                  className="group text-left rounded-2xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-white/20 p-3.5 transition-all flex flex-col justify-between gap-2.5 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      {copiedKey === 'tg' ? (
+                        <Check className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-emerald-400">
+                      {copiedKey === 'tg'
+                        ? t('invite.copied')
+                        : telegramChatId
+                        ? `ID: ${telegramChatId}`
+                        : isEn
+                        ? '1-Click →'
+                        : 'В 1 клик →'}
                     </span>
-                  ) : (
-                    <span className="text-[11px] text-zinc-500">
-                      {isEn ? 'Not linked yet' : 'Ожидает привязки'}
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-white leading-snug">
+                      {isEn
+                        ? 'Synchronize with Telegram Bot'
+                        : 'Синхронизация с Telegram-ботом'}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
+                      {isEn
+                        ? '1-click notification & 2FA binding'
+                        : 'Привязка уведомлений в 1 клик'}
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Password & Telegram Chat ID Management (БЛОК 3) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-white/10 bg-zinc-900/60 p-3.5">
+                <div>
+                  <label className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
+                    <span className="inline-flex items-center gap-1">
+                      <Lock className="w-3 h-3 text-indigo-400" />
+                      <span>{isEn ? 'Account Password' : 'Пароль сотрудника'}</span>
                     </span>
-                  )}
+                    <span className="text-[10px] text-emerald-400">
+                      {node.has_password || node.password
+                        ? isEn
+                          ? 'Password set'
+                          : 'Установлен'
+                        : isEn
+                        ? 'Set on 1st login'
+                        : 'Не задан'}
+                    </span>
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder={
+                      isEn ? 'Set or change password...' : 'Задать или сменить пароль...'
+                    }
+                    className="w-full h-9 rounded-xl border border-white/10 bg-zinc-950 px-3 text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-zinc-400 mb-1">
-                    {isEn ? 'Telegram Chat ID (optional manual override)' : 'Telegram Chat ID сотрудника'}
+                  <label className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
+                    <span>{isEn ? 'Telegram Chat ID' : 'Telegram Chat ID сотрудника'}</span>
+                    {tgDeepLink && (
+                      <a
+                        href={tgDeepLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-sky-400 hover:text-sky-300"
+                      >
+                        <span>{isEn ? 'Open Bot' : 'Открыть бота'}</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    )}
                   </label>
                   <input
                     type="text"
                     value={telegramChatId}
                     onChange={(e) => setTelegramChatId(e.target.value)}
                     placeholder={isEn ? 'e.g. 6432521579' : 'Напр. 6432521579'}
-                    className="w-full h-10 rounded-xl border border-white/10 bg-zinc-950 px-3 text-xs text-zinc-100 tabular-nums focus:border-zinc-500 focus:outline-none"
+                    className="w-full h-9 rounded-xl border border-white/10 bg-zinc-950 px-3 text-xs text-zinc-100 tabular-nums focus:border-zinc-500 focus:outline-none"
                   />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(tgDeepLink || tgStartCmd, 'tg')}
-                    className="flex-1 h-10 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-medium text-zinc-100 inline-flex items-center justify-center gap-2 transition"
-                  >
-                    {copiedKey === 'tg' ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{t('invite.copied')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>
-                          {tgDeepLink
-                            ? isEn
-                              ? 'Copy Telegram Bot Link'
-                              : 'Скопировать ссылку привязки Telegram-бота'
-                            : isEn
-                            ? `Copy "${tgStartCmd}" Command`
-                            : `Скопировать команду ${tgStartCmd}`}
-                        </span>
-                      </>
-                    )}
-                  </button>
-                  {tgDeepLink && (
-                    <a
-                      href={tgDeepLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="h-10 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 inline-flex items-center justify-center"
-                      title="Open Telegram"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  )}
                 </div>
               </div>
 

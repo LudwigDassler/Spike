@@ -1,6 +1,6 @@
 import React from 'react';
 import { RefreshCw, Search, Cpu, Command, X, Menu, Sun, Moon } from 'lucide-react';
-import { DashboardSection, OrganizationNode, TaskRecord } from '../types/database';
+import { DashboardSection, OrganizationNode, TaskRecord, WorkShiftRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 import { WorkdayShiftWidget } from './EnterpriseB2BFeatures';
 
@@ -19,6 +19,8 @@ interface TopBarProps {
   currentProfile?: OrganizationNode | null;
   tasks?: TaskRecord[];
   onPostShiftSummary?: (summaryText: string) => Promise<void>;
+  onSyncShiftState?: (status: 'online' | 'break' | 'offline', startedAt: string | null) => Promise<void>;
+  onCreateWorkShift?: (shift: Partial<WorkShiftRecord>) => Promise<void>;
   showToast?: (msg: string) => void;
 }
 
@@ -37,6 +39,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentProfile = null,
   tasks = [],
   onPostShiftSummary,
+  onSyncShiftState,
+  onCreateWorkShift,
   showToast,
 }) => {
   const { t, language, theme, toggleTheme } = useLocale();
@@ -141,6 +145,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           currentProfile={currentProfile}
           tasks={tasks}
           onPostShiftSummary={onPostShiftSummary}
+          onSyncShiftState={onSyncShiftState}
+          onCreateWorkShift={onCreateWorkShift}
           showToast={showToast}
         />
 

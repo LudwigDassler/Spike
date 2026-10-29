@@ -756,6 +756,10 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'avatar_url',
     'department',
     'invite_code',
+    'password',
+    'otp_code',
+    'shift_status',
+    'shift_started_at',
     'access_level',
     'permissions',
     'company_id',
@@ -817,6 +821,19 @@ const ALLOWED_COLUMNS: Record<string, readonly string[]> = {
     'created_by',
     'created_at',
     'paid_at',
+  ],
+  work_shifts: [
+    'company_id',
+    'employee_id',
+    'employee_name',
+    'role_type',
+    'department',
+    'started_at',
+    'ended_at',
+    'duration_minutes',
+    'tasks_completed',
+    'summary',
+    'created_at',
   ],
   audit_logs: [
     'company_id',
@@ -1168,6 +1185,7 @@ interface InMemoryStore {
   crm_leads: Record<string, any>[];
   workspace_messages: Record<string, any>[];
   billing_invoices: Record<string, any>[];
+  work_shifts: Record<string, any>[];
   audit_logs: Record<string, any>[];
 }
 
@@ -1178,6 +1196,7 @@ const localStore: InMemoryStore = {
   crm_leads: [],
   workspace_messages: [],
   billing_invoices: [],
+  work_shifts: [],
   audit_logs: [],
 };
 
@@ -1864,6 +1883,30 @@ function normalizeNodeRow(row: any) {
       : extras?.avatar_url !== undefined
       ? extras.avatar_url
       : null;
+  const resolvedPassword =
+    row.password !== undefined
+      ? row.password
+      : extras?.password !== undefined
+      ? extras.password
+      : null;
+  const resolvedOtpCode =
+    row.otp_code !== undefined
+      ? row.otp_code
+      : extras?.otp_code !== undefined
+      ? extras.otp_code
+      : null;
+  const resolvedShiftStatus =
+    row.shift_status !== undefined
+      ? row.shift_status
+      : extras?.shift_status !== undefined
+      ? extras.shift_status
+      : 'offline';
+  const resolvedShiftStartedAt =
+    row.shift_started_at !== undefined
+      ? row.shift_started_at
+      : extras?.shift_started_at !== undefined
+      ? extras.shift_started_at
+      : null;
 
   return {
     ...row,
@@ -1877,6 +1920,11 @@ function normalizeNodeRow(row: any) {
         ? String(row.telegram_chat_id).trim()
         : null,
     invite_code: row.invite_code || `TC-${String(row.id || '0000').slice(0, 4).toUpperCase()}`,
+    password: resolvedPassword ? String(resolvedPassword) : null,
+    has_password: Boolean(resolvedPassword && String(resolvedPassword).trim().length > 0),
+    otp_code: resolvedOtpCode ? String(resolvedOtpCode) : null,
+    shift_status: resolvedShiftStatus || 'offline',
+    shift_started_at: resolvedShiftStartedAt || null,
     access_level: accessLevel,
     permissions,
     tree_path: row.tree_path || 'root',
@@ -2051,7 +2099,45 @@ function normalizeMessageRow(row: any) {
       : Array.isArray(extras?.acknowledged_by)
       ? extras.acknowledged_by
       : [],
-    created_at: merged.created_at || new Date().toISOString(),
+    created_at: (() => {
+      if (merged.created_at) return String(merged.created_at);
+      if (extras?.created_at) return String(extras.created_at);
+      const fallbackTs = new Date().toISOString();
+      if (row.id) {
+        recordExtrasOverlay.set(`workspace_messages:${row.id}`, {
+          ...(extras || {}),
+          created_at: fallbackTs,
+        });
+      }
+      return fallbackTs;
+    })(),
+  };
+}
+
+function normalizeWorkShiftRow(row: any) {
+  const extras = row.id ? recordExtrasOverlay.get(`work_shifts:${row.id}`) : undefined;
+  const merged = { ...(extras || {}), ...row };
+  const startedAt = merged.started_at || merged.created_at || new Date().toISOString();
+  const endedAt = merged.ended_at || merged.created_at || new Date().toISOString();
+  let durationMinutes = Number(merged.duration_minutes ?? 0);
+  if ((!Number.isFinite(durationMinutes) || durationMinutes <= 0) && startedAt && endedAt) {
+    const diffMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+    if (Number.isFinite(diffMs) && diffMs > 0) {
+      durationMinutes = Math.max(1, Math.round(diffMs / 60000));
+    }
+  }
+  return {
+    ...merged,
+    employee_id: String(merged.employee_id || ''),
+    employee_name: merged.employee_name || 'Сотрудник',
+    role_type: merged.role_type || 'Специалист',
+    department: merged.department || null,
+    started_at: startedAt,
+    ended_at: endedAt,
+    duration_minutes: Math.max(1, durationMinutes || 1),
+    tasks_completed: Number(merged.tasks_completed ?? 0),
+    summary: merged.summary || null,
+    created_at: merged.created_at || endedAt || startedAt,
   };
 }
 
@@ -2201,6 +2287,7 @@ export default async function handler(req: any, res: any) {
             leads: [],
             messages: [],
             invoices: [],
+            workShifts: [],
             auditLogs: [],
           });
         }
@@ -2231,6 +2318,9 @@ export default async function handler(req: any, res: any) {
         const companyInvoices = localStore.billing_invoices
           .map(normalizeInvoiceRow)
           .filter((inv) => String(inv.company_id || '') === String(activeCompanyId));
+        const companyWorkShifts = localStore.work_shifts
+          .map(normalizeWorkShiftRow)
+          .filter((ws) => String(ws.company_id || '') === String(activeCompanyId));
         const companyAuditLogs = localStore.audit_logs
           .map(normalizeAuditLogRow)
           .filter((log) => String(log.company_id || '') === String(activeCompanyId))
@@ -2247,6 +2337,7 @@ export default async function handler(req: any, res: any) {
           leads: companyLeads,
           messages: companyMessages,
           invoices: companyInvoices,
+          workShifts: companyWorkShifts,
           auditLogs: companyAuditLogs,
         });
       }
@@ -2258,6 +2349,7 @@ export default async function handler(req: any, res: any) {
         leadsData,
         messagesData,
         invoicesData,
+        workShiftsData,
         auditLogsData,
       ] = await Promise.all([
         safeSelect(supabase, 'companies', (q) => q.order('created_at', { ascending: false }).limit(100)),
@@ -2266,6 +2358,7 @@ export default async function handler(req: any, res: any) {
         safeSelect(supabase, 'crm_leads', (q) => q.order('created_at', { ascending: false })),
         safeSelect(supabase, 'workspace_messages', (q) => q.order('created_at', { ascending: false }).limit(300)),
         safeSelect(supabase, 'billing_invoices', (q) => q.order('created_at', { ascending: false }).limit(100)),
+        safeSelect(supabase, 'work_shifts', (q) => q.order('created_at', { ascending: false }).limit(200)),
         safeSelect(supabase, 'audit_logs', (q) => q.order('created_at', { ascending: false }).limit(100)),
       ]);
 
@@ -2305,6 +2398,7 @@ export default async function handler(req: any, res: any) {
           leads: [],
           messages: [],
           invoices: [],
+          workShifts: [],
           auditLogs: [],
         });
       }
@@ -2367,6 +2461,33 @@ export default async function handler(req: any, res: any) {
         }
       }
 
+      // Merge remote work_shifts with in-memory fallback shifts strictly for activeCompanyId
+      const remoteShifts = Array.isArray(workShiftsData) ? workShiftsData : [];
+      const seenShiftIds = new Set<string>();
+      const mergedWorkShifts: any[] = [];
+      for (const ws of [...remoteShifts, ...localStore.work_shifts]) {
+        if (ws && ws.id && !seenShiftIds.has(ws.id)) {
+          seenShiftIds.add(ws.id);
+          const norm = normalizeWorkShiftRow(ws);
+          if (String(norm.company_id || '') === String(activeCompanyId)) {
+            const empNode = companyNodes.find(
+              (n: any) => String(n.id) === String(norm.employee_id)
+            );
+            mergedWorkShifts.push({
+              ...norm,
+              employee_name: empNode?.name || norm.employee_name || 'Сотрудник',
+              role_type: empNode?.role_type || norm.role_type || 'Специалист',
+              department: empNode?.department || norm.department || null,
+            });
+          }
+        }
+      }
+      mergedWorkShifts.sort((a, b) => {
+        const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return (Number.isNaN(tB) ? 0 : tB) - (Number.isNaN(tA) ? 0 : tA);
+      });
+
       // Merge remote audit_logs with in-memory fallback audit logs strictly for activeCompanyId
       const remoteAudits = Array.isArray(auditLogsData) ? auditLogsData : [];
       const seenAuditIds = new Set<string>();
@@ -2392,6 +2513,7 @@ export default async function handler(req: any, res: any) {
         leads: companyLeads,
         messages: mergedMessages,
         invoices: mergedInvoices,
+        workShifts: mergedWorkShifts,
         auditLogs: mergedAuditLogs.slice(0, 60),
       });
     }
@@ -3078,9 +3200,166 @@ ${builtInResult.reply}
         });
       }
 
-      // Универсальный вход сотрудника по любому из 5 идентификаторов (Telegram ID, Invite Code, Email, UUID, ФИО)
+      // БЛОК 3: Отправка одноразового кода подтверждения (2FA OTP) в Telegram-бот
+      if (body.action === 'send_telegram_otp') {
+        const q = String(body.input || body.telegram_chat_id || '').trim().toLowerCase();
+        if (!q) {
+          return res.status(400).json({ error: 'Введите ваш Telegram ID или ФИО.' });
+        }
+
+        let nodes: any[] = [];
+        if (!supabase) {
+          nodes = localStore.organization_nodes.map(normalizeNodeRow);
+        } else {
+          const nodesRes = await safeSelectTable(supabase, 'organization_nodes', true);
+          nodes = (nodesRes.data || []).map(normalizeNodeRow);
+        }
+
+        const matched = findMatchingNodeByInput(nodes, q);
+        if (!matched) {
+          return res.status(404).json({
+            error: 'Профиль сотрудника с таким Telegram ID не найден в системе.',
+          });
+        }
+        const tgChatId = String(matched.telegram_chat_id || '').trim();
+        if (!tgChatId) {
+          return res.status(400).json({
+            error:
+              'У данного сотрудника еще не привязан Telegram ID. Сначала войдите по инвайт-коду TC-XXXX и синхронизируйте бота.',
+          });
+        }
+
+        const otpCode = String(Math.floor(1000 + Math.random() * 9000));
+        const prevExtras = recordExtrasOverlay.get(`organization_nodes:${matched.id}`) || {};
+        recordExtrasOverlay.set(`organization_nodes:${matched.id}`, {
+          ...prevExtras,
+          otp_code: otpCode,
+        });
+
+        const localIdx = localStore.organization_nodes.findIndex((n) => n.id === matched.id);
+        if (localIdx !== -1) {
+          localStore.organization_nodes[localIdx] = {
+            ...localStore.organization_nodes[localIdx],
+            otp_code: otpCode,
+          };
+        }
+        if (supabase) {
+          await safeSupabaseUpdate(supabase, 'organization_nodes', matched.id, {
+            otp_code: otpCode,
+          });
+        }
+
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        let sentViaTelegram = false;
+        if (botToken) {
+          try {
+            const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: tgChatId,
+                text: `🔐 Код подтверждения входа в TedCloud: <b>${otpCode}</b>\n\nСотрудник: ${escapeHtml(
+                  matched.name
+                )}`,
+                parse_mode: 'HTML',
+              }),
+            });
+            sentViaTelegram = tgRes.ok;
+          } catch (err) {
+            console.warn('[API /api/db] Failed to send Telegram OTP:', err);
+          }
+        }
+
+        return res.status(200).json({
+          ok: true,
+          sent: sentViaTelegram,
+          employeeName: matched.name,
+          demoOtpHint: !botToken ? otpCode : undefined,
+        });
+      }
+
+      // БЛОК 3: Проверка одноразового кода (2FA OTP) из Telegram-бота
+      if (body.action === 'verify_telegram_otp') {
+        const q = String(body.input || body.telegram_chat_id || '').trim().toLowerCase();
+        const code = String(body.otp_code || body.code || '').trim();
+        if (!q || !code) {
+          return res.status(400).json({ error: 'Введите Telegram ID и 4-значный код из бота.' });
+        }
+
+        let nodes: any[] = [];
+        let companies: any[] = [];
+        if (!supabase) {
+          nodes = localStore.organization_nodes.map(normalizeNodeRow);
+          companies = localStore.companies.map(normalizeCompanyRow);
+        } else {
+          const [nodesRes, companiesRes] = await Promise.all([
+            safeSelectTable(supabase, 'organization_nodes', true),
+            safeSelectTable(supabase, 'companies', false, 100),
+          ]);
+          nodes = (nodesRes.data || []).map(normalizeNodeRow);
+          companies = (companiesRes.data || []).map(normalizeCompanyRow);
+        }
+
+        const matched = findMatchingNodeByInput(nodes, q);
+        if (!matched) {
+          return res.status(404).json({ error: 'Профиль сотрудника не найден.' });
+        }
+
+        const expectedOtp = String(matched.otp_code || '').trim();
+        if (!expectedOtp || expectedOtp !== code) {
+          return res.status(401).json({
+            error: 'Неверный или истекший код подтверждения. Запросите новый код в Telegram.',
+          });
+        }
+
+        // Очищаем otp_code после успешного входа
+        const prevExtras = recordExtrasOverlay.get(`organization_nodes:${matched.id}`) || {};
+        recordExtrasOverlay.set(`organization_nodes:${matched.id}`, {
+          ...prevExtras,
+          otp_code: null,
+        });
+        const localIdx = localStore.organization_nodes.findIndex((n) => n.id === matched.id);
+        if (localIdx !== -1) {
+          localStore.organization_nodes[localIdx] = {
+            ...localStore.organization_nodes[localIdx],
+            otp_code: null,
+          };
+        }
+        if (supabase) {
+          await safeSupabaseUpdate(supabase, 'organization_nodes', matched.id, {
+            otp_code: null,
+          });
+        }
+
+        let company =
+          companies.find((c: any) => String(c?.id) === String(matched.company_id)) || null;
+        if (!company && matched.company_id && supabase) {
+          const { data: matchedCompany } = await supabase
+            .from('companies')
+            .select('*')
+            .eq('id', matched.company_id)
+            .maybeSingle();
+          if (matchedCompany) {
+            company = normalizeCompanyRow(matchedCompany);
+          }
+        }
+
+        return res.status(200).json({
+          ok: true,
+          profile: { ...matched, otp_code: null },
+          company,
+        });
+      }
+
+      // Универсальный многоуровневый вход сотрудника (БЛОК 3: Инвайт TC-XXXX без пароля | Логин + Пароль | Telegram ID + Пароль)
       if (body.action === 'login') {
         const q = String(body.input || body.identifier || '').trim().toLowerCase();
+        const loginMode = String(body.loginMode || '').trim().toLowerCase();
+        const rawPassword =
+          body.password !== undefined && body.password !== null
+            ? String(body.password).trim()
+            : '';
+
         if (!q) {
           return res.status(400).json({ error: 'Введите идентификатор для входа.' });
         }
@@ -3103,13 +3382,52 @@ ${builtInResult.reply}
           companies = (companiesRes.data || []).map(normalizeCompanyRow);
         }
 
-        const matched = findMatchingNodeByInput(nodes, q);
+        let matched = findMatchingNodeByInput(nodes, q);
 
         if (!matched) {
           return res.status(404).json({
             error:
               'Профиль сотрудника не найден. Проверьте персональный код доступа (TC-XXXX), корпоративный Email, ФИО или Telegram ID.',
           });
+        }
+
+        // Если выбран режим входа по Логину (Email / ФИО) + Пароль или по Telegram ID + Пароль:
+        if (loginMode === 'credentials' || (loginMode === 'telegram' && rawPassword)) {
+          if (!rawPassword) {
+            return res.status(400).json({
+              error: 'Введите пароль сотрудника для входа.',
+            });
+          }
+
+          const storedPassword = matched.password ? String(matched.password).trim() : '';
+          if (storedPassword) {
+            if (storedPassword !== rawPassword) {
+              return res.status(401).json({
+                error:
+                  'Неверный пароль сотрудника. Проверьте раскладку или используйте вход по инвайт-коду TC-XXXX.',
+              });
+            }
+          } else {
+            // Первый вход: сохраняем введенный пароль как постоянный пароль сотрудника в БД!
+            const prevExtras = recordExtrasOverlay.get(`organization_nodes:${matched.id}`) || {};
+            recordExtrasOverlay.set(`organization_nodes:${matched.id}`, {
+              ...prevExtras,
+              password: rawPassword,
+            });
+            const localIdx = localStore.organization_nodes.findIndex((n) => n.id === matched.id);
+            if (localIdx !== -1) {
+              localStore.organization_nodes[localIdx] = {
+                ...localStore.organization_nodes[localIdx],
+                password: rawPassword,
+              };
+            }
+            if (supabase) {
+              await safeSupabaseUpdate(supabase, 'organization_nodes', matched.id, {
+                password: rawPassword,
+              });
+            }
+            matched = normalizeNodeRow({ ...matched, password: rawPassword });
+          }
         }
 
         let company =
@@ -3915,6 +4233,65 @@ ${builtInResult.reply}
         });
       }
 
+      if (table === 'work_shifts') {
+        const targetCompanyId =
+          payload.company_id || (await resolveDefaultCompanyId(supabase));
+        const startedAt = payload.started_at || new Date().toISOString();
+        const endedAt = payload.ended_at || new Date().toISOString();
+        const durationMinutes = Math.max(1, Number(payload.duration_minutes ?? 1));
+        const tasksCompleted = Math.max(0, Number(payload.tasks_completed ?? 0));
+        const rawShiftPayload: Record<string, any> = {
+          company_id: targetCompanyId,
+          employee_id: payload.employee_id || null,
+          employee_name: payload.employee_name || 'Сотрудник',
+          role_type: payload.role_type || 'Специалист',
+          department: payload.department || null,
+          started_at: startedAt,
+          ended_at: endedAt,
+          duration_minutes: durationMinutes,
+          tasks_completed: tasksCompleted,
+          summary: payload.summary || null,
+          created_at: payload.created_at || endedAt,
+        };
+
+        let savedShift: any = {
+          id: crypto.randomUUID(),
+          ...rawShiftPayload,
+        };
+
+        if (supabase) {
+          const { data, error } = await safeSupabaseInsert(
+            supabase,
+            'work_shifts',
+            rawShiftPayload
+          );
+          if (!error && data) {
+            savedShift = { ...rawShiftPayload, ...data };
+          }
+        }
+
+        if (savedShift?.id) {
+          recordExtrasOverlay.set(`work_shifts:${savedShift.id}`, rawShiftPayload);
+        }
+        localStore.work_shifts.unshift(savedShift);
+
+        await recordAuditLog({
+          supabase,
+          companyId: targetCompanyId,
+          actorId: payload.employee_id || null,
+          actorName: payload.employee_name || 'Сотрудник',
+          actionType: 'WORK_SHIFT_COMPLETED',
+          entityType: 'work_shifts',
+          entityId: savedShift.id,
+          details: `Завершена рабочая смена (${durationMinutes} мин., закрыто задач: ${tasksCompleted})`,
+        });
+
+        return res.status(200).json({
+          ok: true,
+          data: normalizeWorkShiftRow(savedShift),
+        });
+      }
+
       return res.status(400).json({ error: `Неизвестная таблица: ${table}` });
     }
 
@@ -4308,6 +4685,22 @@ ${builtInResult.reply}
         if (updates.invite_code !== undefined) {
           rawUpdates.invite_code = String(updates.invite_code).trim().toUpperCase();
         }
+        if (updates.password !== undefined) {
+          rawUpdates.password = updates.password ? String(updates.password).trim() : null;
+        }
+        if (updates.otp_code !== undefined) {
+          rawUpdates.otp_code = updates.otp_code ? String(updates.otp_code).trim() : null;
+        }
+        if (updates.shift_status !== undefined) {
+          rawUpdates.shift_status = updates.shift_status
+            ? String(updates.shift_status).trim()
+            : 'offline';
+        }
+        if (updates.shift_started_at !== undefined) {
+          rawUpdates.shift_started_at = updates.shift_started_at
+            ? String(updates.shift_started_at).trim()
+            : null;
+        }
         if (updates.access_level !== undefined) {
           rawUpdates.access_level = normalizeAccessLevel(updates.access_level, updates.role_type);
         }
@@ -4318,6 +4711,12 @@ ${builtInResult.reply}
         if (updates.tree_path !== undefined) {
           rawUpdates.tree_path = updates.tree_path;
         }
+
+        const prevNodeExtras = recordExtrasOverlay.get(`organization_nodes:${id}`) || {};
+        recordExtrasOverlay.set(`organization_nodes:${id}`, {
+          ...prevNodeExtras,
+          ...rawUpdates,
+        });
 
         if (!supabase) {
           const idx = localStore.organization_nodes.findIndex((n) => n.id === id);

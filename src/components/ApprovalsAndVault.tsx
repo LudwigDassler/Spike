@@ -1031,13 +1031,15 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
                     <ShieldCheck className="w-4 h-4 text-indigo-400" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold text-white truncate">{loc.title}</div>
-                    <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-[#8E8E93]">
-                      <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-zinc-300">
+                    <div className="text-xs font-semibold text-white line-clamp-2 leading-snug">{loc.title}</div>
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[11px] text-[#8E8E93]">
+                      <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-zinc-300 shrink-0">
                         {loc.category}
                       </span>
-                      <span className="tabular-nums">{formatAttachmentSize(pb.size)}</span>
-                      {loc.pinnedBy && <span>· {loc.pinnedBy}</span>}
+                      <span className="tabular-nums whitespace-nowrap">
+                        {formatAttachmentSize(pb.size)}
+                        {loc.pinnedBy ? ` · ${loc.pinnedBy}` : ''}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1146,19 +1148,21 @@ export const SmartDocumentVault: React.FC<SmartDocumentVaultProps> = ({
                   }`}
                 >
                   <span>{tab.label}</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded tabular-nums ${
-                      active
-                        ? isLight
-                          ? 'bg-white/20 text-white'
-                          : 'bg-black/15 text-black'
-                        : isLight
-                        ? 'bg-slate-100 text-slate-600'
-                        : 'bg-white/[0.06] text-zinc-400'
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
+                  {tab.count > 0 && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded tabular-nums ${
+                        active
+                          ? isLight
+                            ? 'bg-white/20 text-white'
+                            : 'bg-black/15 text-black'
+                          : isLight
+                          ? 'bg-slate-100 text-slate-600'
+                          : 'bg-white/[0.06] text-zinc-400'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
                 </button>
               );
             })}
