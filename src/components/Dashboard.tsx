@@ -6694,6 +6694,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <AuthGate
             existingNodes={safeNodes}
             nodes={safeNodes}
+            tasks={visibleTasks}
+            leads={visibleLeads}
             existingCompany={company}
             company={company}
             currentUser={currentProfile}

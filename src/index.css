@@ -53,9 +53,13 @@
     );
   }
 
+  *,
+  .font-mono,
   code,
-  pre {
-    font-family: var(--font-sans);
+  kbd,
+  pre,
+  samp {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
     font-variant-numeric: tabular-nums;
   }
 }
@@ -706,8 +710,12 @@ body.theme-light,
 }
 
 .theme-light [data-surface="marketing"] .bg-\[\#060609\],
-.theme-light [data-surface="marketing"] .bg-\[\#07080c\] {
-  background-color: #07080c !important;
+.theme-light [data-surface="marketing"] .bg-\[\#07080c\],
+.theme-light [data-surface="marketing"] .bg-\[\#090a0f\],
+.theme-light [data-surface="marketing"] .bg-\[\#090a0f\]\/90,
+.theme-light [data-surface="marketing"] .bg-\[\#090a10\]\/90 {
+  background-color: #090a0f !important;
+  color: #f4f4f5 !important;
 }
 
 .theme-light [data-surface="marketing"] .bg-\[\#0A0A0F\],
@@ -721,8 +729,12 @@ body.theme-light,
 .theme-light [data-surface="marketing"] .bg-zinc-900,
 .theme-light [data-surface="marketing"] .bg-zinc-900\/60,
 .theme-light [data-surface="marketing"] .bg-zinc-900\/70,
-.theme-light [data-surface="marketing"] .bg-zinc-900\/80 {
-  background-color: rgba(24, 24, 27, 0.68) !important;
+.theme-light [data-surface="marketing"] .bg-zinc-900\/80,
+.theme-light [data-surface="marketing"] .bg-zinc-950,
+.theme-light [data-surface="marketing"] .bg-zinc-950\/60,
+.theme-light [data-surface="marketing"] .bg-zinc-950\/70,
+.theme-light [data-surface="marketing"] .bg-zinc-950\/80 {
+  background-color: rgba(24, 24, 27, 0.72) !important;
   color: #f4f4f5 !important;
 }
 
@@ -732,7 +744,17 @@ body.theme-light,
 .theme-light [data-surface="marketing"] .bg-white\/\[0\.05\],
 .theme-light [data-surface="marketing"] .bg-white\/\[0\.06\],
 .theme-light [data-surface="marketing"] .bg-white\/\[0\.08\] {
-  background-color: rgba(255, 255, 255, 0.05) !important;
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.theme-light [data-surface="marketing"] input:not([type="range"]):not([type="checkbox"]) {
+  background-color: rgba(15, 17, 26, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+.theme-light [data-surface="marketing"] input::placeholder {
+  color: #71717a !important;
 }
 
 .theme-light [data-surface="marketing"] button.bg-white.text-black {
@@ -740,5 +762,6 @@ body.theme-light,
   color: #09090b !important;
   border-color: #ffffff !important;
 }
+
 
 

@@ -777,7 +777,11 @@ function AppContent() {
     return (
       <AuthGate
         existingNodes={nodes}
+        nodes={nodes}
+        tasks={tasks}
+        leads={leads}
         existingCompany={company}
+        company={company}
         onAuthenticated={handleAuthenticated}
       />
     );

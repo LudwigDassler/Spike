@@ -35,90 +35,86 @@ export interface TeddyAvatarProps {
 }
 
 /**
- * Clean geometric SVG emblem for Teddy Executive AI Assistant
+ * Swiss-minimalist faceted geometric monolith emblem with stylized architectural T
+ * inside a multi-layered glass sphere (Rule 4)
  */
 export const TeddyAvatar: React.FC<TeddyAvatarProps> = ({ size = 'md', className = '' }) => {
   const dims =
     size === 'xs'
-      ? 'w-5 h-5'
+      ? 'w-5 h-5 rounded-lg'
       : size === 'sm'
-      ? 'w-7 h-7'
+      ? 'w-7 h-7 rounded-xl'
       : size === 'lg'
-      ? 'w-11 h-11'
-      : 'w-9 h-9';
+      ? 'w-11 h-11 rounded-2xl'
+      : 'w-9 h-9 rounded-xl';
 
   return (
     <div
-      className={`${dims} rounded-xl bg-gradient-to-br from-indigo-500/20 via-violet-500/15 to-zinc-900 border border-indigo-400/35 flex items-center justify-center shrink-0 shadow-xs ${className}`}
+      className={`${dims} relative overflow-hidden bg-gradient-to-b from-white/[0.14] via-indigo-500/[0.12] to-zinc-950/90 border border-white/[0.18] shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_4px_16px_rgba(99,102,241,0.22)] flex items-center justify-center shrink-0 ${className}`}
       title="Teddy · Executive AI Assistant"
     >
       <svg
         viewBox="0 0 36 36"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="w-[74%] h-[74%]"
+        className="w-[76%] h-[76%]"
       >
-        {/* Geometric ears */}
-        <circle
-          cx="9.5"
-          cy="10"
-          r="4.2"
-          fill="#18181B"
-          stroke="#818CF8"
-          strokeWidth="1.6"
-        />
-        <circle cx="9.5" cy="10" r="1.8" fill="#6366F1" fillOpacity="0.45" />
-        <circle
-          cx="26.5"
-          cy="10"
-          r="4.2"
-          fill="#18181B"
-          stroke="#818CF8"
-          strokeWidth="1.6"
-        />
-        <circle cx="26.5" cy="10" r="1.8" fill="#6366F1" fillOpacity="0.45" />
+        <defs>
+          <linearGradient id="tcMonolithOuter" x1="6" y1="4" x2="30" y2="32" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#E0E7FF" stopOpacity="0.95" />
+            <stop offset="50%" stopColor="#818CF8" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="#4338CA" stopOpacity="0.9" />
+          </linearGradient>
+          <linearGradient id="tcMonolithFacet" x1="18" y1="5" x2="29" y2="28" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#6366F1" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#1E1B4B" stopOpacity="0.85" />
+          </linearGradient>
+        </defs>
 
-        {/* Geometric faceted head */}
-        <rect
-          x="7.5"
-          y="9.5"
-          width="21"
-          height="19.5"
-          rx="7.5"
-          fill="#0F0F13"
-          stroke="#E4E4E7"
-          strokeWidth="1.6"
+        {/* Outer Isometric Hexagonal Crystal Monolith */}
+        <polygon
+          points="18,3.5 30.5,10.5 30.5,25.5 18,32.5 5.5,25.5 5.5,10.5"
+          fill="#0B0C14"
+          stroke="url(#tcMonolithOuter)"
+          strokeWidth="1.5"
         />
 
-        {/* Monocle lens on right eye */}
-        <circle
-          cx="22"
-          cy="17.5"
-          r="3.8"
-          fill="#312E81"
-          fillOpacity="0.45"
+        {/* Right Shaded Crystal Facet */}
+        <polygon
+          points="18,3.5 30.5,10.5 30.5,25.5 18,32.5"
+          fill="url(#tcMonolithFacet)"
+        />
+
+        {/* Internal Geometric Wireframe Lines */}
+        <line
+          x1="5.5"
+          y1="10.5"
+          x2="30.5"
+          y2="10.5"
           stroke="#A5B4FC"
-          strokeWidth="1.4"
+          strokeOpacity="0.3"
+          strokeWidth="1"
         />
-        <line x1="25.8" y1="18.5" x2="28.2" y2="23" stroke="#818CF8" strokeWidth="1.2" />
-
-        {/* Eyes */}
-        <circle cx="14" cy="17.5" r="1.6" fill="#F4F4F5" />
-        <circle cx="22" cy="17.5" r="1.5" fill="#A5B4FC" />
-
-        {/* Muzzle */}
-        <rect
-          x="13.5"
-          y="20.5"
-          width="9"
-          height="5.5"
-          rx="2.75"
-          fill="#18181F"
-          stroke="#52525B"
-          strokeWidth="1.1"
+        <line
+          x1="18"
+          y1="3.5"
+          x2="18"
+          y2="32.5"
+          stroke="#C7D2FE"
+          strokeOpacity="0.28"
+          strokeWidth="1"
         />
+
+        {/* Architectural Stylized 'T' Monolith Core */}
         <path
-          d="M16.6 22.3H19.4L18 24.1L16.6 22.3Z"
+          d="M11 12.2H25V15.4H19.7V25.5H16.3V15.4H11V12.2Z"
+          fill="#FFFFFF"
+        />
+        <rect
+          x="16.3"
+          y="12.2"
+          width="3.4"
+          height="3.2"
           fill="#818CF8"
         />
       </svg>
