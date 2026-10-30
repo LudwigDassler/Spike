@@ -14,6 +14,7 @@ import {
   Clock,
   PanelLeftClose,
   PanelLeftOpen,
+  Layers,
 } from 'lucide-react';
 import {
   DashboardSection,
@@ -36,6 +37,7 @@ interface SidebarProps {
     messages: number;
   };
   onRequestSignOut?: () => void;
+  onOpenProductShowcase?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -44,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentProfile,
   counts,
   onRequestSignOut,
+  onOpenProductShowcase,
 }) => {
   const { language, setLanguage, theme, toggleTheme, t, formatRole } = useLocale();
   const isEn = language === 'en';
@@ -139,29 +142,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       className={`hidden lg:flex ${
-        isSidebarCollapsed ? 'w-[60px]' : 'w-52'
-      } shrink-0 bg-[#070709] border-r border-white/[0.05] flex-col justify-between min-h-screen select-none overflow-hidden transition-all duration-200`}
+        isSidebarCollapsed ? 'w-[60px]' : 'w-56'
+      } shrink-0 bg-[#0b0d13] border-r border-white/[0.06] flex-col justify-between min-h-screen select-none overflow-hidden transition-all duration-200`}
     >
       <div>
         {/* Brand Header with Collapse Toggle */}
         <div
           className={`h-14 ${
             isSidebarCollapsed ? 'px-2 justify-center' : 'px-3.5 justify-between'
-          } flex items-center border-b border-white/[0.04]`}
+          } flex items-center border-b border-white/[0.05]`}
         >
           {!isSidebarCollapsed && (
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white to-zinc-200 text-zinc-950 flex items-center justify-center font-bold text-xs tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.9)] shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm shrink-0">
                 TC
               </div>
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-sm font-semibold text-white tracking-tight truncate">
-                  TedCloud
-                </span>
-                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-white/[0.04] text-[#8E8E93] border border-white/[0.07] shrink-0">
-                  B2B
-                </span>
-              </div>
+              <span className="text-sm font-semibold text-white tracking-tight truncate">
+                TedCloud
+              </span>
             </div>
           )}
 
@@ -216,26 +214,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 } text-xs transition-all duration-150 cursor-pointer ${
                   isActive
                     ? isLight
-                      ? 'tc-nav-active-light bg-slate-900 text-white font-medium rounded-xl shadow-sm'
-                      : 'bg-white/[0.08] text-white font-medium rounded-xl'
+                      ? 'tc-nav-active-light bg-indigo-600/[0.09] text-indigo-700 font-semibold border border-indigo-500/20 shadow-2xs rounded-xl'
+                      : 'bg-indigo-500/15 text-white font-semibold border border-indigo-500/25 rounded-xl'
                     : 'rounded-xl text-[#8E8E93] font-medium hover:text-zinc-200 hover:bg-white/[0.04]'
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Icon
                     className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive ? 'tc-nav-active-icon text-white' : 'text-[#71717A]'
+                      isActive
+                        ? isLight
+                          ? 'tc-nav-active-icon text-indigo-600'
+                          : 'tc-nav-active-icon text-indigo-400'
+                        : 'text-[#71717A]'
                     }`}
                   />
                   {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                 </div>
                 {!isSidebarCollapsed && hasPositiveBadge && (
                   <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-md tabular-nums font-medium shrink-0 ${
+                    className={`text-[10px] px-1.5 py-0.5 rounded-md tabular-nums font-semibold shrink-0 ${
                       isActive
                         ? isLight
-                          ? 'bg-white/20 text-white'
-                          : 'bg-white/[0.12] text-white'
+                          ? 'bg-indigo-600/15 text-indigo-700'
+                          : 'bg-indigo-500/25 text-indigo-200'
                         : 'text-[#71717A]'
                     }`}
                   >
@@ -251,8 +253,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      {/* Bottom Profile + Sleek Control Bar */}
+      {/* Bottom Profile + Product Showcase Trigger + Sleek Control Bar */}
       <div className="p-2.5 pb-3 shrink-0 space-y-2 border-t border-white/[0.05]">
+        {onOpenProductShowcase && (
+          <button
+            type="button"
+            onClick={onOpenProductShowcase}
+            title={isEn ? 'Platform Overview & Pricing' : 'О платформе и Тарифы (Витрина)'}
+            className={`w-full flex items-center ${
+              isSidebarCollapsed ? 'justify-center px-0 py-2' : 'justify-between px-2.5 py-2'
+            } rounded-xl border border-indigo-500/20 bg-indigo-500/[0.07] hover:bg-indigo-500/[0.14] text-indigo-300 text-xs font-medium transition-colors cursor-pointer`}
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              {!isSidebarCollapsed && (
+                <span className="truncate">
+                  {isEn ? 'Platform & Pricing' : 'О платформе и Тарифы'}
+                </span>
+              )}
+            </span>
+          </button>
+        )}
+
         {currentProfile ? (
           <button
             type="button"

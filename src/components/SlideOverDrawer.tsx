@@ -40,6 +40,7 @@ import {
   PendingAttachmentsStrip,
   processFilesToAttachments,
 } from './AttachmentSystem';
+import { UserAvatar } from './UserAvatar';
 
 export type DrawerTarget =
   | { type: 'task'; record: TaskRecord }
@@ -49,6 +50,7 @@ export type DrawerTarget =
 interface SlideOverDrawerProps {
   target: DrawerTarget;
   nodes: OrganizationNode[];
+  leads?: CrmLeadRecord[];
   departments?: string[];
   messages?: WorkspaceMessageRecord[];
   currentProfile?: OrganizationNode | null;
@@ -62,11 +64,13 @@ interface SlideOverDrawerProps {
     updates: Record<string, any>
   ) => Promise<void>;
   onSendMessage?: (payload: Record<string, any>) => Promise<void>;
+  onDeleteTask?: (taskId: string) => Promise<void> | void;
 }
 
 export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   target,
   nodes,
+  leads = [],
   departments = [],
   messages = [],
   currentProfile,
@@ -76,6 +80,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   onClose,
   onPatchRecord,
   onSendMessage,
+  onDeleteTask,
 }) => {
   const { t, language, formatRole, formatMoney } = useLocale();
   const isEn = language === 'en';
@@ -105,6 +110,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   const commentFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const safeNodes = Array.isArray(nodes) ? nodes : [];
+  const safeLeads = Array.isArray(leads) ? leads : [];
   const safeDepartments = Array.isArray(departments) ? departments : [];
   const safeMessages = Array.isArray(messages) ? messages : [];
 
@@ -362,6 +368,626 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   const doneCount = checklist.filter((c) => c.done).length;
   const totalCount = checklist.length;
   const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+  // =========================================================================
+  // CENTRAL 2-COLUMN ISSUE MODAL FOR TASKS (Linear / Jira Issue Modal Standard)
+  // =========================================================================
+  if (isTask) {
+    const taskRec = record as TaskRecord;
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-6 font-sans"
+        role="dialog"
+        aria-modal="true"
+        onClick={onClose}
+      >
+        <div
+          className="max-w-4xl w-full rounded-2xl border border-white/10 bg-[#12151e] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Top Modal Header */}
+          <div className="px-6 py-4 border-b border-white/[0.07] flex items-center justify-between bg-[#141824] shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                <CheckSquare className="w-4 h-4 text-indigo-400" />
+              </div>
+              <span className="text-xs font-semibold text-white tracking-tight truncate">
+                {t('drawer.taskHeader')}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-white/[0.06] text-[10px] font-semibold text-[#8E8E93] tabular-nums">
+                #{String(taskRec.id || '').slice(0, 6).toUpperCase()}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t('drawer.close')}
+              className="p-1.5 rounded-lg text-[#8E8E93] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* 2-Column Body: Left Main Column (65%) + Right Properties Sidebar (35%) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+            {/* LEFT MAIN COLUMN (65% width / 8 cols) */}
+            <div className="lg:col-span-8 p-6 space-y-6 lg:overflow-y-auto no-scrollbar">
+              {/* 1. Large Editable Task Title */}
+              <div>
+                {canEditTasks ? (
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
+                      {isEn ? 'Task Title (click to edit)' : 'Название поручения (редактируемое)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={taskTitleDraft}
+                      onChange={(e) => setTaskTitleDraft(e.target.value)}
+                      onBlur={() => {
+                        const clean = taskTitleDraft.trim();
+                        if (clean && clean !== taskRec.title) {
+                          void onPatchRecord('tasks', taskRec.id, { title: clean });
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className="w-full rounded-xl border border-white/10 bg-[#181c28] px-3.5 py-2.5 text-base font-semibold text-white focus:border-indigo-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                ) : (
+                  <h2 className="text-lg font-bold text-white leading-snug">{taskRec.title}</h2>
+                )}
+              </div>
+
+              {/* 2. Description / Working Notes */}
+              <form onSubmit={handleSaveNotes} className="space-y-2.5">
+                <label className="flex items-center gap-2 text-xs font-semibold text-white">
+                  <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>{t('drawer.notesLabel')}</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={!canEditTasks}
+                  placeholder={t('drawer.notesPlaceholder')}
+                  className="w-full rounded-xl border border-white/10 bg-[#181c28] p-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none leading-relaxed disabled:opacity-60"
+                />
+                {canEditTasks && (
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      className="tc-btn-primary inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      <span>{t('drawer.saveNotesBtn')}</span>
+                    </button>
+                  </div>
+                )}
+              </form>
+
+              {/* 3. Interactive Subtask Checklist & AI Decomposition */}
+              <div className="rounded-xl border border-white/[0.08] bg-[#181c28] p-4 space-y-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-semibold text-white">
+                      {isEn
+                        ? 'Checklist & AI Decomposition'
+                        : 'Чек-лист и ИИ-декомпозиция'}{' '}
+                      ({doneCount}/{totalCount})
+                    </span>
+                  </div>
+
+                  {canEditTasks && (
+                    <button
+                      type="button"
+                      disabled={isDecomposing}
+                      onClick={() => void handleAiDecomposeTask()}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 transition-colors cursor-pointer"
+                    >
+                      {isDecomposing ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Cpu className="w-3 h-3 text-indigo-400" />
+                      )}
+                      <span>
+                        {isEn
+                          ? 'Break into steps with TedCloud Intelligence'
+                          : 'Разбить на шаги с TedCloud Intelligence'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {totalCount > 0 && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500 transition-all duration-300"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-[#8E8E93] tabular-nums">
+                      <span>
+                        {isEn ? `Completed: ${progressPercent}%` : `Выполнено: ${progressPercent}%`}
+                      </span>
+                      <span>
+                        {isEn ? `${doneCount} of ${totalCount}` : `${doneCount} из ${totalCount}`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {aiSummary && (
+                  <div className="rounded-lg border border-white/10 bg-[#12151e] px-3 py-2 text-[11px] text-zinc-200 leading-relaxed">
+                    <strong className="text-indigo-400">TedCloud Intelligence:</strong> {aiSummary}
+                  </div>
+                )}
+
+                {checklist.length === 0 ? (
+                  <p className="text-xs text-[#71717A]">
+                    {isEn
+                      ? 'No subtasks generated yet. Click "Break into steps" for an automated execution plan.'
+                      : 'Подзадачи еще не сформированы. Нажмите «Разбить на шаги» для автоматической генерации плана работ.'}
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {checklist.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-start justify-between gap-2.5 rounded-lg border border-white/[0.07] bg-[#12151e] px-3 py-2 text-xs"
+                      >
+                        <button
+                          type="button"
+                          disabled={!canEditTasks}
+                          onClick={() => void handleToggleChecklistItem(item.id)}
+                          className="flex items-start gap-2.5 text-left flex-1 min-w-0 cursor-pointer"
+                        >
+                          <span
+                            className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                              item.done
+                                ? 'bg-emerald-500 border-emerald-500 text-black'
+                                : 'border-[#3F3F46] hover:border-indigo-400'
+                            }`}
+                          >
+                            {item.done && <Check className="w-3 h-3 stroke-[3]" />}
+                          </span>
+                          <span
+                            className={`leading-snug break-words ${
+                              item.done ? 'line-through text-[#71717A]' : 'text-zinc-100'
+                            }`}
+                          >
+                            {item.title}
+                          </span>
+                        </button>
+
+                        {canEditTasks && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteChecklistItem(item.id)}
+                            className="text-[#52525B] hover:text-red-400 transition-colors p-0.5 shrink-0 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {canEditTasks && (
+                  <form onSubmit={handleAddChecklistItem} className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={newSubtaskTitle}
+                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                      placeholder={
+                        isEn
+                          ? 'Add checklist step manually...'
+                          : 'Добавить шаг чек-листа вручную...'
+                      }
+                      className="flex-1 rounded-lg border border-white/10 bg-[#12151e] px-2.5 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newSubtaskTitle.trim()}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-xs font-semibold text-white transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isEn ? 'Step' : 'Шаг'}</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              {/* 4. Attached Files Block */}
+              <div className="rounded-xl border border-white/[0.08] bg-[#181c28] p-4 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="w-3.5 h-3.5 text-sky-400" />
+                    <span className="text-xs font-semibold text-white">
+                      {isEn ? 'Attachments' : 'Вложения и документы'} ({taskAttachments.length})
+                    </span>
+                  </div>
+                  {canEditTasks && (
+                    <>
+                      <input
+                        ref={taskAttachmentInputRef}
+                        type="file"
+                        multiple
+                        accept={ACCEPTED_ATTACHMENT_TYPES}
+                        onChange={handleUploadTaskAttachments}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => taskAttachmentInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/10 bg-[#12151e] hover:bg-white/[0.08] text-[11px] font-medium text-zinc-200 transition cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{isEn ? 'Attach file' : 'Прикрепить'}</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {taskAttachments.length === 0 ? (
+                  <p className="text-xs text-[#71717A]">
+                    {isEn
+                      ? 'No files attached to this task yet.'
+                      : 'К поручению еще не прикреплены файлы или фото.'}
+                  </p>
+                ) : (
+                  <AttachmentListRenderer
+                    attachments={taskAttachments}
+                    lang={language}
+                    onRemove={canEditTasks ? handleRemoveTaskAttachment : undefined}
+                  />
+                )}
+              </div>
+
+              {/* 5. Live Task Comment Stream */}
+              <div className="rounded-xl border border-white/[0.08] bg-[#181c28] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t('drawer.threadTitle')}</span>
+                  </div>
+                  <span className="text-[11px] tabular-nums text-[#71717A]">
+                    {entityComments.length}
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 max-h-56 overflow-y-auto no-scrollbar pr-1">
+                  {entityComments.length === 0 ? (
+                    <p className="text-xs text-[#71717A] py-2">{t('drawer.threadEmpty')}</p>
+                  ) : (
+                    entityComments.map((msg) => {
+                      const sender = msg.sender_id ? nodeMap.get(msg.sender_id) : null;
+                      const senderLabel =
+                        sender?.name ||
+                        msg.sender_name ||
+                        (isEn ? 'Team Member' : 'Сотрудник TedCloud');
+                      const roleLabel = sender?.role_type || msg.sender_role || '';
+                      const timeStr = msg.created_at
+                        ? new Date(msg.created_at).toLocaleString(isEn ? 'en-US' : 'ru-RU', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '';
+                      return (
+                        <div
+                          key={msg.id}
+                          className="rounded-lg border border-white/[0.07] bg-[#12151e] p-3 space-y-1 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-white truncate">
+                              {senderLabel}
+                              {roleLabel ? (
+                                <span className="text-[#8E8E93] font-normal">
+                                  {' '}
+                                  · {formatRole(roleLabel)}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="text-[10px] tabular-nums text-[#71717A] shrink-0">
+                              {timeStr}
+                            </span>
+                          </div>
+                          <p className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
+                            {msg.message_text || msg.text || msg.content}
+                          </p>
+                          <AttachmentListRenderer
+                            attachments={msg.attachments}
+                            lang={language}
+                            compact
+                          />
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {onSendMessage && (
+                  <form onSubmit={handlePostComment} className="space-y-2 pt-1">
+                    {commentAttachments.length > 0 && (
+                      <PendingAttachmentsStrip
+                        attachments={commentAttachments}
+                        onRemove={(id) =>
+                          setCommentAttachments((prev) => prev.filter((a) => a.id !== id))
+                        }
+                        className="rounded-lg border border-white/[0.08]"
+                      />
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={commentFileInputRef}
+                        type="file"
+                        multiple
+                        accept={ACCEPTED_ATTACHMENT_TYPES}
+                        onChange={handleCommentFilesSelected}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => commentFileInputRef.current?.click()}
+                        className="w-9 h-9 rounded-xl bg-[#12151e] hover:bg-white/[0.08] border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition cursor-pointer"
+                        title={isEn ? 'Attach file' : 'Прикрепить файл'}
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </button>
+                      <input
+                        type="text"
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        placeholder={t('drawer.threadPlaceholder')}
+                        className="flex-1 h-10 rounded-xl border border-white/10 bg-[#12151e] px-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
+                      />
+                      <button
+                        type="submit"
+                        disabled={
+                          isSendingComment ||
+                          (!commentText.trim() && commentAttachments.length === 0)
+                        }
+                        className="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                        title={t('drawer.threadSendBtn')}
+                      >
+                        {isSendingComment ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT PROPERTIES SIDEBAR (35% width / 4 cols) */}
+            <div className="lg:col-span-4 bg-slate-50/80 dark:bg-zinc-900/60 border-t lg:border-t-0 lg:border-l border-slate-200/80 dark:border-white/[0.07] p-5 space-y-4 lg:overflow-y-auto no-scrollbar flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#8E8E93]">
+                  {isEn ? 'Task Properties' : 'Свойства поручения'}
+                </div>
+
+                {/* Status (Kanban Stage) */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-[#8E8E93]">{t('drawer.status')}</label>
+                  <select
+                    disabled={!canEditTasks}
+                    value={taskRec.status || 'Todo'}
+                    onChange={(e) =>
+                      void onPatchRecord('tasks', taskRec.id, {
+                        status: e.target.value as TaskStatus,
+                      })
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs font-medium text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="Todo">{t('status.Todo')}</option>
+                    <option value="In Progress">{t('status.In Progress')}</option>
+                    <option value="Review">{t('status.Review')}</option>
+                    <option value="Done">{t('status.Done')}</option>
+                  </select>
+                </div>
+
+                {/* Priority */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-[#8E8E93]">{t('drawer.priority')}</label>
+                  <select
+                    disabled={!canEditTasks}
+                    value={taskRec.priority || 'Medium'}
+                    onChange={(e) =>
+                      void onPatchRecord('tasks', taskRec.id, {
+                        priority: e.target.value as TaskPriority,
+                      })
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs font-medium text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="Low">{t('priority.Low')}</option>
+                    <option value="Medium">{t('priority.Medium')}</option>
+                    <option value="High">{t('priority.High')}</option>
+                  </select>
+                </div>
+
+                {/* Assignee with Avatar */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-[#8E8E93]">{t('drawer.assignee')}</label>
+                  { assigneeNode && (
+                    <div className="flex items-center gap-2 pb-1">
+                      <UserAvatar
+                        name={assigneeNode.name}
+                        avatarUrl={assigneeNode.avatar_url}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-white truncate">
+                          {assigneeNode.name}
+                        </div>
+                        <div className="text-[10px] text-[#8E8E93] truncate">
+                          {formatRole(assigneeNode.role_type)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {canAssignTasks ? (
+                    <select
+                      value={currentAssigneeId || ''}
+                      onChange={(e) =>
+                        void onPatchRecord('tasks', taskRec.id, {
+                          assigned_to: e.target.value || null,
+                        })
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="">{t('tasks.unassigned')}</option>
+                      {safeNodes.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.name} — {formatRole(n.role_type)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    !assigneeNode && (
+                      <div className="text-xs font-medium text-white">
+                        {t('tasks.unassigned')}
+                      </div>
+                    )
+                  )}
+                </div>
+
+                {/* Department */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-[#8E8E93]">{t('drawer.department')}</label>
+                  {canAssignTasks ? (
+                    <select
+                      value={taskRec.department || ''}
+                      onChange={(e) =>
+                        void onPatchRecord('tasks', taskRec.id, {
+                          department: e.target.value || null,
+                        })
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="">{t('dept.noneOption')}</option>
+                      {safeDepartments.map((d) => (
+                        <option key={d} value={d}>
+                          {formatRole(d)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-xs font-medium text-white">
+                      {taskRec.department ? formatRole(taskRec.department) : t('dept.noneOption')}
+                    </div>
+                  )}
+                </div>
+
+                {/* Due Date (SLA) */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs text-[#8E8E93]">
+                    <Clock className="w-3.5 h-3.5 text-[#71717A]" />
+                    <span>{isEn ? 'Target Due Date (SLA)' : 'Срок исполнения (SLA)'}</span>
+                  </label>
+                  <input
+                    type="date"
+                    disabled={!canEditTasks}
+                    value={taskRec.due_date || ''}
+                    onChange={(e) =>
+                      void onPatchRecord('tasks', taskRec.id, {
+                        due_date: e.target.value || null,
+                      })
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white tabular-nums disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Linked CRM Deal */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs text-[#8E8E93]">
+                    <Briefcase className="w-3.5 h-3.5 text-[#71717A]" />
+                    <span>{isEn ? 'Linked CRM Deal' : 'Связанная сделка CRM'}</span>
+                  </label>
+                  <select
+                    disabled={!canEditTasks}
+                    value={taskRec.lead_id || ''}
+                    onChange={(e) =>
+                      void onPatchRecord('tasks', taskRec.id, {
+                        lead_id: e.target.value || null,
+                      })
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="">
+                      {isEn ? '— No linked deal —' : '— Без привязки к сделке —'}
+                    </option>
+                    {safeLeads.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.client_name || l.title} ({formatMoney(Number(l.amount ?? l.deal_value ?? 0))})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Author & Created Timestamp */}
+                <div className="pt-3 border-t border-white/[0.07] space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-[#8E8E93]">
+                    <span>{t('drawer.author')}</span>
+                    <span className="text-white font-medium truncate max-w-[150px]">
+                      {authorNode
+                        ? authorNode.name
+                        : isEn
+                        ? 'TedCloud System'
+                        : 'Система TedCloud'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[#8E8E93]">
+                    <span>{t('drawer.createdAt')}</span>
+                    <span className="text-white tabular-nums">{createdAtFormatted}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Actions: Delete Task + Close */}
+              <div className="pt-4 border-t border-white/[0.07] space-y-2">
+                {canEditTasks && onDeleteTask && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onDeleteTask(taskRec.id);
+                      onClose();
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isEn ? 'Delete Task' : 'Удалить задачу'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-full px-4 py-2 rounded-xl border border-white/10 bg-[#12151e] hover:bg-white/[0.06] text-xs font-medium text-white transition-colors cursor-pointer"
+                >
+                  {t('drawer.close')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

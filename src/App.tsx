@@ -208,12 +208,54 @@ function AppContent() {
         const serverList: WorkspaceMessageRecord[] = Array.isArray(payload.messages)
           ? payload.messages
           : [];
-        const optimisticItems = (Array.isArray(prev) ? prev : []).filter((m) =>
-          String(m.id || '').startsWith('optimistic_')
-        );
-        return optimisticItems.length > 0
-          ? [...optimisticItems, ...serverList]
-          : serverList;
+        const seenIds = new Set<string>();
+        const dedupedServer: WorkspaceMessageRecord[] = [];
+        for (const m of serverList) {
+          const mid = String(m.id || '');
+          if (mid && seenIds.has(mid)) continue;
+          const mSender = String(m.sender_id || '');
+          const mText = String(m.message_text || m.text || '').trim();
+          const mTime = m.created_at ? new Date(m.created_at).getTime() : 0;
+          const isNearDuplicate = dedupedServer.some((existing) => {
+            const eSender = String(existing.sender_id || '');
+            const eText = String(existing.message_text || existing.text || '').trim();
+            const eTime = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+            return (
+              eSender === mSender &&
+              eText === mText &&
+              mText.length > 0 &&
+              mTime > 0 &&
+              eTime > 0 &&
+              Math.abs(mTime - eTime) <= 3000
+            );
+          });
+          if (isNearDuplicate) continue;
+          if (mid) seenIds.add(mid);
+          dedupedServer.push(m);
+        }
+
+        const remainingOptimistic = (Array.isArray(prev) ? prev : []).filter((opt) => {
+          if (!String(opt.id || '').startsWith('optimistic_')) return false;
+          const optSender = String(opt.sender_id || '');
+          const optText = String(opt.message_text || opt.text || '').trim();
+          const optTime = opt.created_at ? new Date(opt.created_at).getTime() : Date.now();
+          const matchedInServer = dedupedServer.some((srv) => {
+            const srvSender = String(srv.sender_id || '');
+            const srvText = String(srv.message_text || srv.text || '').trim();
+            const srvTime = srv.created_at ? new Date(srv.created_at).getTime() : 0;
+            return (
+              srvSender === optSender &&
+              srvText === optText &&
+              srvTime > 0 &&
+              Math.abs(srvTime - optTime) <= 5000
+            );
+          });
+          return !matchedInServer;
+        });
+
+        return remainingOptimistic.length > 0
+          ? [...remainingOptimistic, ...dedupedServer]
+          : dedupedServer;
       });
       setInvoices(Array.isArray(payload.invoices) ? payload.invoices : []);
       setWorkShifts(Array.isArray(payload.workShifts) ? payload.workShifts : []);
@@ -577,11 +619,18 @@ function AppContent() {
         }
 
         if (result.data) {
-          setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((m) =>
-              m.id === tempId ? result.data : m
-            )
-          );
+          setMessages((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const replaced = list.map((m) => (m.id === tempId ? result.data : m));
+            const seen = new Set<string>();
+            return replaced.filter((m) => {
+              const idStr = String(m.id || '');
+              if (!idStr) return true;
+              if (seen.has(idStr)) return false;
+              seen.add(idStr);
+              return true;
+            });
+          });
         }
 
         return {

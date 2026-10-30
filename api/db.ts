@@ -276,6 +276,14 @@ function runBuiltInAiAssistant(input: {
   const conversionRate =
     leads.length > 0 ? Math.round((wonLeads.length / leads.length) * 100) : 0;
 
+  const rawCurr = String((input as any).currency || 'RUB').toUpperCase();
+  const formatServerMoney = (amount: number): string => {
+    const safeVal = Math.round(Number(amount) || 0);
+    if (rawCurr === 'USD') return `$${safeVal.toLocaleString('en-US')}`;
+    if (rawCurr === 'EUR') return `€${safeVal.toLocaleString('en-US')}`;
+    return `${safeVal.toLocaleString('ru-RU')} ₽`;
+  };
+
   const baseMetrics = isEn
     ? [
         {
@@ -293,7 +301,7 @@ function runBuiltInAiAssistant(input: {
         },
         {
           label: 'Pipeline Volume',
-          value: `${Math.round(activePipelineSum).toLocaleString('en-US')} RUB`,
+          value: formatServerMoney(activePipelineSum),
           sublabel: `Deals: ${activeLeads.length} · Win rate ${conversionRate}%`,
         },
       ]
@@ -313,7 +321,7 @@ function runBuiltInAiAssistant(input: {
         },
         {
           label: 'Сумма воронки',
-          value: `${Math.round(activePipelineSum).toLocaleString('ru-RU')} ₽`,
+          value: formatServerMoney(activePipelineSum),
           sublabel: `Сделок: ${activeLeads.length} · Конверсия ${conversionRate}%`,
         },
       ];
@@ -405,20 +413,20 @@ function runBuiltInAiAssistant(input: {
 
     const crmItems: string[] = isEn
       ? [
-          `Active deals in pipeline: ${activeLeads.length} worth ${Math.round(
+          `Active deals in pipeline: ${activeLeads.length} worth ${formatServerMoney(
             activePipelineSum
-          ).toLocaleString('en-US')} RUB.`,
-          `Closed contracts: ${wonLeads.length} worth ${Math.round(
+          )}.`,
+          `Closed contracts: ${wonLeads.length} worth ${formatServerMoney(
             wonPipelineSum
-          ).toLocaleString('en-US')} RUB (conversion ${conversionRate}%).`,
+          )} (conversion ${conversionRate}%).`,
         ]
       : [
-          `Активных сделок в работе: ${activeLeads.length} на сумму ${Math.round(
+          `Активных сделок в работе: ${activeLeads.length} на сумму ${formatServerMoney(
             activePipelineSum
-          ).toLocaleString('ru-RU')} RUB.`,
-          `Закрыто контрактов: ${wonLeads.length} на сумму ${Math.round(
+          )}.`,
+          `Закрыто контрактов: ${wonLeads.length} на сумму ${formatServerMoney(
             wonPipelineSum
-          ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
+          )} (конверсия ${conversionRate}%).`,
         ];
 
     const sections = [
@@ -515,17 +523,17 @@ function runBuiltInAiAssistant(input: {
           `Total deals in registry: ${leads.length} · In negotiation: ${
             leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
           } · Won: ${wonLeads.length}.`,
-          `Active pipeline volume: ${Math.round(activePipelineSum).toLocaleString(
-            'en-US'
-          )} RUB · Win conversion: ${conversionRate}%.`,
+          `Active pipeline volume: ${formatServerMoney(
+            activePipelineSum
+          )} · Win conversion: ${conversionRate}%.`,
         ]
       : [
           `Всего сделок в реестре: ${leads.length} · На согласовании: ${
             leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
           } · Выиграно: ${wonLeads.length}.`,
-          `Объем активного пайплайна: ${Math.round(activePipelineSum).toLocaleString(
-            'ru-RU'
-          )} RUB · Конверсия в контракт: ${conversionRate}%.`,
+          `Объем активного пайплайна: ${formatServerMoney(
+            activePipelineSum
+          )} · Конверсия в контракт: ${conversionRate}%.`,
         ];
 
     const recommendationItems: string[] = [];
@@ -630,9 +638,9 @@ function runBuiltInAiAssistant(input: {
   if (matchedLeads.length > 0) {
     const items = matchedLeads.slice(0, 4).map(
       (l) =>
-        `${l.client_name || l.title} — ${Math.round(
+        `${l.client_name || l.title} — ${formatServerMoney(
           Number(l.amount ?? l.deal_value ?? 0)
-        ).toLocaleString(isEn ? 'en-US' : 'ru-RU')} RUB · ${
+        )} · ${
           isEn ? 'Status' : 'Статус'
         }: ${l.status || 'New'}${
           l.tax_id ? ` · ${isEn ? 'Tax ID/VAT' : 'ИНН/VAT'}: ${l.tax_id}` : ''
@@ -687,17 +695,17 @@ function runBuiltInAiAssistant(input: {
       ? [
           `Employees in directory: ${nodes.length}`,
           `Open tasks: ${openTasks.length} (high priority: ${highPriorityTasks.length})`,
-          `CRM deals: ${leads.length} with active pipeline volume of ${Math.round(
+          `CRM deals: ${leads.length} with active pipeline volume of ${formatServerMoney(
             activePipelineSum
-          ).toLocaleString('en-US')} RUB (conversion ${conversionRate}%).`,
+          )} (conversion ${conversionRate}%).`,
           'For targeted lookup, enter a client name, Tax ID/VAT, employee name, or task subject.',
         ]
       : [
           `Сотрудников в штате: ${nodes.length}`,
           `Открытых задач: ${openTasks.length} (высокого приоритета: ${highPriorityTasks.length})`,
-          `Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${Math.round(
+          `Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${formatServerMoney(
             activePipelineSum
-          ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
+          )} (конверсия ${conversionRate}%).`,
           'Для точечного поиска укажите название контрагента, ИНН/VAT, фамилию сотрудника или тему поручения.',
         ];
     const secTitle = isEn
@@ -3839,17 +3847,26 @@ export default async function handler(req: any, res: any) {
 
             let parsedAmount = 0;
             const amountMatch = afterCmd.match(
-              /(?:на\s+сумму|на|сумма|бюджет|for|worth|amount)?\s*(\d+(?:[\s.,]\d+)*)\s*(млн|миллион\w*|тыс\w*|к|k|m|руб\w*|₽|\$|usd|eur)?/i
+              /(?:на\s+сумму|на|сумма|бюджет|for|worth|amount)?\s*(\d+(?:[.,]\d+)?(?:\s*\d{3})*)\s*(млн|миллион\w*|тыс\w*|к|k|m|руб\w*|₽|\$|usd|eur)?/i
             );
             if (amountMatch && amountMatch[1]) {
-              const rawNum = Number(
-                amountMatch[1].replace(/\s+/g, '').replace(',', '.')
-              );
+              const rawStr = amountMatch[1].replace(/\s+/g, '').replace(',', '.');
+              const rawNum = parseFloat(rawStr);
               const unit = String(amountMatch[2] || '').toLowerCase();
               if (!Number.isNaN(rawNum) && rawNum > 0) {
-                if (unit.startsWith('млн') || unit.startsWith('миллион') || unit === 'm') {
+                if (
+                  unit.startsWith('млн') ||
+                  unit.startsWith('миллион') ||
+                  unit === 'm' ||
+                  /\b(?:млн|миллион)/i.test(afterCmd)
+                ) {
                   parsedAmount = Math.round(rawNum * 1_000_000);
-                } else if (unit.startsWith('тыс') || unit === 'к' || unit === 'k') {
+                } else if (
+                  unit.startsWith('тыс') ||
+                  unit === 'к' ||
+                  unit === 'k' ||
+                  /\b(?:тыс)/i.test(afterCmd)
+                ) {
                   parsedAmount = Math.round(rawNum * 1_000);
                 } else {
                   parsedAmount = Math.round(rawNum);
@@ -3861,7 +3878,7 @@ export default async function handler(req: any, res: any) {
             const clientName =
               afterCmd
                 .replace(/^[«"']|[»"']$/g, '')
-                .replace(/\s+(?:на|в|по|for|with)\s*$/i, '')
+                .replace(/\s+(?:на|в|по|for|with)(?:\s+.*)?$/i, '')
                 .trim() || (isEn ? 'New Enterprise Client' : 'Новый корпоративный клиент');
 
             const assigneeNode = matchEmployeeFuzzy(cleanPrompt) || currentUser || companyNodes[0] || null;
@@ -3904,7 +3921,7 @@ export default async function handler(req: any, res: any) {
               actionType: 'AI_DEAL_CREATED',
               entityType: 'crm_leads',
               entityId: normLead.id,
-              details: `ИИ-ассистент создал сделку CRM «${clientName}» на сумму ${parsedAmount.toLocaleString('ru-RU')} RUB`,
+              details: `ИИ-ассистент создал сделку CRM «${clientName}» на сумму ${parsedAmount.toLocaleString('ru-RU')} ₽`,
             });
 
             executedActions.push({

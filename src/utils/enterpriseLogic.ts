@@ -258,6 +258,7 @@ export interface AiAssistantInput {
   taskTitle?: string;
   taskDescription?: string;
   companyName?: string;
+  currency?: CurrencyCode;
   currentUser?: Partial<OrganizationNode> | null;
   nodes: Partial<OrganizationNode>[];
   tasks: Partial<TaskRecord>[];
@@ -298,6 +299,23 @@ function formatStatusLabel(st?: string | null, lang: 'ru' | 'en' = 'ru'): string
   return 'К выполнению';
 }
 
+export function formatCompanyCurrency(
+  amount: number | string | null | undefined,
+  currency: CurrencyCode = 'RUB',
+  lang: 'ru' | 'en' = 'ru'
+): string {
+  const num = Math.round(Number(amount || 0));
+  const safeNum = Number.isFinite(num) ? num : 0;
+  const curr = currency === 'USD' || currency === 'EUR' ? currency : 'RUB';
+  if (curr === 'USD') {
+    return `$${safeNum.toLocaleString('en-US')}`;
+  }
+  if (curr === 'EUR') {
+    return `€${safeNum.toLocaleString('en-US')}`;
+  }
+  return `${safeNum.toLocaleString(lang === 'en' ? 'en-US' : 'ru-RU')} ₽`;
+}
+
 /**
  * Интеллектуальный аналитический движок TedCloud Intelligence по реальным данным компании (RU / EN)
  */
@@ -309,6 +327,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
     taskTitle = '',
     taskDescription = '',
     companyName = 'TedCloud',
+    currency = 'RUB',
     currentUser,
     nodes = [],
     tasks = [],
@@ -317,6 +336,9 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   } = input;
 
   const isEn = lang === 'en';
+  const fmtMoney = (val: number | string | null | undefined) =>
+    formatCompanyCurrency(val, currency, lang);
+
   const openTasks = tasks.filter((t) => t.status !== 'Done');
   const highPriorityTasks = openTasks.filter((t) => t.priority === 'High');
   const doneTasks = tasks.filter((t) => t.status === 'Done');
@@ -363,7 +385,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
         },
         {
           label: 'Active Pipeline',
-          value: `${Math.round(activePipelineSum).toLocaleString('en-US')} RUB`,
+          value: fmtMoney(activePipelineSum),
           sublabel: `Deals: ${activeLeads.length} · Conversion ${conversionRate}%`,
         },
       ]
@@ -383,7 +405,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
         },
         {
           label: 'Сумма воронки',
-          value: `${Math.round(activePipelineSum).toLocaleString('ru-RU')} ₽`,
+          value: fmtMoney(activePipelineSum),
           sublabel: `Сделок: ${activeLeads.length} · Конверсия ${conversionRate}%`,
         },
       ];
@@ -463,12 +485,10 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       ];
 
       const crmItems: string[] = [
-        `Active deals in pipeline: ${activeLeads.length} totaling ${Math.round(
-          activePipelineSum
-        ).toLocaleString('en-US')} RUB.`,
-        `Closed Won contracts: ${wonLeads.length} totaling ${Math.round(
+        `Active deals in pipeline: ${activeLeads.length} totaling ${fmtMoney(activePipelineSum)}.`,
+        `Closed Won contracts: ${wonLeads.length} totaling ${fmtMoney(
           wonPipelineSum
-        ).toLocaleString('en-US')} RUB (${conversionRate}% conversion).`,
+        )} (${conversionRate}% conversion).`,
       ];
 
       const sections: AiAssistantSection[] = [
@@ -524,12 +544,10 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
     ];
 
     const crmItems: string[] = [
-      `Активных сделок в работе: ${activeLeads.length} на сумму ${Math.round(
-        activePipelineSum
-      ).toLocaleString('ru-RU')} RUB.`,
-      `Закрыто контрактов: ${wonLeads.length} на сумму ${Math.round(
+      `Активных сделок в работе: ${activeLeads.length} на сумму ${fmtMoney(activePipelineSum)}.`,
+      `Закрыто контрактов: ${wonLeads.length} на сумму ${fmtMoney(
         wonPipelineSum
-      ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
+      )} (конверсия ${conversionRate}%).`,
     ];
 
     const sections: AiAssistantSection[] = [
@@ -601,9 +619,9 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
         `Total deals in registry: ${leads.length} · In negotiation: ${
           leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
         } · Closed Won: ${wonLeads.length}.`,
-        `Active pipeline volume: ${Math.round(activePipelineSum).toLocaleString(
-          'en-US'
-        )} RUB · Win conversion rate: ${conversionRate}%.`,
+        `Active pipeline volume: ${fmtMoney(
+          activePipelineSum
+        )} · Win conversion rate: ${conversionRate}%.`,
       ];
 
       const recommendationItems: string[] = [];
@@ -676,9 +694,9 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       `Всего сделок в реестре: ${leads.length} · На согласовании: ${
         leads.filter((l) => (l.status || l.stage) === 'Negotiation').length
       } · Выиграно: ${wonLeads.length}.`,
-      `Объем активного пайплайна: ${Math.round(activePipelineSum).toLocaleString(
-        'ru-RU'
-      )} RUB · Конверсия в контракт: ${conversionRate}%.`,
+      `Объем активного пайплайна: ${fmtMoney(
+        activePipelineSum
+      )} · Конверсия в контракт: ${conversionRate}%.`,
     ];
 
     const recommendationItems: string[] = [];
@@ -768,14 +786,14 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   if (matchedLeads.length > 0) {
     const items = matchedLeads.slice(0, 4).map((l) =>
       isEn
-        ? `${l.client_name || l.title} — ${Math.round(
-            Number(l.amount ?? l.deal_value ?? 0)
-          ).toLocaleString('en-US')} RUB · Stage: ${l.status || 'New'}${
+        ? `${l.client_name || l.title} — ${fmtMoney(
+            l.amount ?? l.deal_value ?? 0
+          )} · Stage: ${l.status || 'New'}${
             l.tax_id ? ` · Tax ID/VAT: ${l.tax_id}` : ''
           }${l.contract_number ? ` · Contract: ${l.contract_number}` : ''}`
-        : `${l.client_name || l.title} — ${Math.round(
-            Number(l.amount ?? l.deal_value ?? 0)
-          ).toLocaleString('ru-RU')} RUB · Статус: ${l.status || 'New'}${
+        : `${l.client_name || l.title} — ${fmtMoney(
+            l.amount ?? l.deal_value ?? 0
+          )} · Статус: ${l.status || 'New'}${
             l.tax_id ? ` · ИНН/VAT: ${l.tax_id}` : ''
           }${l.contract_number ? ` · Договор: ${l.contract_number}` : ''}`
     );
@@ -823,17 +841,17 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       ? [
           `Team members in directory: ${nodes.length}`,
           `Open tasks: ${openTasks.length} (high priority: ${highPriorityTasks.length})`,
-          `CRM deals: ${leads.length} with active pipeline volume of ${Math.round(
+          `CRM deals: ${leads.length} with active pipeline volume of ${fmtMoney(
             activePipelineSum
-          ).toLocaleString('en-US')} RUB (${conversionRate}% conversion).`,
+          )} (${conversionRate}% conversion).`,
           'For targeted lookup, enter a client name, Tax ID / VAT, employee name, or task subject.',
         ]
       : [
           `Сотрудников в штате: ${nodes.length}`,
           `Открытых задач: ${openTasks.length} (высокого приоритета: ${highPriorityTasks.length})`,
-          `Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${Math.round(
+          `Сделок в CRM: ${leads.length} на общую сумму активного пайплайна ${fmtMoney(
             activePipelineSum
-          ).toLocaleString('ru-RU')} RUB (конверсия ${conversionRate}%).`,
+          )} (конверсия ${conversionRate}%).`,
           'Для точечного поиска укажите название контрагента, ИНН/VAT, фамилию сотрудника или тему поручения.',
         ];
     const title = isEn
@@ -862,10 +880,14 @@ export interface PricingPlanConfig {
   id: SubscriptionPlanTier;
   nameRu: string;
   nameEn: string;
+  titleRu: string;
+  titleEn: string;
   badgeRu: string;
   badgeEn: string;
   maxEmployeesLabelRu: string;
   maxEmployeesLabelEn: string;
+  seatsLabelRu: string;
+  seatsLabelEn: string;
   maxEmployeesCount: number | null; // null = unlimited
   monthly: {
     RUB: number;
@@ -873,6 +895,11 @@ export interface PricingPlanConfig {
     EUR: number;
   };
   yearlyMonthly: {
+    RUB: number;
+    USD: number;
+    EUR: number;
+  };
+  yearlyMonthlyEquivalent: {
     RUB: number;
     USD: number;
     EUR: number;
@@ -886,10 +913,14 @@ export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
     id: 'Trial',
     nameRu: 'Starter / Trial',
     nameEn: 'Starter / Trial',
+    titleRu: 'Starter / Trial',
+    titleEn: 'Starter / Trial',
     badgeRu: 'До 5 сотрудников',
     badgeEn: 'Up to 5 employees',
     maxEmployeesLabelRu: 'До 5 сотрудников',
     maxEmployeesLabelEn: 'Up to 5 employees',
+    seatsLabelRu: 'До 5 сотрудников',
+    seatsLabelEn: 'Up to 5 employees',
     maxEmployeesCount: 5,
     monthly: {
       RUB: 0,
@@ -897,6 +928,11 @@ export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
       EUR: 0,
     },
     yearlyMonthly: {
+      RUB: 0,
+      USD: 0,
+      EUR: 0,
+    },
+    yearlyMonthlyEquivalent: {
       RUB: 0,
       USD: 0,
       EUR: 0,
@@ -918,10 +954,14 @@ export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
     id: 'Business',
     nameRu: 'Business',
     nameEn: 'Business',
+    titleRu: 'Business',
+    titleEn: 'Business',
     badgeRu: 'До 50 сотрудников',
     badgeEn: 'Up to 50 employees',
     maxEmployeesLabelRu: 'До 50 сотрудников',
     maxEmployeesLabelEn: 'Up to 50 employees',
+    seatsLabelRu: 'До 50 сотрудников',
+    seatsLabelEn: 'Up to 50 employees',
     maxEmployeesCount: 50,
     monthly: {
       RUB: 9900,
@@ -929,6 +969,11 @@ export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
       EUR: 92,
     },
     yearlyMonthly: {
+      RUB: 7920,
+      USD: 79,
+      EUR: 74,
+    },
+    yearlyMonthlyEquivalent: {
       RUB: 7920,
       USD: 79,
       EUR: 74,
@@ -950,10 +995,14 @@ export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
     id: 'Enterprise',
     nameRu: 'Enterprise',
     nameEn: 'Enterprise',
+    titleRu: 'Enterprise',
+    titleEn: 'Enterprise',
     badgeRu: 'Безлимит · SLA 99.9%',
     badgeEn: 'Unlimited · SLA 99.9%',
     maxEmployeesLabelRu: 'Безлимит сотрудников, SLA 99.9%, выделенный контур',
     maxEmployeesLabelEn: 'Unlimited employees, SLA 99.9%, dedicated contour',
+    seatsLabelRu: 'Безлимит сотрудников, SLA 99.9%, выделенный контур',
+    seatsLabelEn: 'Unlimited employees, SLA 99.9%, dedicated contour',
     maxEmployeesCount: null,
     monthly: {
       RUB: 29900,
@@ -961,6 +1010,11 @@ export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
       EUR: 279,
     },
     yearlyMonthly: {
+      RUB: 23920,
+      USD: 239,
+      EUR: 223,
+    },
+    yearlyMonthlyEquivalent: {
       RUB: 23920,
       USD: 239,
       EUR: 223,
@@ -979,6 +1033,32 @@ export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
     ],
   },
 };
+
+/**
+ * Единый безопасный хелпер получения стоимости тарифа.
+ * Всегда защищен через optional chaining ?. и возвращает дефолт 0 при любых невалидных аргументах.
+ */
+export function getPlanPrice(
+  planId: string,
+  currency: string = 'RUB',
+  cycle: string = 'monthly'
+): number {
+  const normalizedPlanKey: SubscriptionPlanTier =
+    planId === 'Business' || planId === 'Enterprise' ? planId : 'Trial';
+  const planObj = PRICING_PLANS?.[normalizedPlanKey];
+  if (!planObj) return 0;
+
+  const normalizedCurrency: CurrencyCode =
+    currency === 'USD' || currency === 'EUR' ? currency : 'RUB';
+  const isYearly = String(cycle || '').toLowerCase().includes('year');
+
+  const priceSource = isYearly
+    ? planObj?.yearlyMonthlyEquivalent ?? planObj?.yearlyMonthly
+    : planObj?.monthly;
+
+  const rawPrice = priceSource?.[normalizedCurrency] ?? priceSource?.RUB ?? 0;
+  return Number.isFinite(Number(rawPrice)) ? Number(rawPrice) : 0;
+}
 
 /**
  * Расчет стоимости корпоративного тарифа на базе единой константы PRICING_PLANS

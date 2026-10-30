@@ -8,7 +8,6 @@ import {
   ArrowRight,
   Lock,
   Send,
-  Sparkles,
   Check,
   Clock,
   Briefcase,
@@ -20,15 +19,23 @@ import {
   Layers,
   Sun,
   Moon,
+  X,
 } from 'lucide-react';
 import { Company, CurrencyCode, OrganizationNode, SubscriptionPlanTier } from '../types/database';
 import { useLocale, SupportedLocale } from '../i18n/LocaleContext';
-import { formatError, PRICING_PLANS } from '../utils/enterpriseLogic';
+import { formatError, getPlanPrice, PRICING_PLANS } from '../utils/enterpriseLogic';
 
 interface AuthGateProps {
   existingNodes: OrganizationNode[];
   existingCompany: Company | null;
   onAuthenticated: (profile: OrganizationNode, company: Company | null) => void;
+  showcaseOnly?: boolean;
+  onCloseShowcase?: () => void;
+  onSelectPlanFromWorkspace?: (
+    plan: SubscriptionPlanTier,
+    cycle: 'monthly' | 'yearly',
+    currency: CurrencyCode
+  ) => void;
 }
 
 type TopViewMode = 'auth' | 'showcase';
@@ -40,11 +47,14 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   existingNodes,
   existingCompany,
   onAuthenticated,
+  showcaseOnly = false,
+  onCloseShowcase,
+  onSelectPlanFromWorkspace,
 }) => {
   const { locale, setLocale, theme, toggleTheme, t } = useLocale();
   const isEn = locale === 'en';
 
-  const [topView, setTopView] = useState<TopViewMode>('auth');
+  const [topView, setTopView] = useState<TopViewMode>(showcaseOnly ? 'showcase' : 'auth');
   const [mode, setMode] = useState<AuthTabMode>(
     existingNodes.length === 0 ? 'register' : 'signin'
   );
@@ -356,92 +366,98 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#EDEDED] font-sans antialiased flex flex-col justify-between p-4 sm:p-6">
+    <div
+      className={`${
+        showcaseOnly ? 'min-h-full' : 'min-h-screen'
+      } bg-[#0b0d13] text-[#EDEDED] font-sans antialiased flex flex-col justify-between p-4 sm:p-6`}
+    >
       {/* Top Bar: Brand, Top Switcher («Авторизация» / «О платформе и Тарифы»), Theme & Language */}
-      <header className="max-w-6xl w-full mx-auto flex flex-wrap items-center justify-between gap-3 pb-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-md bg-indigo-600 text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm">
-            TC
+      {!showcaseOnly && (
+        <header className="max-w-6xl w-full mx-auto flex flex-wrap items-center justify-between gap-3 pb-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-md bg-indigo-600 text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm">
+              TC
+            </div>
+            <span className="text-sm font-semibold text-white tracking-tight">TedCloud</span>
+            <span className="hidden sm:inline-flex text-[11px] px-2 py-0.5 rounded bg-[#18181B] text-[#A1A1AA] border border-white/[0.08] whitespace-nowrap">
+              {t('brand.edition')}
+            </span>
           </div>
-          <span className="text-sm font-semibold text-white tracking-tight">TedCloud</span>
-          <span className="hidden sm:inline-flex text-[11px] px-2 py-0.5 rounded bg-[#18181B] text-[#A1A1AA] border border-white/[0.08] whitespace-nowrap">
-            {t('brand.edition')}
-          </span>
-        </div>
 
-        {/* Central Top Switcher: Workspace Sign-In vs Product Tour & Pricing (БЛОК 4) */}
-        <div className="inline-flex items-center rounded-lg border border-white/[0.08] bg-[#121215] p-1">
-          <button
-            type="button"
-            onClick={() => setTopView('auth')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              topView === 'auth'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-[#A1A1AA] hover:text-white'
-            }`}
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>{isEn ? 'Workspace Sign In' : 'Вход и Регистрация'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTopView('showcase')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              topView === 'showcase'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-[#A1A1AA] hover:text-white'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{isEn ? 'Product Tour & Pricing' : 'О платформе и Тарифы'}</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="p-1.5 rounded-md border border-white/[0.08] bg-[#141418] text-[#A1A1AA] hover:text-white transition-colors"
-            title={
-              theme === 'dark'
-                ? isEn
-                  ? 'Switch to Light Mode'
-                  : 'Светлая тема'
-                : isEn
-                ? 'Switch to Dark Mode'
-                : 'Темная тема'
-            }
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-3.5 h-3.5 text-amber-400" />
-            ) : (
-              <Moon className="w-3.5 h-3.5 text-indigo-400" />
-            )}
-          </button>
-
-          <div className="inline-flex items-center rounded-md border border-white/[0.08] bg-[#141418] p-0.5">
-            {locales.map((loc) => (
-              <button
-                key={loc}
-                type="button"
-                onClick={() => setLocale(loc)}
-                className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase transition-colors ${
-                  locale === loc
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-[#8E8E93] hover:text-white'
-                }`}
-              >
-                {loc}
-              </button>
-            ))}
+          {/* Central Top Switcher: Workspace Sign-In vs Product Tour & Pricing (БЛОК 4) */}
+          <div className="inline-flex items-center rounded-lg border border-white/[0.08] bg-[#12151e] p-1">
+            <button
+              type="button"
+              onClick={() => setTopView('auth')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                topView === 'auth'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-[#A1A1AA] hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>{isEn ? 'Workspace Sign In' : 'Вход и Регистрация'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopView('showcase')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                topView === 'showcase'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-[#A1A1AA] hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{isEn ? 'Product Tour & Pricing' : 'О платформе и Тарифы'}</span>
+            </button>
           </div>
-        </div>
-      </header>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-1.5 rounded-md border border-white/[0.08] bg-[#141418] text-[#A1A1AA] hover:text-white transition-colors"
+              title={
+                theme === 'dark'
+                  ? isEn
+                    ? 'Switch to Light Mode'
+                    : 'Светлая тема'
+                  : isEn
+                  ? 'Switch to Dark Mode'
+                  : 'Темная тема'
+              }
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+              ) : (
+                <Moon className="w-3.5 h-3.5 text-indigo-400" />
+              )}
+            </button>
+
+            <div className="inline-flex items-center rounded-md border border-white/[0.08] bg-[#141418] p-0.5">
+              {locales.map((loc) => (
+                <button
+                  key={loc}
+                  type="button"
+                  onClick={() => setLocale(loc)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase transition-colors ${
+                    locale === loc
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-[#8E8E93] hover:text-white'
+                  }`}
+                >
+                  {loc}
+                </button>
+              ))}
+            </div>
+          </div>
+        </header>
+      )}
 
       {/* =====================================================================
           VIEW 1: MULTI-TIER AUTHENTICATION & WORKSPACE REGISTRATION (БЛОК 3)
       ====================================================================== */}
-      {topView === 'auth' ? (
+      {!showcaseOnly && topView === 'auth' ? (
         <main className="my-auto py-6 w-full max-w-lg mx-auto">
           <div className="rounded-2xl border border-white/[0.08] bg-[#121215] shadow-2xl overflow-hidden">
             {/* Top Mode Tabs: Sign In vs Create Workspace */}
@@ -980,27 +996,40 @@ export const AuthGate: React.FC<AuthGateProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setTopView('auth');
-                  setMode('signin');
-                }}
-                className="px-3.5 py-2 rounded-lg border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-semibold text-white transition-colors"
-              >
-                {isEn ? 'Sign In' : 'Войти'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTopView('auth');
-                  setMode('register');
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm"
-              >
-                <span>{isEn ? 'Start Free' : 'Запустить бесплатно'}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              {showcaseOnly && onCloseShowcase ? (
+                <button
+                  type="button"
+                  onClick={onCloseShowcase}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.12] bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-white transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>{isEn ? 'Back to Workspace' : 'Вернуться в систему'}</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTopView('auth');
+                      setMode('signin');
+                    }}
+                    className="px-3.5 py-2 rounded-lg border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-semibold text-white transition-colors"
+                  >
+                    {isEn ? 'Sign In' : 'Войти'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTopView('auth');
+                      setMode('register');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm"
+                  >
+                    <span>{isEn ? 'Start Free' : 'Запустить бесплатно'}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
             </div>
           </nav>
 
@@ -1012,7 +1041,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
               <div className="lg:col-span-6 space-y-4">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-[11px] font-semibold text-indigo-300">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <Cpu className="w-3.5 h-3.5 text-indigo-400" />
                   <span>
                     {isEn
                       ? 'Linear Speed · Two-Way Telegram · Built-in CRM & Shifts'
@@ -1044,27 +1073,41 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setTopView('auth');
-                      setMode('register');
+                      if (showcaseOnly && onCloseShowcase) {
+                        onCloseShowcase();
+                      } else {
+                        setTopView('auth');
+                        setMode('register');
+                      }
                     }}
                     className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-lg"
                   >
                     <Building2 className="w-4 h-4" />
                     <span>
-                      {isEn ? 'Launch Free Company Workspace' : 'Запустить бесплатно за 60 секунд'}
+                      {showcaseOnly
+                        ? isEn
+                          ? 'Return to Active Workspace'
+                          : 'Продолжить работу в пространстве'
+                        : isEn
+                        ? 'Launch Free Company Workspace'
+                        : 'Запустить бесплатно за 60 секунд'}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTopView('auth');
-                      setMode('signin');
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-3 rounded-xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-white text-xs font-semibold transition-colors"
-                  >
-                    <KeyRound className="w-4 h-4 text-indigo-400" />
-                    <span>{isEn ? 'Sign In with Employee Pass' : 'Войти по пропуску сотрудника'}</span>
-                  </button>
+                  {!showcaseOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTopView('auth');
+                        setMode('signin');
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-3 rounded-xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-white text-xs font-semibold transition-colors"
+                    >
+                      <KeyRound className="w-4 h-4 text-indigo-400" />
+                      <span>
+                        {isEn ? 'Sign In with Employee Pass' : 'Войти по пропуску сотрудника'}
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="pt-2 flex flex-wrap items-center gap-4 text-[11px] text-[#8E8E93]">
@@ -1513,11 +1556,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                     : employeeSliderCount <= 50
                     ? 'Business'
                     : 'Enterprise';
-                const recPlan = PRICING_PLANS[recommendedTier];
-                const recPrice =
-                  pricingCycle === 'yearly'
-                    ? recPlan.yearlyMonthlyEquivalent[pricingCurrency]
-                    : recPlan.monthly[pricingCurrency];
+                const recPrice = getPlanPrice(recommendedTier, pricingCurrency, pricingCycle);
                 const sym = pricingCurrency === 'RUB' ? '₽' : pricingCurrency === 'EUR' ? '€' : '$';
                 const formattedPrice =
                   pricingCurrency === 'RUB'
@@ -1571,8 +1610,18 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          setTopView('auth');
-                          setMode('register');
+                          if (showcaseOnly && onSelectPlanFromWorkspace) {
+                            onSelectPlanFromWorkspace(
+                              recommendedTier,
+                              pricingCycle,
+                              pricingCurrency
+                            );
+                          } else if (showcaseOnly && onCloseShowcase) {
+                            onCloseShowcase();
+                          } else {
+                            setTopView('auth');
+                            setMode('register');
+                          }
                         }}
                         className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors"
                       >
@@ -1586,12 +1635,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               {/* 3 Unified Pricing Cards (Trial / Business / Enterprise) */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {(['Trial', 'Business', 'Enterprise'] as SubscriptionPlanTier[]).map((tierKey) => {
-                  const planSpec = PRICING_PLANS[tierKey];
+                  const planSpec = PRICING_PLANS?.[tierKey] ?? PRICING_PLANS.Trial;
                   const isHighlighted = tierKey === 'Business';
-                  const displayMonthlyPrice =
-                    pricingCycle === 'yearly'
-                      ? planSpec.yearlyMonthlyEquivalent[pricingCurrency]
-                      : planSpec.monthly[pricingCurrency];
+                  const displayMonthlyPrice = getPlanPrice(
+                    tierKey,
+                    pricingCurrency,
+                    pricingCycle
+                  );
                   const sym =
                     pricingCurrency === 'RUB' ? '₽' : pricingCurrency === 'EUR' ? '€' : '$';
                   const priceLabel =
@@ -1666,7 +1716,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                               isHighlighted ? '!text-white' : 'text-white'
                             }`}
                           >
-                            {isEn ? planSpec.titleEn : planSpec.titleRu}
+                            {isEn
+                              ? planSpec?.titleEn ?? planSpec?.nameEn ?? tierKey
+                              : planSpec?.titleRu ?? planSpec?.nameRu ?? tierKey}
                           </span>
                           <span
                             className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
@@ -1675,7 +1727,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                                 : 'bg-white/[0.06] text-[#A1A1AA]'
                             }`}
                           >
-                            {isEn ? planSpec.badgeEn : planSpec.badgeRu}
+                            {isEn ? planSpec?.badgeEn : planSpec?.badgeRu}
                           </span>
                         </div>
 
@@ -1692,7 +1744,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                             isHighlighted ? '!text-indigo-200' : 'text-[#8E8E93]'
                           }`}
                         >
-                          {isEn ? planSpec.seatsLabelEn : planSpec.seatsLabelRu}
+                          {isEn
+                            ? planSpec?.seatsLabelEn ?? planSpec?.maxEmployeesLabelEn
+                            : planSpec?.seatsLabelRu ?? planSpec?.maxEmployeesLabelRu}
                           {pricingCycle === 'yearly' && tierKey !== 'Trial'
                             ? isEn
                               ? ' · Billed annually (-20%)'
@@ -1718,8 +1772,14 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          setTopView('auth');
-                          setMode('register');
+                          if (showcaseOnly && onSelectPlanFromWorkspace) {
+                            onSelectPlanFromWorkspace(tierKey, pricingCycle, pricingCurrency);
+                          } else if (showcaseOnly && onCloseShowcase) {
+                            onCloseShowcase();
+                          } else {
+                            setTopView('auth');
+                            setMode('register');
+                          }
                         }}
                         className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold transition-colors ${
                           isHighlighted

@@ -35,7 +35,7 @@ import { useLocale } from '../i18n/LocaleContext';
 import { UserAvatar } from './UserAvatar';
 
 export const PRIMARY_BTN_CLASS =
-  'tc-btn-primary inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-b from-white to-zinc-200 text-zinc-950 font-medium text-xs shadow-[0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.9)] hover:from-white hover:to-white transition-all whitespace-nowrap disabled:opacity-50';
+  'tc-btn-primary inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-sm shadow-indigo-500/20 transition-all whitespace-nowrap disabled:opacity-50';
 
 export const SECONDARY_BTN_CLASS =
   'tc-btn-secondary inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-200 border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] text-xs font-medium transition-all whitespace-nowrap disabled:opacity-50';

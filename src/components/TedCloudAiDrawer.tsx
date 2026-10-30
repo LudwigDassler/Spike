@@ -11,12 +11,12 @@ import {
   Check,
   Paperclip,
   ListChecks,
-  Sparkles,
-  MessageSquare,
+  Layers,
   ArrowUpRight,
   Maximize2,
   Minimize2,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AiAssistantMode,
@@ -51,6 +51,7 @@ interface ExecutedAiActionItem {
 interface AiChatEntry {
   id: string;
   role: 'user' | 'assistant';
+  mode?: AiAssistantMode;
   headline?: string;
   metrics?: AiAssistantMetric[];
   sections?: AiAssistantSection[];
@@ -89,7 +90,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   onNavigateToTasks,
   onRefreshWorkspace,
 }) => {
-  const { language, formatMoney } = useLocale();
+  const { language, currency, formatMoney, formatRole } = useLocale();
   const isEn = language === 'en';
   const [entries, setEntries] = useState<AiChatEntry[]>([]);
   const [question, setQuestion] = useState('');
@@ -100,6 +101,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const [createdTaskIds, setCreatedTaskIds] = useState<Record<string, boolean>>({});
   const [decomposingEntryId, setDecomposingEntryId] = useState<string | null>(null);
   const [decomposedEntryIds, setDecomposedEntryIds] = useState<Record<string, boolean>>({});
+  const [rebalancingNodeId, setRebalancingNodeId] = useState<string | null>(null);
+  const [rebalancedNodeIds, setRebalancedNodeIds] = useState<Record<string, boolean>>({});
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
@@ -167,6 +170,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     const localBaseline = runBuiltInAiAssistant({
       mode,
       lang: language,
+      currency,
       prompt: effectivePrompt,
       companyName,
       currentUser: currentProfile,
@@ -188,6 +192,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           action: 'ai_assistant',
           mode,
           lang: language,
+          currency,
           prompt: effectivePrompt,
           company_id: companyId,
           companyName,
@@ -210,11 +215,9 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           {
             id: `a_${Date.now()}`,
             role: 'assistant',
+            mode,
             headline: payload.headline || localBaseline.headline,
-            metrics:
-              Array.isArray(payload.metrics) && payload.metrics.length > 0
-                ? payload.metrics
-                : localBaseline.metrics,
+            metrics: localBaseline.metrics,
             sections:
               Array.isArray(payload.sections) && payload.sections.length > 0
                 ? payload.sections
@@ -237,6 +240,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         {
           id: `a_${Date.now()}`,
           role: 'assistant',
+          mode,
           headline: localBaseline.headline,
           metrics: localBaseline.metrics,
           sections: localBaseline.sections,
@@ -253,16 +257,19 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     }
   };
 
-  const handleDirectCreateSuggestedTask = async (entry: AiChatEntry) => {
-    if (creatingTaskEntryId || createdTaskIds[entry.id]) return;
-    setCreatingTaskEntryId(entry.id);
+  const handleDirectCreateSuggestedTask = async (
+    entryKey: string,
+    titleToCreate: string,
+    descriptionText: string
+  ) => {
+    if (creatingTaskEntryId || createdTaskIds[entryKey]) return;
+    setCreatingTaskEntryId(entryKey);
     try {
-      const title =
-        entry.suggestedTaskTitle ||
-        (isEn
-          ? 'Operational initiative from TedCloud Intelligence'
-          : 'Операционное поручение по аналитике TedCloud');
-      const { checklist, summary } = buildBuiltInChecklistForTask(title, entry.text, language);
+      const { checklist, summary } = buildBuiltInChecklistForTask(
+        titleToCreate,
+        descriptionText,
+        language
+      );
       const response = await fetch('/api/db', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,8 +277,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           table: 'tasks',
           payload: {
             company_id: companyId,
-            title,
-            description: entry.text.slice(0, 600),
+            title: titleToCreate,
+            description: descriptionText.slice(0, 600),
             type: 'Task',
             priority: 'High',
             status: 'Todo',
@@ -285,13 +292,65 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         }),
       });
       if (response.ok) {
-        setCreatedTaskIds((prev) => ({ ...prev, [entry.id]: true }));
+        setCreatedTaskIds((prev) => ({ ...prev, [entryKey]: true }));
         if (onRefreshWorkspace) {
           await onRefreshWorkspace();
         }
       }
     } finally {
       setCreatingTaskEntryId(null);
+    }
+  };
+
+  const handleRebalanceEmployeeLoad = async (sourceNodeId: string) => {
+    if (rebalancingNodeId || rebalancedNodeIds[sourceNodeId]) return;
+    const openTasksForNode = tasks.filter(
+      (t) =>
+        t.status !== 'Done' &&
+        (t.assigned_to === sourceNodeId || t.owner_node_id === sourceNodeId)
+    );
+    if (openTasksForNode.length === 0) return;
+
+    // Find least loaded colleague
+    const otherNodes = nodes.filter((n) => n.id !== sourceNodeId);
+    if (otherNodes.length === 0) return;
+
+    const sortedByLoad = [...otherNodes].sort((a, b) => {
+      const aCount = tasks.filter(
+        (t) => t.status !== 'Done' && (t.assigned_to === a.id || t.owner_node_id === a.id)
+      ).length;
+      const bCount = tasks.filter(
+        (t) => t.status !== 'Done' && (t.assigned_to === b.id || t.owner_node_id === b.id)
+      ).length;
+      return aCount - bCount;
+    });
+
+    const targetColleague = sortedByLoad[0];
+    const taskToMove = openTasksForNode[0];
+
+    setRebalancingNodeId(sourceNodeId);
+    try {
+      const response = await fetch('/api/db', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: 'tasks',
+          id: taskToMove.id,
+          updates: {
+            assigned_to: targetColleague.id,
+            owner_node_id: targetColleague.id,
+            department: targetColleague.department || taskToMove.department,
+          },
+        }),
+      });
+      if (response.ok) {
+        setRebalancedNodeIds((prev) => ({ ...prev, [sourceNodeId]: true }));
+        if (onRefreshWorkspace) {
+          await onRefreshWorkspace();
+        }
+      }
+    } finally {
+      setRebalancingNodeId(null);
     }
   };
 
@@ -345,6 +404,32 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     await triggerAiAction('custom', label, label, filesToSend);
   };
 
+  // Compute live employee workload for interactive chart
+  const openWorkspaceTasks = tasks.filter((t) => t.status !== 'Done');
+  const employeeWorkloadRows = nodes
+    .map((n) => {
+      const count = openWorkspaceTasks.filter(
+        (t) => t.assigned_to === n.id || t.owner_node_id === n.id
+      ).length;
+      const highCount = openWorkspaceTasks.filter(
+        (t) => (t.assigned_to === n.id || t.owner_node_id === n.id) && t.priority === 'High'
+      ).length;
+      return {
+        id: n.id,
+        name: n.name,
+        role: formatRole(n.role_type || ''),
+        count,
+        highCount,
+      };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  const maxWorkloadCount = Math.max(1, ...employeeWorkloadRows.map((r) => r.count), 4);
+
+  const activeDealsPreview = leads
+    .filter((l) => (l.status || l.stage) !== 'Lost')
+    .slice(0, 4);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3 sm:p-6 font-sans"
@@ -356,7 +441,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         className={`w-full ${
           isFullWorkspaceSize
             ? 'max-w-6xl h-[88dvh]'
-            : 'max-w-3xl h-[80dvh] max-h-[760px]'
+            : 'max-w-3xl h-[82dvh] max-h-[780px]'
         } rounded-2xl border border-white/10 bg-[#0D0D11] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-200`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -372,11 +457,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   TedCloud Intelligence Studio
                 </h2>
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                  Spotlight AI · Action Engine
+                  Executive AI · {currency}
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 truncate">
-                {companyName} · {tasks.filter((t) => t.status !== 'Done').length}{' '}
+                {companyName} · {openWorkspaceTasks.length}{' '}
                 {isEn ? 'open tasks' : 'активных задач'} · {leads.length} CRM ·{' '}
                 {nodes.length} {isEn ? 'staff' : 'сотр.'}
               </p>
@@ -495,7 +580,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             <div className="rounded-xl border border-white/[0.08] bg-[#131319] p-3.5 space-y-3 text-zinc-200">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-white flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
                   TedCloud Action Engine
                 </span>
                 <span className="text-[10px] text-emerald-400 font-medium">
@@ -508,7 +593,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   : `Отдавайте прямые команды естественным языком: создавайте задачи, сделки в CRM или отправляйте сообщения коллегам в «${companyName}».`}
               </p>
 
-              {/* Quick Natural Command Chips (Block 3) */}
+              {/* Quick Natural Command Chips */}
               <div className="pt-1 flex flex-wrap gap-1.5">
                 <button
                   type="button"
@@ -555,246 +640,432 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             </div>
           )}
 
-          {entries.map((entry) => (
-            <div
-              key={entry.id}
-              className={`flex flex-col ${
-                entry.role === 'user' ? 'items-end' : 'items-start'
-              }`}
-            >
-              {entry.role === 'user' ? (
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600/90 px-3.5 py-2.5 text-white space-y-1 shadow-sm">
-                  <div className="flex items-center justify-between gap-3 text-[10px] text-indigo-100/80">
-                    <span className="font-semibold text-white">
-                      {currentProfile?.name || (isEn ? 'You' : 'Вы')}
-                    </span>
-                    <span className="tabular-nums">{entry.timestamp}</span>
+          {entries.map((entry) => {
+            const suggestedCards = [
+              {
+                key: `${entry.id}_s1`,
+                title:
+                  entry.suggestedTaskTitle ||
+                  (isEn
+                    ? 'Audit Q4 Commercial Pipeline & Contracts'
+                    : 'Провести ревизию договоров и воронки CRM'),
+                dept: currentProfile?.department || (isEn ? 'Sales & Legal' : 'Отдел продаж'),
+                priority: 'High' as const,
+              },
+              {
+                key: `${entry.id}_s2`,
+                title: isEn
+                  ? 'Synchronize SLA deadlines across active tasks'
+                  : 'Актуализировать контрольные сроки (SLA) по задачам',
+                dept: currentProfile?.department || (isEn ? 'Operations' : 'Операционный блок'),
+                priority: 'Medium' as const,
+              },
+            ];
+
+            return (
+              <div
+                key={entry.id}
+                className={`flex flex-col ${
+                  entry.role === 'user' ? 'items-end' : 'items-start'
+                }`}
+              >
+                {entry.role === 'user' ? (
+                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600/90 px-3.5 py-2.5 text-white space-y-1 shadow-sm">
+                    <div className="flex items-center justify-between gap-3 text-[10px] text-indigo-100/80">
+                      <span className="font-semibold text-white">
+                        {currentProfile?.name || (isEn ? 'You' : 'Вы')}
+                      </span>
+                      <span className="tabular-nums">{entry.timestamp}</span>
+                    </div>
+                    <div className="text-xs leading-relaxed">{entry.text}</div>
+                    {entry.attachments && entry.attachments.length > 0 && (
+                      <AttachmentListRenderer
+                        attachments={entry.attachments}
+                        lang={language}
+                        compact
+                      />
+                    )}
                   </div>
-                  <div className="text-xs leading-relaxed">{entry.text}</div>
-                  {entry.attachments && entry.attachments.length > 0 && (
-                    <AttachmentListRenderer
-                      attachments={entry.attachments}
-                      lang={language}
-                      compact
-                    />
-                  )}
-                </div>
-              ) : (
-                <div className="w-full rounded-2xl rounded-tl-sm border border-white/[0.08] bg-[#131319] p-3.5 space-y-3 text-zinc-100 shadow-lg">
-                  {/* Assistant Header */}
-                  <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Cpu className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                      <span className="text-xs font-semibold text-white truncate">
-                        {entry.headline || 'TedCloud Intelligence'}
+                ) : (
+                  <div className="w-full rounded-2xl rounded-tl-sm border border-white/[0.08] bg-[#131319] p-4 space-y-3.5 text-zinc-100 shadow-lg">
+                    {/* Assistant Header */}
+                    <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Cpu className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        <span className="text-xs font-semibold text-white truncate">
+                          {entry.headline || 'TedCloud Intelligence'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-zinc-500 tabular-nums shrink-0">
+                        {entry.timestamp}
                       </span>
                     </div>
-                    <span className="text-[10px] text-zinc-500 tabular-nums shrink-0">
-                      {entry.timestamp}
-                    </span>
-                  </div>
 
-                  {/* Interactive Executed DB Action Cards (Block 3) */}
-                  {entry.executedActions && entry.executedActions.length > 0 && (
-                    <div className="space-y-2">
-                      {entry.executedActions.map((act, aIdx) => (
-                        <div
-                          key={aIdx}
-                          className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              <span>
-                                {act.type === 'task_created'
-                                  ? isEn
-                                    ? 'Task Created in DB'
-                                    : 'Задача записана в БД'
-                                  : act.type === 'deal_created'
-                                  ? isEn
-                                    ? 'CRM Deal Created in DB'
-                                    : 'Сделка записана в CRM'
-                                  : isEn
-                                  ? 'Message Sent'
-                                  : 'Сообщение доставлено'}
+                    {/* Interactive Executed DB Action Cards */}
+                    {entry.executedActions && entry.executedActions.length > 0 && (
+                      <div className="space-y-2">
+                        {entry.executedActions.map((act, aIdx) => (
+                          <div
+                            key={aIdx}
+                            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span>
+                                  {act.type === 'task_created'
+                                    ? isEn
+                                      ? 'Task Created in DB'
+                                      : 'Задача записана в БД'
+                                    : act.type === 'deal_created'
+                                    ? isEn
+                                      ? 'CRM Deal Created in DB'
+                                      : 'Сделка записана в CRM'
+                                    : isEn
+                                    ? 'Message Sent'
+                                    : 'Сообщение доставлено'}
+                                </span>
                               </span>
-                            </span>
 
-                            {act.type === 'task_created' && onNavigateToTasks && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onNavigateToTasks();
-                                  onClose();
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
-                              >
-                                <span>{isEn ? 'Open Tasks' : 'В задачи'}</span>
-                                <ArrowUpRight className="w-3 h-3" />
-                              </button>
+                              {act.type === 'task_created' && onNavigateToTasks && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onNavigateToTasks();
+                                    onClose();
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
+                                >
+                                  <span>{isEn ? 'Open Tasks' : 'В задачи'}</span>
+                                  <ArrowUpRight className="w-3 h-3" />
+                                </button>
+                              )}
+
+                              {act.type === 'deal_created' && onNavigateToCrm && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onNavigateToCrm();
+                                    onClose();
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
+                                >
+                                  <span>{isEn ? 'Open CRM' : 'В воронку'}</span>
+                                  <ArrowUpRight className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="text-xs font-medium text-white">
+                              {act.record?.title ||
+                                act.record?.client_name ||
+                                act.summary}
+                            </div>
+
+                            {act.type === 'deal_created' && act.record?.amount !== undefined && (
+                              <div className="text-xs text-emerald-300 font-semibold tabular-nums">
+                                {formatMoney(Number(act.record.amount) || 0)}
+                              </div>
                             )}
 
-                            {act.type === 'deal_created' && onNavigateToCrm && (
+                            {act.targetName && (
+                              <div className="text-[11px] text-zinc-300">
+                                {isEn ? 'Assignee / Recipient:' : 'Исполнитель / Адресат:'}{' '}
+                                <span className="font-medium text-white">{act.targetName}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Mini-Grid of Key Metrics */}
+                    {entry.metrics && entry.metrics.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {entry.metrics.map((m, idx) => (
+                          <div
+                            key={idx}
+                            className="rounded-xl border border-white/[0.07] bg-[#181820] px-3 py-2.5 space-y-0.5 min-w-0"
+                          >
+                            <div className="text-[10px] font-medium text-zinc-400 truncate">
+                              {m.label}
+                            </div>
+                            <div className="text-xs sm:text-sm font-semibold text-white tabular-nums truncate">
+                              {m.value}
+                            </div>
+                            {m.sublabel && (
+                              <div className="text-[10px] text-zinc-500 truncate">
+                                {m.sublabel}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* WIDGET 1: Mini Workload Distribution Chart + Rebalance Action */}
+                    {(entry.mode === 'workload_analysis' || entry.mode === 'daily_brief') &&
+                      employeeWorkloadRows.length > 0 && (
+                        <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                              <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
+                              {isEn
+                                ? 'Staff Workload Distribution'
+                                : 'Мини-график загрузки сотрудников'}
+                            </span>
+                            <span className="text-[10px] text-zinc-400">
+                              {isEn ? 'Active tasks per specialist' : 'Активные задачи по штату'}
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {employeeWorkloadRows.map((row) => {
+                              const pct = Math.min(
+                                100,
+                                Math.max(8, Math.round((row.count / maxWorkloadCount) * 100))
+                              );
+                              const isOverloaded = row.count >= 3 && nodes.length > 1;
+                              return (
+                                <div key={row.id} className="space-y-1">
+                                  <div className="flex items-center justify-between gap-2 text-xs">
+                                    <div className="min-w-0 truncate">
+                                      <span className="font-medium text-white">{row.name}</span>
+                                      <span className="text-[10px] text-zinc-400 ml-1.5">
+                                        · {row.role}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-[11px] font-semibold tabular-nums text-zinc-200">
+                                        {row.count} {isEn ? 'tasks' : 'зад.'}
+                                      </span>
+                                      {isOverloaded && (
+                                        <button
+                                          type="button"
+                                          disabled={
+                                            rebalancingNodeId === row.id ||
+                                            Boolean(rebalancedNodeIds[row.id])
+                                          }
+                                          onClick={() => void handleRebalanceEmployeeLoad(row.id)}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                                            rebalancedNodeIds[row.id]
+                                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                              : 'bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30'
+                                          }`}
+                                        >
+                                          {rebalancingNodeId === row.id ? (
+                                            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                          ) : rebalancedNodeIds[row.id] ? (
+                                            <Check className="w-2.5 h-2.5" />
+                                          ) : (
+                                            <RefreshCw className="w-2.5 h-2.5" />
+                                          )}
+                                          <span>
+                                            {rebalancedNodeIds[row.id]
+                                              ? isEn
+                                                ? 'Rebalanced'
+                                                : 'Перераспределено'
+                                              : isEn
+                                              ? 'Rebalance'
+                                              : 'Перераспределить'}
+                                          </span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-300 ${
+                                        row.count >= 3
+                                          ? 'bg-amber-400'
+                                          : row.count >= 1
+                                          ? 'bg-indigo-500'
+                                          : 'bg-emerald-400'
+                                      }`}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                    {/* WIDGET 2: Express CRM Deal Audit Cards */}
+                    {(entry.mode === 'workload_analysis' || entry.mode === 'daily_brief') &&
+                      activeDealsPreview.length > 0 && (
+                        <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                              <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
+                              {isEn ? 'Express CRM Deal Audit' : 'Экспресс-аудит сделок CRM'}
+                            </span>
+                            {onNavigateToCrm && (
                               <button
                                 type="button"
                                 onClick={() => {
                                   onNavigateToCrm();
                                   onClose();
                                 }}
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-300 hover:text-indigo-200"
                               >
-                                <span>{isEn ? 'Open CRM' : 'В воронку'}</span>
+                                <span>{isEn ? 'Open Pipeline' : 'Открыть воронку'}</span>
                                 <ArrowUpRight className="w-3 h-3" />
                               </button>
                             )}
                           </div>
-
-                          <div className="text-xs font-medium text-white">
-                            {act.record?.title ||
-                              act.record?.client_name ||
-                              act.summary}
-                          </div>
-
-                          {act.type === 'deal_created' && act.record?.amount !== undefined && (
-                            <div className="text-[11px] text-emerald-200 font-semibold tabular-nums">
-                              {formatMoney(Number(act.record.amount) || 0)}
-                            </div>
-                          )}
-
-                          {act.targetName && (
-                            <div className="text-[11px] text-zinc-300">
-                              {isEn ? 'Assignee / Recipient:' : 'Исполнитель / Адресат:'}{' '}
-                              <span className="font-medium text-white">{act.targetName}</span>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Mini-Grid of Key Metrics */}
-                  {entry.metrics && entry.metrics.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {entry.metrics.map((m, idx) => (
-                        <div
-                          key={idx}
-                          className="rounded-xl border border-white/[0.07] bg-[#181820] px-2.5 py-2 space-y-0.5 min-w-0"
-                        >
-                          <div className="text-[10px] font-medium text-zinc-400 truncate">
-                            {m.label}
-                          </div>
-                          <div className="text-xs sm:text-sm font-semibold text-white tabular-nums truncate">
-                            {m.value}
-                          </div>
-                          {m.sublabel && (
-                            <div className="text-[10px] text-zinc-500 truncate">
-                              {m.sublabel}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Structured Sections */}
-                  {entry.sections && entry.sections.length > 0 ? (
-                    <div className="space-y-2.5">
-                      {entry.sections.map((sec, sIdx) => (
-                        <div
-                          key={sIdx}
-                          className="rounded-xl border border-white/[0.06] bg-[#16161D] p-3 space-y-1.5"
-                        >
-                          <h4 className="text-xs font-semibold text-white tracking-tight">
-                            {sec.title}
-                          </h4>
-                          <ul className="space-y-1">
-                            {sec.items.map((item, iIdx) => (
-                              <li
-                                key={iIdx}
-                                className="text-xs text-zinc-300 leading-relaxed flex items-start gap-2"
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {activeDealsPreview.map((deal) => (
+                              <div
+                                key={deal.id}
+                                onClick={() => {
+                                  if (onNavigateToCrm) {
+                                    onNavigateToCrm();
+                                    onClose();
+                                  }
+                                }}
+                                className="rounded-lg border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] p-2.5 flex items-center justify-between gap-2 cursor-pointer transition-colors"
                               >
-                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/80 mt-1.5 shrink-0" />
-                                <span>{item}</span>
-                              </li>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold text-white truncate">
+                                    {deal.client_name || deal.title}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-400 truncate">
+                                    {deal.status || deal.stage || 'New'}
+                                  </div>
+                                </div>
+                                <div className="text-xs font-semibold text-emerald-400 tabular-nums shrink-0">
+                                  {formatMoney(Number(deal.amount ?? deal.deal_value ?? 0))}
+                                </div>
+                              </div>
                             ))}
-                          </ul>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
-                      {entry.text}
-                    </div>
-                  )}
+                      )}
 
-                  {/* Interactive Direct DB Action Buttons inside AI Response */}
-                  {(!entry.executedActions || entry.executedActions.length === 0) && (
-                    <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={
-                          creatingTaskEntryId === entry.id || Boolean(createdTaskIds[entry.id])
-                        }
-                        onClick={() => void handleDirectCreateSuggestedTask(entry)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-colors ${
-                          createdTaskIds[entry.id]
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-white text-black hover:bg-zinc-200'
-                        }`}
-                      >
-                        {creatingTaskEntryId === entry.id ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : createdTaskIds[entry.id] ? (
-                          <Check className="w-3 h-3" />
-                        ) : (
-                          <Plus className="w-3 h-3" />
-                        )}
-                        <span>
-                          {createdTaskIds[entry.id]
-                            ? isEn
-                              ? 'Task Created in Registry'
-                              : 'Задача создана в реестре'
-                            : isEn
-                            ? '+ Create Suggested Task'
-                            : '+ Создать предложенную задачу'}
-                        </span>
-                      </button>
+                    {/* Structured Sections */}
+                    {entry.sections && entry.sections.length > 0 ? (
+                      <div className="space-y-2.5">
+                        {entry.sections.map((sec, sIdx) => (
+                          <div
+                            key={sIdx}
+                            className="rounded-xl border border-white/[0.06] bg-[#16161D] p-3 space-y-1.5"
+                          >
+                            <h4 className="text-xs font-semibold text-white tracking-tight">
+                              {sec.title}
+                            </h4>
+                            <ul className="space-y-1">
+                              {sec.items.map((item, iIdx) => (
+                                <li
+                                  key={iIdx}
+                                  className="text-xs text-zinc-300 leading-relaxed flex items-start gap-2"
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/80 mt-1.5 shrink-0" />
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
+                        {entry.text}
+                      </div>
+                    )}
 
-                      <button
-                        type="button"
-                        disabled={
-                          decomposingEntryId === entry.id || Boolean(decomposedEntryIds[entry.id])
-                        }
-                        onClick={() => void handleDirectDecomposeActiveTasks(entry.id)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-medium transition-colors ${
-                          decomposedEntryIds[entry.id]
-                            ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
-                            : 'border-white/10 bg-zinc-900 hover:bg-zinc-800 text-zinc-200'
-                        }`}
-                      >
-                        {decomposingEntryId === entry.id ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : decomposedEntryIds[entry.id] ? (
-                          <Check className="w-3 h-3 text-emerald-400" />
-                        ) : (
-                          <ListChecks className="w-3 h-3 text-indigo-400" />
-                        )}
-                        <span>
-                          {decomposedEntryIds[entry.id]
-                            ? isEn
-                              ? 'Active Tasks Decomposed'
-                              : 'Чек-листы сформированы'
-                            : isEn
-                            ? 'Decompose Active Tasks'
-                            : 'Декомпозировать активные задачи'}
-                        </span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                    {/* WIDGET 3: Suggested AI Task Cards (+ В работу) */}
+                    {(!entry.executedActions || entry.executedActions.length === 0) && (
+                      <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                            <ListChecks className="w-3.5 h-3.5 text-indigo-400" />
+                            {isEn ? 'Suggested Daily Initiatives' : 'Предложенные задачи на день'}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={
+                              decomposingEntryId === entry.id ||
+                              Boolean(decomposedEntryIds[entry.id])
+                            }
+                            onClick={() => void handleDirectDecomposeActiveTasks(entry.id)}
+                            className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200 transition-colors"
+                          >
+                            {decomposedEntryIds[entry.id]
+                              ? isEn
+                                ? '✓ Checklists Ready'
+                                : '✓ Чек-листы сформированы'
+                              : isEn
+                              ? 'Decompose Active Tasks'
+                              : 'Декомпозировать активные задачи'}
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {suggestedCards.map((sc) => {
+                            const isCreated = Boolean(createdTaskIds[sc.key]);
+                            const isCreating = creatingTaskEntryId === sc.key;
+                            return (
+                              <div
+                                key={sc.key}
+                                className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 flex items-center justify-between gap-3"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-medium text-white truncate">
+                                    {sc.title}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-zinc-400">
+                                    <span className="text-amber-300 font-semibold">
+                                      {sc.priority}
+                                    </span>
+                                    <span>·</span>
+                                    <span className="truncate">{formatRole(sc.dept)}</span>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={isCreating || isCreated}
+                                  onClick={() =>
+                                    void handleDirectCreateSuggestedTask(
+                                      sc.key,
+                                      sc.title,
+                                      entry.text
+                                    )
+                                  }
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold shrink-0 transition-colors ${
+                                    isCreated
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                                  }`}
+                                >
+                                  {isCreating ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : isCreated ? (
+                                    <Check className="w-3 h-3" />
+                                  ) : (
+                                    <Plus className="w-3 h-3" />
+                                  )}
+                                  <span>
+                                    {isCreated
+                                      ? isEn
+                                        ? 'Added'
+                                        : 'В работе'
+                                      : isEn
+                                      ? '+ To Work'
+                                      : '+ В работу'}
+                                  </span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {isLoading && (
             <div className="flex items-center gap-2.5 text-xs text-zinc-200 bg-[#14141B] border border-white/[0.08] rounded-xl px-3.5 py-2.5 w-fit">

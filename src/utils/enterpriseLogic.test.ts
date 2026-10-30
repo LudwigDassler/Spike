@@ -12,6 +12,8 @@ import {
   normalizeAttachments,
   isImageAttachment,
   formatAttachmentSize,
+  getPlanPrice,
+  formatCompanyCurrency,
 } from './enterpriseLogic';
 
 test('parseTelegramUrgentMessage: sets isUrgent=false for standard messages', () => {
@@ -91,10 +93,12 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
   });
   assert.ok(brief.reply.includes('Сигма Групп'));
   assert.ok(brief.reply.includes('Аудит бюджета Q4'));
+  assert.ok(brief.reply.includes('₽'));
 
   const briefEn = runBuiltInAiAssistant({
     mode: 'daily_brief',
     lang: 'en',
+    currency: 'USD',
     companyName: 'Sigma Group',
     currentUser: sampleNodes[0],
     nodes: sampleNodes,
@@ -140,6 +144,17 @@ test('runBuiltInAiAssistant: supports daily_brief, decompose_task, workload_anal
     messages: [],
   });
   assert.ok(custom.reply.includes('ПАО Северсталь'));
+});
+
+test('getPlanPrice & formatCompanyCurrency: safely returns pricing for any plan/currency/cycle without throwing', () => {
+  assert.equal(getPlanPrice('Trial', 'RUB', 'monthly'), 0);
+  assert.equal(getPlanPrice('Business', 'RUB', 'monthly'), 9900);
+  assert.equal(getPlanPrice('Business', 'RUB', 'yearlyMonthly'), 7920);
+  assert.equal(getPlanPrice('Enterprise', 'USD', 'monthly'), 299);
+  assert.equal(getPlanPrice('Enterprise', 'USD', 'yearlyMonthly'), 239);
+  assert.equal(getPlanPrice('unknown_plan', 'RUB', 'monthly'), 0);
+  assert.equal(formatCompanyCurrency(1500000, 'RUB', 'ru'), `${(1500000).toLocaleString('ru-RU')} ₽`);
+  assert.equal(formatCompanyCurrency(1500000, 'USD', 'en'), '$1,500,000');
 });
 
 test('calculateSubscriptionPricing & generateInvoiceNumber: computes -20% yearly discount and TC invoice number from PRICING_PLANS', () => {

@@ -108,8 +108,10 @@ import {
   PRIMARY_BTN_CLASS,
   SECONDARY_BTN_CLASS,
 } from './ProgressiveModals';
+import { AuthGate } from './AuthGate';
 import {
   buildBuiltInChecklistForTask,
+  getPlanPrice,
   normalizeAttachments,
   PRICING_PLANS,
 } from '../utils/enterpriseLogic';
@@ -308,6 +310,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isMyPermissionsModalOpen, setIsMyPermissionsModalOpen] = useState(false);
   const [isMyAccessKeysModalOpen, setIsMyAccessKeysModalOpen] = useState(false);
   const [isLegalRequisitesModalOpen, setIsLegalRequisitesModalOpen] = useState(false);
+  const [isProductShowcaseOpen, setIsProductShowcaseOpen] = useState(false);
   const [isSecurityAuditModalOpen, setIsSecurityAuditModalOpen] = useState(false);
 
   const quickTaskInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -651,7 +654,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setToastBanner(msg);
     setTimeout(() => {
       setToastBanner((prev) => (prev === msg ? null : prev));
-    }, 3500);
+    }, 2500);
   };
 
   // Department Constructor handlers (БЛОК 2 — изолировано по companyId)
@@ -1986,6 +1989,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           messages: visibleMessages.length,
         }}
         onRequestSignOut={onResetSession ? requestSignOut : undefined}
+        onOpenProductShowcase={() => setIsProductShowcaseOpen(true)}
       />
 
       {/* БЛОК 2: Архитектура «Вложенного холста» (Inset Canvas) + Ambient Glow */}
@@ -2038,14 +2042,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
         />
 
         {toastBanner && (
-          <div className="mx-4 sm:mx-6 mt-4 flex items-center justify-between rounded-lg border border-white/15 bg-zinc-900/90 px-4 py-2.5 text-xs text-zinc-200 shadow-lg">
-            <div className="flex items-center gap-2">
-              <BellRing className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-              <span>{toastBanner}</span>
+          <div className="fixed bottom-5 right-5 z-50 max-w-sm flex items-center gap-3 rounded-xl border border-white/15 bg-zinc-900/95 px-4 py-2.5 text-xs text-white shadow-2xl backdrop-blur-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="truncate font-medium">{toastBanner}</span>
             </div>
             <button
               onClick={() => setToastBanner(null)}
-              className="text-zinc-400 hover:text-white text-[11px] font-semibold"
+              className="text-zinc-400 hover:text-white text-[11px] font-semibold shrink-0 ml-1"
             >
               OK
             </button>
@@ -4617,7 +4621,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       : safeNodes.some((n) => Boolean(n.telegram_chat_id));
 
                   return (
-                    <div className="shrink-0 px-3.5 sm:px-5 py-2.5 border-b border-white/[0.07] bg-[#131316] flex items-center justify-between gap-2.5">
+                    <div className="shrink-0 z-10 px-4 sm:px-6 py-3 border-b border-white/[0.07] bg-white/95 dark:bg-[#12151e]/95 backdrop-blur-md flex items-center justify-between gap-2.5">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {/* Компактная круглая/квадратная иконка возврата ← (w-8 h-8) на мобильном */}
                         <button
@@ -4664,8 +4668,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                {/* Поток сообщений (БЛОК 1: pt-5 pb-4 px-5 space-y-1.5, разделители дат и авто-скролл вниз) */}
-                <div className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar pt-5 pb-4 px-4 sm:px-5 space-y-1.5">
+                {/* Поток сообщений (px-6 pt-8 pb-6 space-y-3, чтобы верхняя панель реакций никогда не срезалась) */}
+                <div className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar px-4 sm:px-6 pt-8 pb-6 space-y-3">
                   {activeThreadMessages.length === 0 ? (
                     <RichEmptyState
                       variant="chat"
@@ -4799,19 +4803,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </div>
                                 )}
 
-                                {/* Строгие архитектурные карточки сообщений в стиле Linear / Slack Enterprise (rounded-xl, тонкий бордер, чистая типографика без фиолетовых пузырей) */}
+                                {/* Карточки сообщений: в Светлой теме исходящие — мягкий благородный индиго (bg-indigo-600 text-white shadow-xs) */}
                                 <div
-                                  className={`relative group w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2.5 text-[14px] leading-[1.38] break-words rounded-xl transition-colors ${
+                                  className={`relative group w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2.5 text-[14px] leading-[1.38] break-words rounded-2xl transition-colors ${
                                     isOutgoing
                                       ? theme === 'light'
-                                        ? 'ml-auto tc-bubble-outgoing bg-slate-900 text-white border border-slate-800 shadow-2xs'
-                                        : 'ml-auto tc-bubble-outgoing bg-zinc-800/90 border border-white/10 text-zinc-100 shadow-2xs'
+                                        ? 'ml-auto tc-bubble-outgoing bg-indigo-600 text-white border border-indigo-600 shadow-xs rounded-br-sm'
+                                        : 'ml-auto tc-bubble-outgoing bg-indigo-600/90 border border-indigo-500/30 text-white shadow-xs rounded-br-sm'
                                       : theme === 'light'
-                                      ? 'bg-white border border-slate-200/80 text-slate-900 shadow-2xs'
-                                      : 'bg-zinc-900/90 border border-white/[0.06] text-zinc-200 shadow-2xs'
+                                      ? 'bg-white border border-slate-200/90 text-slate-900 shadow-2xs rounded-bl-sm'
+                                      : 'bg-zinc-900/90 border border-white/[0.07] text-zinc-100 shadow-2xs rounded-bl-sm'
                                   }`}
                                 >
-                                  {/* Компактная мини-капсула быстрых реакций прямо НАД верхним углом сообщения (-top-8 right-0 / left-0): 4 эмодзи + 2 аккуратные круглые иконки с тултипами */}
+                                  {/* Компактная мини-капсула быстрых реакций прямо НАД верхним углом сообщения (-top-8 right-0 / left-0) */}
                                   <div
                                     className={`tc-reaction-pill absolute z-30 -top-8 ${
                                       isOutgoing ? 'right-0' : 'left-0'
@@ -4863,7 +4867,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   {/* В групповых каналах имя автора рендерится только на первом сообщении в серии */}
                                   {!isDirectThread && !isOutgoing && isFirstInSequence && (
                                     <div className="flex items-center gap-1.5 mb-1">
-                                      <span className="text-xs font-semibold text-indigo-300 truncate">
+                                      <span className="text-xs font-semibold text-indigo-400 truncate">
                                         {senderName}
                                       </span>
                                       {senderRole && (
@@ -4886,16 +4890,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   {/* Цитируемое сообщение (Reply Quote) */}
                                   {msg.reply_to && msg.reply_to.text && (
                                     <div
-                                      className={`mb-1.5 pl-2.5 py-1 rounded-r-lg border-l-2 text-xs ${
+                                      className={`mb-1 px-2.5 py-1 rounded-lg border-l-2 text-xs ${
                                         isOutgoing
-                                          ? 'border-white/60 bg-black/15 text-indigo-100'
+                                          ? 'tc-outgoing-quote bg-white/15 border-white/70 text-white/95'
                                           : 'border-indigo-400 bg-white/[0.05] text-zinc-300'
                                       }`}
                                     >
                                       <div className="font-semibold text-[11px] truncate">
                                         {msg.reply_to.sender_name}
                                       </div>
-                                      <div className="truncate opacity-85 text-[11px]">
+                                      <div className="truncate opacity-90 text-[11px]">
                                         {msg.reply_to.text}
                                       </div>
                                     </div>
@@ -4907,11 +4911,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       {messageBody}
                                     </span>
                                     <span
-                                      className={`inline-flex items-center gap-0.5 text-[11px] leading-none opacity-75 select-none ml-auto shrink-0 translate-y-[1px] ${
+                                      className={`inline-flex items-center gap-0.5 text-[11px] leading-none select-none ml-auto shrink-0 translate-y-[1px] ${
                                         isOutgoing
-                                          ? theme === 'light'
-                                            ? 'text-slate-300'
-                                            : 'text-zinc-300'
+                                          ? 'text-indigo-100'
                                           : theme === 'light'
                                           ? 'text-slate-400'
                                           : 'text-zinc-400'
@@ -4919,7 +4921,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     >
                                       {shortTime && <span className="tabular-nums">{shortTime}</span>}
                                       {isOutgoing && (
-                                        <CheckCheck className="w-3.5 h-3.5 inline-block ml-1 text-indigo-400 shrink-0" />
+                                        <CheckCheck className="w-3.5 h-3.5 inline-block ml-1 text-indigo-200 shrink-0" />
                                       )}
                                     </span>
                                   </div>
@@ -5982,21 +5984,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       [
                         {
                           tier: 'Trial' as SubscriptionPlanTier,
-                          priceRub: PRICING_PLANS.Trial.monthly.RUB,
+                          priceRub: getPlanPrice('Trial', 'RUB', 'monthly'),
                           desc: isEn
                             ? `${PRICING_PLANS.Trial.seatsLabelEn} · Kanban, Chat & Shift Tracker`
                             : `${PRICING_PLANS.Trial.seatsLabelRu} · Задачи, Чат и Табель смен`,
                         },
                         {
                           tier: 'Business' as SubscriptionPlanTier,
-                          priceRub: PRICING_PLANS.Business.monthly.RUB,
+                          priceRub: getPlanPrice('Business', 'RUB', 'monthly'),
                           desc: isEn
                             ? `${PRICING_PLANS.Business.seatsLabelEn} · Full CRM, PDF Docs & AI Studio (-20% yearly: $79/mo)`
                             : `${PRICING_PLANS.Business.seatsLabelRu} · Полная CRM, Договоры А4 и ИИ (-20% на год: 7 920 ₽/мес)`,
                         },
                         {
                           tier: 'Enterprise' as SubscriptionPlanTier,
-                          priceRub: PRICING_PLANS.Enterprise.monthly.RUB,
+                          priceRub: getPlanPrice('Enterprise', 'RUB', 'monthly'),
                           desc: isEn
                             ? `${PRICING_PLANS.Enterprise.seatsLabelEn} · SLA 99.9%, Dedicated Contour (-20% yearly: $239/mo)`
                             : `${PRICING_PLANS.Enterprise.seatsLabelRu} · SLA 99.9%, Выделенный контур (-20% на год: 23 920 ₽/мес)`,
@@ -6645,10 +6647,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }}
       />
 
-      {/* Slide-over Detail Drawer for Tasks & Deals */}
+      {/* Central Task Modal & CRM Deal Drawer */}
       <SlideOverDrawer
         target={activeDrawerTarget}
         nodes={safeNodes}
+        leads={visibleLeads}
         departments={companyDepartments}
         messages={safeMessages}
         currentProfile={currentProfile}
@@ -6662,6 +6665,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             showToast(t('drawer.savedToast'));
           }
         }}
+        onDeleteTask={(taskId, taskTitle) => {
+          setDrawerSelection(null);
+          requestDeleteRecord('tasks', taskId, taskTitle);
+        }}
         onSendMessage={
           onSendMessage
             ? async (payload) => {
@@ -6673,6 +6680,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
             : undefined
         }
       />
+
+      {/* Product Showcase & Pricing Modal (О платформе и Тарифы) */}
+      {isProductShowcaseOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+        >
+          <AuthGate
+            nodes={safeNodes}
+            botUsername={botUsername}
+            showcaseOnly
+            onCloseShowcase={() => setIsProductShowcaseOpen(false)}
+            onSelectPlanFromWorkspace={(planTier) => {
+              setIsProductShowcaseOpen(false);
+              setCheckoutModalPlan(planTier);
+            }}
+            onAuthenticated={async () => {
+              setIsProductShowcaseOpen(false);
+            }}
+          />
+        </div>
+      )}
 
       {/* TedCloud Intelligence Drawer (БЛОК 2) */}
       <TedCloudAiDrawer

@@ -19,7 +19,6 @@ import {
   X,
   ArrowLeft,
   CheckCircle2,
-  Sparkles,
   Building2,
   Download,
   Users,
@@ -1862,9 +1861,15 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
   const isEn = language === 'en';
   const isLight = theme === 'light';
 
+  const canManageTeam =
+    currentProfile?.access_level === 'root' ||
+    currentProfile?.access_level === 'manager' ||
+    Boolean(currentProfile?.permissions?.team_manage);
+
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<string>('ALL');
   const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  const [isUpdatingPersonalShift, setIsUpdatingPersonalShift] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTick(Date.now()), 10000);
@@ -1883,6 +1888,64 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
     () => nodes.filter((n) => n.shift_status === 'break'),
     [nodes]
   );
+
+  // Personal shifts for currentProfile
+  const myPersonalShifts = useMemo(() => {
+    if (!currentProfile) return [];
+    const myId = String(currentProfile.id || '');
+    const myName = String(currentProfile.name || '').trim().toLowerCase();
+    return workShifts.filter(
+      (ws) =>
+        (myId && String(ws.employee_id || '') === myId) ||
+        (myName && String(ws.employee_name || '').trim().toLowerCase() === myName)
+    );
+  }, [workShifts, currentProfile]);
+
+  const myShiftStatus = currentProfile?.shift_status || 'offline';
+  const isMyShiftOnline = myShiftStatus === 'online' || myShiftStatus === 'active';
+  const isMyShiftBreak = myShiftStatus === 'break';
+
+  const myWeeklyHours = useMemo(() => {
+    const weekAgoMs = Date.now() - 7 * 24 * 3600 * 1000;
+    const completedMins = myPersonalShifts
+      .filter((ws) => {
+        const ts = new Date(ws.started_at || ws.created_at || Date.now()).getTime();
+        return !Number.isNaN(ts) && ts >= weekAgoMs;
+      })
+      .reduce((acc, ws) => acc + Math.max(0, Number(ws.duration_minutes || 0)), 0);
+
+    let liveMins = 0;
+    if ((isMyShiftOnline || isMyShiftBreak) && currentProfile?.shift_started_at) {
+      const diff = Math.max(
+        1,
+        Math.round((nowTick - new Date(currentProfile.shift_started_at).getTime()) / 60000)
+      );
+      liveMins = Number.isFinite(diff) ? diff : 15;
+    }
+    return ((completedMins + liveMins) / 60).toFixed(1);
+  }, [myPersonalShifts, isMyShiftOnline, isMyShiftBreak, currentProfile?.shift_started_at, nowTick]);
+
+  const myMonthlyShiftsCount = useMemo(() => {
+    const monthAgoMs = Date.now() - 30 * 24 * 3600 * 1000;
+    return myPersonalShifts.filter((ws) => {
+      const ts = new Date(ws.started_at || ws.created_at || Date.now()).getTime();
+      return !Number.isNaN(ts) && ts >= monthAgoMs;
+    }).length;
+  }, [myPersonalShifts]);
+
+  const myCompletedTasksCount = useMemo(() => {
+    if (!currentProfile) return 0;
+    const fromShifts = myPersonalShifts.reduce(
+      (acc, ws) => acc + Math.max(0, Number(ws.tasks_completed || 0)),
+      0
+    );
+    const doneTasks = tasks.filter(
+      (t) =>
+        t.status === 'Done' &&
+        (t.assigned_to === currentProfile.id || t.owner_node_id === currentProfile.id)
+    ).length;
+    return Math.max(fromShifts, doneTasks);
+  }, [myPersonalShifts, tasks, currentProfile]);
 
   const weeklyHours = useMemo(() => {
     const weekAgoMs = Date.now() - 7 * 24 * 3600 * 1000;
@@ -1931,6 +1994,9 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
   }, [nodes, selectedEmployeeFilter, departmentFilter]);
 
   const filteredShiftsHistory = useMemo(() => {
+    if (!canManageTeam) {
+      return myPersonalShifts;
+    }
     return workShifts.filter((ws) => {
       if (selectedEmployeeFilter !== 'ALL' && ws.employee_id !== selectedEmployeeFilter) {
         return false;
@@ -1940,7 +2006,7 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
       }
       return true;
     });
-  }, [workShifts, selectedEmployeeFilter, departmentFilter]);
+  }, [canManageTeam, myPersonalShifts, workShifts, selectedEmployeeFilter, departmentFilter]);
 
   const formatDurationLabel = (minsRaw: number) => {
     const mins = Math.max(1, Math.round(minsRaw || 1));
@@ -1960,7 +2026,122 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
     return formatDurationLabel(diffMins);
   };
 
+  const handlePersonalStartShift = async () => {
+    if (!currentProfile || isUpdatingPersonalShift) return;
+    setIsUpdatingPersonalShift(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const storageKey = `tedcloud_workday_shift_${company?.id || ''}_${currentProfile.id}`;
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ status: 'active', startedAt: Date.now() })
+        );
+      } catch {}
+      if (onSyncShiftState) {
+        await onSyncShiftState('online', nowIso);
+      }
+      showToast?.(
+        isEn
+          ? 'Your work shift has started'
+          : 'Ваша рабочая смена открыта · Статус: На линии'
+      );
+    } finally {
+      setIsUpdatingPersonalShift(false);
+    }
+  };
+
+  const handlePersonalBreakShift = async () => {
+    if (!currentProfile || isUpdatingPersonalShift) return;
+    setIsUpdatingPersonalShift(true);
+    try {
+      const nextStatus = isMyShiftBreak ? 'online' : 'break';
+      const startedIso = currentProfile.shift_started_at || new Date().toISOString();
+      const storageKey = `tedcloud_workday_shift_${company?.id || ''}_${currentProfile.id}`;
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({
+            status: nextStatus === 'break' ? 'break' : 'active',
+            startedAt: new Date(startedIso).getTime(),
+          })
+        );
+      } catch {}
+      if (onSyncShiftState) {
+        await onSyncShiftState(nextStatus, startedIso);
+      }
+      showToast?.(
+        nextStatus === 'break'
+          ? isEn
+            ? 'Shift paused for break'
+            : 'Смена поставлена на перерыв'
+          : isEn
+          ? 'Resumed work shift'
+          : 'Смена возобновлена'
+      );
+    } finally {
+      setIsUpdatingPersonalShift(false);
+    }
+  };
+
+  const handlePersonalEndShift = async () => {
+    if (!currentProfile || isUpdatingPersonalShift) return;
+    setIsUpdatingPersonalShift(true);
+    try {
+      const startedIso =
+        currentProfile.shift_started_at || new Date(Date.now() - 60000).toISOString();
+      const endedIso = new Date().toISOString();
+      const durationMinutes = Math.max(
+        1,
+        Math.round((Date.now() - new Date(startedIso).getTime()) / 60000)
+      );
+      const myDoneTasks = tasks.filter(
+        (t) =>
+          (t.assigned_to === currentProfile.id || t.owner_node_id === currentProfile.id) &&
+          t.status === 'Done'
+      );
+      const summaryText = isEn
+        ? `Shift completed (${formatDurationLabel(durationMinutes)}). Closed tasks: ${myDoneTasks.length}.`
+        : `Смена завершена (${formatDurationLabel(durationMinutes)}). Выполнено задач: ${myDoneTasks.length}.`;
+
+      const storageKey = `tedcloud_workday_shift_${company?.id || ''}_${currentProfile.id}`;
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ status: 'idle', startedAt: null })
+        );
+      } catch {}
+
+      if (onCreateWorkShift) {
+        await onCreateWorkShift({
+          company_id: company?.id || currentProfile.company_id || '',
+          employee_id: currentProfile.id,
+          employee_name: currentProfile.name,
+          role_type: currentProfile.role_type,
+          department: currentProfile.department || null,
+          started_at: startedIso,
+          ended_at: endedIso,
+          duration_minutes: durationMinutes,
+          tasks_completed: myDoneTasks.length,
+          summary: summaryText,
+          status: 'completed',
+        });
+      }
+      if (onSyncShiftState) {
+        await onSyncShiftState('offline', null);
+      }
+      showToast?.(
+        isEn
+          ? 'Work shift completed and saved to your timesheet'
+          : 'Смена завершена и сохранена в ваш персональный табель'
+      );
+    } finally {
+      setIsUpdatingPersonalShift(false);
+    }
+  };
+
   const handleExportShiftsCsv = () => {
+    if (!canManageTeam) return;
     const headers = isEn
       ? ['Date', 'Employee', 'Role', 'Department', 'Start Time', 'End Time', 'Duration (min)', 'Tasks Completed', 'Shift Summary']
       : ['Дата', 'Сотрудник', 'Должность', 'Подразделение', 'Начало смены', 'Окончание смены', 'Длительность (мин)', 'Закрыто задач', 'Итоговый отчет за смену'];
@@ -2011,259 +2192,452 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
 
   return (
     <div className="space-y-6 font-sans">
-      {/* 1. ВЕРХНИЕ 4 KPI КАРТОЧКИ */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
-            <span>{isEn ? 'Online Now' : 'Сейчас на линии (Online)'}</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+      {/* 1. ВЕРХНИЕ 4 KPI КАРТОЧКИ: Разделение Руководитель vs Сотрудник */}
+      {canManageTeam ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'Online Now' : 'Сейчас на линии (Online)'}</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            </div>
+            <div className="text-2xl font-bold text-white tabular-nums">
+              {onlineEmployees.length}{' '}
+              <span className="text-xs font-normal text-[#8E8E93]">
+                / {nodes.length} {isEn ? 'staff' : 'сотр.'}
+              </span>
+            </div>
+            <div className="text-[11px] text-emerald-400">
+              {isEn ? 'Real-time shift telemetry' : 'Живой мониторинг присутствия'}
+            </div>
           </div>
-          <div className="text-2xl font-bold text-white tabular-nums">
-            {onlineEmployees.length}{' '}
-            <span className="text-xs font-normal text-[#8E8E93]">
-              / {nodes.length} {isEn ? 'staff' : 'сотр.'}
+
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'On Break / Meeting' : 'На перерыве'}</span>
+              <Coffee className="w-3.5 h-3.5 text-amber-400" />
+            </div>
+            <div className="text-2xl font-bold text-amber-400 tabular-nums">
+              {breakEmployees.length}
+            </div>
+            <div className="text-[11px] text-[#8E8E93]">
+              {isEn ? 'Paused timer or in meeting' : 'Таймер смены на паузе'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'Hours Worked (Week)' : 'Отработано часов за неделю'}</span>
+              <Clock className="w-3.5 h-3.5 text-indigo-400" />
+            </div>
+            <div className="text-2xl font-bold text-white tabular-nums">
+              {weeklyHours}{' '}
+              <span className="text-xs font-normal text-[#8E8E93]">{isEn ? 'hrs' : 'ч'}</span>
+            </div>
+            <div className="text-[11px] text-[#8E8E93]">
+              {isEn
+                ? `${workShifts.length} completed shifts in log`
+                : `Зафиксировано смен в базе: ${workShifts.length}`}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'Tasks Closed in Shifts' : 'Выполнено задач за смену'}</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-400 tabular-nums">
+              {completedTasksCount}
+            </div>
+            <div className="text-[11px] text-[#8E8E93]">
+              {isEn ? 'Verified deliverables' : 'Подтвержденный результат по задачам'}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'My Shift Status' : 'Мой статус смены'}</span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isMyShiftOnline
+                    ? 'bg-emerald-400 animate-pulse'
+                    : isMyShiftBreak
+                    ? 'bg-amber-400'
+                    : 'bg-zinc-500'
+                }`}
+              />
+            </div>
+            <div className="text-xl font-bold text-white">
+              {isMyShiftOnline
+                ? isEn
+                  ? 'On Shift'
+                  : 'На смене'
+                : isMyShiftBreak
+                ? isEn
+                  ? 'On Break'
+                  : 'На перерыве'
+                : isEn
+                ? 'Shift Closed'
+                : 'Смена закрыта'}
+            </div>
+            <div className="text-[11px] text-emerald-400 tabular-nums">
+              {isMyShiftOnline || isMyShiftBreak
+                ? `${isEn ? 'Elapsed:' : 'В работе:'} ${formatElapsedSince(
+                    currentProfile?.shift_started_at
+                  )}`
+                : isEn
+                ? 'Ready to start shift'
+                : 'Готов к открытию смены'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'My Hours (This Week)' : 'Мои часы за неделю'}</span>
+              <Clock className="w-3.5 h-3.5 text-indigo-400" />
+            </div>
+            <div className="text-2xl font-bold text-white tabular-nums">
+              {myWeeklyHours}{' '}
+              <span className="text-xs font-normal text-[#8E8E93]">{isEn ? 'hrs' : 'ч'}</span>
+            </div>
+            <div className="text-[11px] text-[#8E8E93]">
+              {isEn ? 'Personal weekly time log' : 'Персональный учет за 7 дней'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'Completed Shifts (Month)' : 'Завершенных смен за месяц'}</span>
+              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+            </div>
+            <div className="text-2xl font-bold text-white tabular-nums">
+              {myMonthlyShiftsCount}
+            </div>
+            <div className="text-[11px] text-[#8E8E93]">
+              {isEn ? 'Recorded in your personal log' : 'Записей в вашем личном табеле'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
+              <span>{isEn ? 'My Tasks Closed in Shifts' : 'Выполнено моих задач за смену'}</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-400 tabular-nums">
+              {myCompletedTasksCount}
+            </div>
+            <div className="text-[11px] text-[#8E8E93]">
+              {isEn ? 'Personal completed assignments' : 'Лично закрытые поручения'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. ПАНЕЛЬ ФИЛЬТРАЦИИ И ВЫГРУЗКИ CSV (ТОЛЬКО ДЛЯ РУКОВОДИТЕЛЕЙ И HR) */}
+      {canManageTeam && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#12151e] p-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <select
+              value={selectedEmployeeFilter}
+              onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
+              className="h-9 rounded-xl border border-white/10 bg-[#181c28] px-3 text-xs text-white focus:border-white/25 focus:outline-none"
+            >
+              <option value="ALL">
+                {isEn ? 'All Employees' : 'Все сотрудники компании'} ({nodes.length})
+              </option>
+              {nodes.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name} — {formatRole(emp.role_type)}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className="h-9 rounded-xl border border-white/10 bg-[#181c28] px-3 text-xs text-white focus:border-white/25 focus:outline-none"
+            >
+              <option value="ALL">
+                {isEn ? 'All Departments' : 'Все подразделения'}
+              </option>
+              {departments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {formatRole(dept)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportShiftsCsv}
+              className={`inline-flex items-center gap-2 h-9 px-3.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                isLight
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-xs'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isEn ? 'Export Timesheet CSV' : 'Выгрузить табель в CSV'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 3. ЖИВОЕ ТАБЛО ПРИСУТСТВИЯ (ДЛЯ РУКОВОДИТЕЛЯ) ИЛИ ПЕРСОНАЛЬНЫЙ ПУЛЬТ СМЕНЫ (ДЛЯ СОТРУДНИКА) */}
+      {canManageTeam ? (
+        <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-white tracking-tight">
+                {isEn ? 'Live Attendance Roster' : 'Живое табло присутствия сотрудников'}
+              </h3>
+              <p className="text-xs text-[#8E8E93] mt-0.5">
+                {isEn
+                  ? 'Real-time employee shift status, start timestamp, and elapsed work time'
+                  : 'Текущий статус каждого сотрудника, время открытия смены и живой таймер на линии'}
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-medium text-emerald-300">
+              <Activity className="w-3.5 h-3.5" />
+              <span>
+                {isEn
+                  ? `${onlineEmployees.length} Active`
+                  : `На смене: ${onlineEmployees.length}`}
+              </span>
             </span>
           </div>
-          <div className="text-[11px] text-emerald-400">
-            {isEn ? 'Real-time shift telemetry' : 'Живой мониторинг присутствия'}
-          </div>
-        </div>
 
-        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
-            <span>{isEn ? 'On Break / Meeting' : 'На перерыве'}</span>
-            <Coffee className="w-3.5 h-3.5 text-amber-400" />
-          </div>
-          <div className="text-2xl font-bold text-amber-400 tabular-nums">
-            {breakEmployees.length}
-          </div>
-          <div className="text-[11px] text-[#8E8E93]">
-            {isEn ? 'Paused timer or in meeting' : 'Таймер смены на паузе'}
-          </div>
-        </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {filteredRoster.map((emp) => {
+              const isOnline = emp.shift_status === 'online' || emp.shift_status === 'active';
+              const isBreak = emp.shift_status === 'break';
+              const startedClock = emp.shift_started_at
+                ? new Date(emp.shift_started_at).toLocaleTimeString(
+                    isEn ? 'en-US' : 'ru-RU',
+                    { hour: '2-digit', minute: '2-digit' }
+                  )
+                : null;
+              const empActiveTasks = tasks.filter(
+                (t) =>
+                  (t.assigned_to === emp.id || t.owner_node_id === emp.id) &&
+                  t.status !== 'Done' &&
+                  t.status !== 'Cancelled'
+              ).length;
+              const empDoneTasks = tasks.filter(
+                (t) =>
+                  (t.assigned_to === emp.id || t.owner_node_id === emp.id) &&
+                  t.status === 'Done'
+              ).length;
 
-        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
-            <span>{isEn ? 'Hours Worked (Week)' : 'Отработано часов за неделю'}</span>
-            <Clock className="w-3.5 h-3.5 text-indigo-400" />
-          </div>
-          <div className="text-2xl font-bold text-white tabular-nums">
-            {weeklyHours}{' '}
-            <span className="text-xs font-normal text-[#8E8E93]">{isEn ? 'hrs' : 'ч'}</span>
-          </div>
-          <div className="text-[11px] text-[#8E8E93]">
-            {isEn
-              ? `${workShifts.length} completed shifts in log`
-              : `Зафиксировано смен в базе: ${workShifts.length}`}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-4 space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-[#8E8E93]">
-            <span>{isEn ? 'Tasks Closed in Shifts' : 'Выполнено задач за смену'}</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-bold text-emerald-400 tabular-nums">
-            {completedTasksCount}
-          </div>
-          <div className="text-[11px] text-[#8E8E93]">
-            {isEn ? 'Verified deliverables' : 'Подтвержденный результат по задачам'}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. ПАНЕЛЬ ФИЛЬТРАЦИИ И ВЫГРУЗКИ CSV */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#121215] p-4">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <select
-            value={selectedEmployeeFilter}
-            onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
-            className="h-9 rounded-xl border border-white/10 bg-[#18181D] px-3 text-xs text-white focus:border-white/25 focus:outline-none"
-          >
-            <option value="ALL">
-              {isEn ? 'All Employees' : 'Все сотрудники компании'} ({nodes.length})
-            </option>
-            {nodes.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name} — {formatRole(emp.role_type)}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
-            className="h-9 rounded-xl border border-white/10 bg-[#18181D] px-3 text-xs text-white focus:border-white/25 focus:outline-none"
-          >
-            <option value="ALL">
-              {isEn ? 'All Departments' : 'Все подразделения'}
-            </option>
-            {departments.map((dept) => (
-              <option key={dept} value={dept}>
-                {formatRole(dept)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleExportShiftsCsv}
-            className={`inline-flex items-center gap-2 h-9 px-3.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
-              isLight
-                ? 'bg-slate-900 text-white hover:bg-slate-800 shadow-xs'
-                : 'bg-white text-black hover:bg-zinc-200'
-            }`}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>{isEn ? 'Export Timesheet CSV' : 'Выгрузить табель в CSV'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 3. ЖИВОЕ ТАБЛО ПРИСУТСТВИЯ (LIVE ROSTER) */}
-      <div className="rounded-xl border border-white/[0.07] bg-[#121215] p-5 space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold text-white tracking-tight">
-              {isEn ? 'Live Attendance Roster' : 'Живое табло присутствия сотрудников'}
-            </h3>
-            <p className="text-xs text-[#8E8E93] mt-0.5">
-              {isEn
-                ? 'Real-time employee shift status, start timestamp, and elapsed work time'
-                : 'Текущий статус каждого сотрудника, время открытия смены и живой таймер на линии'}
-            </p>
-          </div>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-medium text-emerald-300">
-            <Activity className="w-3.5 h-3.5" />
-            <span>
-              {isEn
-                ? `${onlineEmployees.length} Active`
-                : `На смене: ${onlineEmployees.length}`}
-            </span>
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {filteredRoster.map((emp) => {
-            const isOnline = emp.shift_status === 'online' || emp.shift_status === 'active';
-            const isBreak = emp.shift_status === 'break';
-            const startedClock = emp.shift_started_at
-              ? new Date(emp.shift_started_at).toLocaleTimeString(
-                  isEn ? 'en-US' : 'ru-RU',
-                  { hour: '2-digit', minute: '2-digit' }
-                )
-              : null;
-            const empActiveTasks = tasks.filter(
-              (t) =>
-                (t.assigned_to === emp.id || t.owner_node_id === emp.id) &&
-                t.status !== 'Done' &&
-                t.status !== 'Cancelled'
-            ).length;
-            const empDoneTasks = tasks.filter(
-              (t) =>
-                (t.assigned_to === emp.id || t.owner_node_id === emp.id) &&
-                t.status === 'Done'
-            ).length;
-
-            return (
-              <div
-                key={emp.id}
-                className="rounded-xl border border-white/[0.08] bg-[#16161B] p-4 flex flex-col justify-between gap-3 hover:border-white/20 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <UserAvatar name={emp.name} avatarUrl={emp.avatar_url} size="md" />
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-white truncate">
-                        {emp.name}
-                      </div>
-                      <div className="text-[11px] text-[#8E8E93] truncate">
-                        {formatRole(emp.role_type)}
-                      </div>
-                      {emp.department && (
-                        <div className="text-[10px] text-zinc-400 truncate mt-0.5">
-                          {formatRole(emp.department)}
+              return (
+                <div
+                  key={emp.id}
+                  className="rounded-xl border border-white/[0.08] bg-[#181c28] p-4 flex flex-col justify-between gap-3 hover:border-white/20 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <UserAvatar name={emp.name} avatarUrl={emp.avatar_url} size="md" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-white truncate">
+                          {emp.name}
                         </div>
-                      )}
+                        <div className="text-[11px] text-[#8E8E93] truncate">
+                          {formatRole(emp.role_type)}
+                        </div>
+                        {emp.department && (
+                          <div className="text-[10px] text-zinc-400 truncate mt-0.5">
+                            {formatRole(emp.department)}
+                          </div>
+                        )}
+                      </div>
                     </div>
+
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border shrink-0 ${
+                        isOnline
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : isBreak
+                          ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                          : 'bg-white/[0.04] border-white/[0.08] text-[#8E8E93]'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isOnline
+                            ? 'bg-emerald-400 animate-pulse'
+                            : isBreak
+                            ? 'bg-amber-400'
+                            : 'bg-zinc-500'
+                        }`}
+                      />
+                      <span>
+                        {isOnline
+                          ? startedClock
+                            ? isEn
+                              ? `Since ${startedClock}`
+                              : `На смене с ${startedClock}`
+                            : isEn
+                            ? 'Online'
+                            : 'На смене'
+                          : isBreak
+                          ? isEn
+                            ? 'Break'
+                            : 'Перерыв'
+                          : isEn
+                          ? 'Offline'
+                          : 'Не в сети'}
+                      </span>
+                    </span>
                   </div>
 
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border shrink-0 ${
-                      isOnline
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                        : isBreak
-                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                        : 'bg-white/[0.04] border-white/[0.08] text-[#8E8E93]'
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        isOnline
-                          ? 'bg-emerald-400 animate-pulse'
-                          : isBreak
-                          ? 'bg-amber-400'
-                          : 'bg-zinc-500'
-                      }`}
-                    />
-                    <span>
-                      {isOnline
-                        ? startedClock
-                          ? isEn
-                            ? `Since ${startedClock}`
-                            : `На смене с ${startedClock}`
-                          : isEn
-                          ? 'Online'
-                          : 'На смене'
-                        : isBreak
-                        ? isEn
-                          ? 'Break'
-                          : 'Перерыв'
-                        : isEn
-                        ? 'Offline'
-                        : 'Не в сети'}
+                  <div className="pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#8E8E93]">
+                    <span className="tabular-nums">
+                      {isOnline || isBreak ? (
+                        <>
+                          {isEn ? 'Duration: ' : 'В смене: '}
+                          <strong className="text-white font-semibold">
+                            {formatElapsedSince(emp.shift_started_at)}
+                          </strong>
+                        </>
+                      ) : (
+                        <span>{isEn ? 'Shift closed' : 'Смена не открыта'}</span>
+                      )}
                     </span>
-                  </span>
+                    <span className="tabular-nums">
+                      {isEn
+                        ? `Tasks: ${empActiveTasks} open · ${empDoneTasks} done`
+                        : `Задач: ${empActiveTasks} в раб. · ${empDoneTasks} закр.`}
+                    </span>
+                  </div>
                 </div>
-
-                <div className="pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#8E8E93]">
-                  <span className="tabular-nums">
-                    {isOnline || isBreak ? (
-                      <>
-                        {isEn ? 'Duration: ' : 'В смене: '}
-                        <strong className="text-white font-semibold">
-                          {formatElapsedSince(emp.shift_started_at)}
-                        </strong>
-                      </>
-                    ) : (
-                      <span>{isEn ? 'Shift closed' : 'Смена не открыта'}</span>
-                    )}
-                  </span>
-                  <span className="tabular-nums">
-                    {isEn
-                      ? `Tasks: ${empActiveTasks} open · ${empDoneTasks} done`
-                      : `Задач: ${empActiveTasks} в раб. · ${empDoneTasks} закр.`}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-xl border border-white/[0.07] bg-[#12151e] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <UserAvatar
+              name={currentProfile?.name || 'Сотрудник'}
+              avatarUrl={currentProfile?.avatar_url}
+              size="lg"
+            />
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-semibold text-white">
+                  {isEn ? 'My Timesheet & Work Hours' : 'Мой табель и рабочее время'}
+                </h3>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-semibold border ${
+                    isMyShiftOnline
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : isMyShiftBreak
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                      : 'bg-white/[0.04] border-white/[0.08] text-[#8E8E93]'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isMyShiftOnline
+                        ? 'bg-emerald-400 animate-pulse'
+                        : isMyShiftBreak
+                        ? 'bg-amber-400'
+                        : 'bg-zinc-500'
+                    }`}
+                  />
+                  <span>
+                    {isMyShiftOnline
+                      ? isEn
+                        ? 'On Shift'
+                        : 'На смене'
+                      : isMyShiftBreak
+                      ? isEn
+                        ? 'Break'
+                        : 'Перерыв'
+                      : isEn
+                      ? 'Offline'
+                      : 'Не на смене'}
+                  </span>
+                </span>
+              </div>
+              <p className="text-xs text-[#8E8E93]">
+                {currentProfile?.name} · {formatRole(currentProfile?.role_type)}
+                {currentProfile?.department
+                  ? ` · ${formatRole(currentProfile.department)}`
+                  : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {!isMyShiftOnline && !isMyShiftBreak ? (
+              <button
+                type="button"
+                disabled={isUpdatingPersonalShift}
+                onClick={() => void handlePersonalStartShift()}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>{isEn ? 'Start Shift' : 'Начать смену'}</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={isUpdatingPersonalShift}
+                  onClick={() => void handlePersonalBreakShift()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Pause className="w-3.5 h-3.5" />
+                  <span>
+                    {isMyShiftBreak
+                      ? isEn
+                        ? 'Resume Shift'
+                        : 'Продолжить смену'
+                      : isEn
+                      ? 'Break'
+                      : 'Перерыв'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isUpdatingPersonalShift}
+                  onClick={() => void handlePersonalEndShift()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  <Square className="w-3.5 h-3.5" />
+                  <span>{isEn ? 'End Shift' : 'Завершить смену'}</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 4. ЖУРНАЛ И ТАБЕЛЬ ЗАВЕРШЕННЫХ СМЕН (WORK_SHIFTS TABLE) */}
-      <div className="rounded-xl border border-white/[0.07] bg-[#121215] overflow-hidden">
+      <div className="rounded-xl border border-white/[0.07] bg-[#12151e] overflow-hidden">
         <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-white tracking-tight">
-              {isEn ? 'Completed Shifts & Timesheet Log' : 'Журнал и Табель отработанных смен'}
+              {canManageTeam
+                ? isEn
+                  ? 'Completed Shifts & Timesheet Log'
+                  : 'Журнал и Табель отработанных смен'
+                : isEn
+                ? 'My Personal Shift History'
+                : 'История моих рабочих смен'}
             </h3>
             <p className="text-xs text-[#8E8E93] mt-0.5">
-              {isEn
-                ? 'Archive of completed employee shifts with duration, closed tasks, and shift reports'
-                : 'Архив завершенных рабочих смен с точным временем, длительностью и итоговым отчетом сотрудника'}
+              {canManageTeam
+                ? isEn
+                  ? 'Archive of completed employee shifts with duration, closed tasks, and shift reports'
+                  : 'Архив завершенных рабочих смен с точным временем, длительностью и итоговым отчетом сотрудника'
+                : isEn
+                ? 'Your personal completed shifts, worked hours, and shift summaries'
+                : 'Ваши завершенные смены с точным временем, длительностью и итоговым отчетом'}
             </p>
           </div>
           <span className="text-xs text-[#8E8E93] tabular-nums">
@@ -2283,8 +2657,8 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
             </div>
             <p className="text-[11px] text-[#8E8E93] max-w-md mx-auto">
               {isEn
-                ? 'Start a shift using the timer in the top bar and click "End Shift with Auto-Report" to record your first timesheet entry.'
-                : 'Нажмите «Начать смену» в верхней панели управления и завершите ее с авто-отчетом — запись мгновенно появится в этом табеле.'}
+                ? 'Start a shift using the timer in the top bar and click "End Shift" to record your first timesheet entry.'
+                : 'Нажмите «Начать смену» и завершите ее по окончании рабочего дня — запись мгновенно появится в этом табеле.'}
             </p>
           </div>
         ) : (
@@ -2983,24 +3357,21 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
     : 0;
 
   return (
-    <div className="rounded-xl border border-indigo-500/25 bg-[#111115] shadow-2xl overflow-hidden">
+    <div className="rounded-xl border border-indigo-500/25 bg-[#12151e] shadow-2xl overflow-hidden">
       <div className="px-5 py-4 border-b border-white/[0.07] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
             <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
               {isEn
-                ? 'Automated E2E, RBAC, Multi-Tenancy & Security Diagnostics'
-                : 'Автоматический E2E, RBAC, Multi-Tenancy и Security Аудит (QA Runner)'}
+                ? 'Security & Contour Integrity Self-Diagnostics'
+                : 'Самодиагностика безопасности и целостности контура'}
             </h3>
-            <span className="px-2 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-[10px] font-semibold text-indigo-300">
-              __QA_SANDBOX_
-            </span>
           </div>
           <p className="text-xs text-[#8E8E93]">
             {isEn
-              ? 'Executes 8 live integration & security checks step-by-step with isolated synthetic data and guaranteed cleanup.'
-              : 'Пошагово выполняет 8 сквозных проверок (Шаг 1/8 ... Шаг 8/8) с визуальным прогресс-баром и гарантированной очисткой песочницы.'}
+              ? 'Executes 8 live integration & security checks step-by-step with isolated verification and guaranteed cleanup.'
+              : 'Пошагово выполняет 8 сквозных проверок безопасности и целостности (Шаг 1/8 ... Шаг 8/8) с визуальным прогресс-баром.'}
           </p>
         </div>
 
@@ -3024,8 +3395,8 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>
                 {isEn
-                  ? 'Run Full E2E & Security Self-Diagnostics'
-                  : 'Запустить полный E2E и Security самодиагностику'}
+                  ? 'Run Security & Integrity Self-Diagnostics'
+                  : 'Запустить самодиагностику контура'}
               </span>
             </>
           )}
@@ -3040,8 +3411,8 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
               {isRunning
                 ? stepLabels[Math.max(0, currentStepIdx - 1)]
                 : isEn
-                ? 'All 8 diagnostic steps completed · Sandbox verified clean'
-                : 'Все 8 шагов диагностики выполнены · Песочница __QA_SANDBOX_ очищена'}
+                ? 'All 8 diagnostic steps completed · Integrity verified'
+                : 'Все 8 шагов диагностики выполнены · Целостность контура подтверждена'}
             </span>
             <span className="font-semibold text-white tabular-nums">{progressPercent}%</span>
           </div>

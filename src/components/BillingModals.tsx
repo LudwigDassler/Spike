@@ -187,14 +187,14 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                   : 'Выберите юрисдикцию для настройки доступных платежных инструментов'}
               </div>
             </div>
-            <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#0C0C0E] p-0.5">
+            <div className="inline-flex items-center bg-slate-200/80 dark:bg-zinc-800 p-1 rounded-xl border border-slate-300/60 dark:border-white/10">
               <button
                 type="button"
                 onClick={() => handleRegionChange('GLOBAL')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
                   selectedRegion === 'GLOBAL'
-                    ? 'bg-white text-black font-semibold'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-zinc-300 dark:hover:text-white font-medium'
                 }`}
               >
                 <Globe className="w-3.5 h-3.5" />
@@ -203,10 +203,10 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
               <button
                 type="button"
                 onClick={() => handleRegionChange('RU')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
                   selectedRegion === 'RU'
-                    ? 'bg-white text-black font-semibold'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-zinc-300 dark:hover:text-white font-medium'
                 }`}
               >
                 <Building2 className="w-3.5 h-3.5" />
@@ -224,16 +224,16 @@ export const SubscriptionCheckoutModal: React.FC<SubscriptionCheckoutModalProps>
                   : `Тарифный план организации «${companyName}»`}
               </label>
               {selectedRegion === 'GLOBAL' && (
-                <div className="inline-flex items-center rounded-md border border-white/10 bg-[#151519] p-0.5">
+                <div className="inline-flex items-center bg-slate-200/80 dark:bg-zinc-800 p-0.5 rounded-lg border border-slate-300/60 dark:border-white/10">
                   {(['USD', 'EUR'] as CurrencyCode[]).map((curr) => (
                     <button
                       key={curr}
                       type="button"
                       onClick={() => setGlobalCurrency(curr)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                      className={`px-2.5 py-0.5 rounded-md text-[10px] transition-colors ${
                         globalCurrency === curr
-                          ? 'bg-white text-black'
-                          : 'text-zinc-400 hover:text-white'
+                          ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-zinc-300 dark:hover:text-white font-medium'
                       }`}
                     >
                       {curr}
