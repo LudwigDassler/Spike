@@ -7,7 +7,6 @@ import {
   Users,
   MessageSquare,
   Plus,
-  Cpu,
   ArrowRight,
   Command,
 } from 'lucide-react';
@@ -20,6 +19,7 @@ import {
 } from '../types/database';
 import { searchWorkspaceEntities } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
+import { TeddyAvatar } from './TedCloudAiDrawer';
 
 interface CommandBarModalProps {
   isOpen: boolean;
@@ -163,11 +163,11 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                   onClose();
                   onOpenAiCopilot();
                 }}
-                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-indigo-500/30 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors"
               >
                 <span className="inline-flex items-center gap-2">
-                  <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>TedCloud Intelligence</span>
+                  <TeddyAvatar size="xs" />
+                  <span>{isEn ? 'Teddy AI Advisor' : 'Советник Teddy (AI)'}</span>
                 </span>
                 <ArrowRight className="w-3 h-3 text-zinc-400" />
               </button>

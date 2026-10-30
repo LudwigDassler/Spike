@@ -222,6 +222,7 @@ function runBuiltInAiAssistant(input: {
   leads: any[];
   messages: any[];
   lang?: 'ru' | 'en';
+  personaMode?: 'strategist' | 'mathematician';
 }): {
   mode: AiAssistantMode;
   headline?: string;
@@ -244,9 +245,11 @@ function runBuiltInAiAssistant(input: {
     leads = [],
     messages = [],
     lang = 'ru',
+    personaMode = 'strategist',
   } = input;
 
   const isEn = lang === 'en';
+  const isMath = personaMode === 'mathematician';
   const openTasks = tasks.filter((t) => t.status !== 'Done');
   const highPriorityTasks = openTasks.filter((t) => t.priority === 'High');
   const doneTasks = tasks.filter((t) => t.status === 'Done');
@@ -444,10 +447,19 @@ function runBuiltInAiAssistant(input: {
       },
     ];
 
+    const teddyHeaderNote = isMath
+      ? isEn
+        ? `[Systems Mathematician · Anti-Bureaucracy] Industrial society loves endless status meetings; we rely on cold math. Conversion efficiency is ${conversionRate}%, with ${openTasks.length} active nodes in the queue.`
+        : `[Системный Математик · Анти-Бюрократия] Индустриальное общество обожает плодить совещания, а мы опираемся на строгий математический расчет: в очереди ${openTasks.length} поручений, КПД конверсии воронки — ${conversionRate}%.`
+      : isEn
+      ? `[Strategist · Roosevelt Doctrine] Speak softly and carry a big stick: ${highPriorityTasks.length} high-priority directives require iron execution discipline today.`
+      : `[Стратег · Доктрина Рузвельта] Говорим мягко, но держим железную дисциплину: под личным контролем ${highPriorityTasks.length} срочных поручений и ${activeLeads.length} сделок в работе.`;
+
     const lines: string[] = [
       isEn
-        ? `Personal Daily Briefing — ${userName} (${userRole}), ${companyName}`
-        : `Персональная сводка дня — ${userName} (${userRole}), ${companyName}`,
+        ? `Teddy AI · Executive Briefing — ${userName} (${userRole}), ${companyName}`
+        : `Советник Teddy · Сводка дня — ${userName} (${userRole}), ${companyName}`,
+      teddyHeaderNote,
       '',
       isEn ? 'Operational Task Scope:' : 'Операционный контур задач:',
       ...taskItems.map((i) => `• ${i}`),
@@ -462,8 +474,8 @@ function runBuiltInAiAssistant(input: {
     return {
       mode: 'daily_brief',
       headline: isEn
-        ? `Personal Daily Briefing — ${userName} (${userRole})`
-        : `Персональная сводка дня — ${userName} (${userRole})`,
+        ? `Teddy AI · Daily Brief — ${userName} (${userRole})`
+        : `Советник Teddy · Сводка дня — ${userName} (${userRole})`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),
@@ -570,16 +582,16 @@ function runBuiltInAiAssistant(input: {
       },
       {
         title: isEn
-          ? 'TedCloud Intelligence Recommendations'
-          : 'Рекомендации TedCloud Intelligence',
+          ? 'Teddy AI Strategic & Mathematical Directives'
+          : 'Директивы Советника Teddy (Дисциплина и Математика)',
         items: recommendationItems,
       },
     ];
 
     const lines: string[] = [
       isEn
-        ? `Team Workload & CRM Pipeline Audit — ${companyName}`
-        : `Анализ загрузки команды и воронки CRM — ${companyName}`,
+        ? `Teddy AI · Workload & Bottleneck Audit — ${companyName}`
+        : `Советник Teddy · Аудит узких мест и воронки CRM — ${companyName}`,
       '',
       isEn ? 'Staff Workload Balance:' : 'Баланс нагрузки по штату:',
       ...staffItems.map((i) => `• ${i}`),
@@ -587,15 +599,15 @@ function runBuiltInAiAssistant(input: {
       isEn ? 'CRM Commercial Pipeline Audit:' : 'Аудит коммерческой воронки CRM:',
       ...crmAuditItems.map((i) => `• ${i}`),
       '',
-      isEn ? 'TedCloud Intelligence Recommendations:' : 'Рекомендации TedCloud Intelligence:',
+      isEn ? 'Teddy AI Directives:' : 'Директивы Советника Teddy:',
       ...recommendationItems.map((i) => `• ${i}`),
     ];
 
     return {
       mode: 'workload_analysis',
       headline: isEn
-        ? `Team Workload & CRM Pipeline Audit — ${companyName}`
-        : `Анализ загрузки команды и воронки CRM — ${companyName}`,
+        ? `Teddy AI · Workload & CRM Audit — ${companyName}`
+        : `Советник Teddy · Аудит нагрузки и воронки CRM — ${companyName}`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),
@@ -721,8 +733,8 @@ function runBuiltInAiAssistant(input: {
   return {
     mode: 'custom',
     headline: isEn
-      ? `Report for "${prompt.trim() || defaultQueryTitle}"`
-      : `Ответ по запросу «${prompt.trim() || defaultQueryTitle}»`,
+      ? `Teddy AI · Report for "${prompt.trim() || defaultQueryTitle}"`
+      : `Советник Teddy · Разбор по запросу «${prompt.trim() || defaultQueryTitle}»`,
     metrics: baseMetrics,
     sections,
     reply: lines.join('\n'),
@@ -2028,34 +2040,34 @@ function normalizeNodeRowInternal(row: any) {
   const accessLevel = normalizeAccessLevel(row.access_level, row.role_type);
   const permissions = normalizePermissionsObject(accessLevel, row.permissions);
   const resolvedAvatar =
-    row.avatar_url !== undefined
-      ? row.avatar_url
-      : extras?.avatar_url !== undefined
+    extras?.avatar_url !== undefined && extras.avatar_url !== null
       ? extras.avatar_url
-      : null;
+      : row.avatar_url !== undefined && row.avatar_url !== null
+      ? row.avatar_url
+      : extras?.avatar_url ?? null;
   const resolvedPassword =
-    row.password !== undefined
-      ? row.password
-      : extras?.password !== undefined
+    extras?.password !== undefined && extras.password !== null
       ? extras.password
-      : null;
+      : row.password !== undefined && row.password !== null
+      ? row.password
+      : extras?.password ?? null;
   const resolvedOtpCode =
-    row.otp_code !== undefined
-      ? row.otp_code
-      : extras?.otp_code !== undefined
+    extras?.otp_code !== undefined
       ? extras.otp_code
+      : row.otp_code !== undefined && row.otp_code !== null
+      ? row.otp_code
       : null;
   const resolvedShiftStatus =
-    row.shift_status !== undefined
-      ? row.shift_status
-      : extras?.shift_status !== undefined
+    extras?.shift_status !== undefined && extras.shift_status !== null
       ? extras.shift_status
+      : row.shift_status !== undefined && row.shift_status !== null
+      ? row.shift_status
       : 'offline';
   const resolvedShiftStartedAt =
-    row.shift_started_at !== undefined
-      ? row.shift_started_at
-      : extras?.shift_started_at !== undefined
+    extras?.shift_started_at !== undefined
       ? extras.shift_started_at
+      : row.shift_started_at !== undefined
+      ? row.shift_started_at
       : null;
 
   return {
@@ -3112,15 +3124,27 @@ export default async function handler(req: any, res: any) {
 
               // 3. Telegram 2FA OTP generation, validation, and one-time burn
               const generatedOtp = '4829';
+              if (supabase) {
+                await safeSupabaseUpdate(supabase, 'organization_nodes', qaManagerNode.id, {
+                  otp_code: generatedOtp,
+                });
+              }
+              qaManagerNode.otp_code = generatedOtp;
               recordExtrasOverlay.set(`organization_nodes:${qaManagerNode.id}`, {
                 ...(recordExtrasOverlay.get(`organization_nodes:${qaManagerNode.id}`) || {}),
                 otp_code: generatedOtp,
               });
               const withOtp = normalizeNodeRowInternal(qaManagerNode);
-              if (withOtp.otp_code !== generatedOtp) {
+              if (String(withOtp.otp_code || '') !== generatedOtp) {
                 throw new Error('OTP code was not stored properly');
               }
               // Burn OTP after verification
+              if (supabase) {
+                await safeSupabaseUpdate(supabase, 'organization_nodes', qaManagerNode.id, {
+                  otp_code: null,
+                });
+              }
+              qaManagerNode.otp_code = null;
               recordExtrasOverlay.set(`organization_nodes:${qaManagerNode.id}`, {
                 ...(recordExtrasOverlay.get(`organization_nodes:${qaManagerNode.id}`) || {}),
                 otp_code: null,
@@ -3130,7 +3154,7 @@ export default async function handler(req: any, res: any) {
                 throw new Error('OTP code was not invalidated after verification');
               }
               assertions.push(
-                'Контур 3 (Telegram ID + 2FA OTP): Одноразовый 4-значный код валидируется и мгновенно аннулируется после входа'
+                'Контур 3 (Telegram ID + 2FA OTP): Одноразовый 4-значный код сохраняется в otp_code, валидируется и мгновенно аннулируется после входа'
               );
 
               results.push({
@@ -4142,9 +4166,13 @@ export default async function handler(req: any, res: any) {
           }
         }
 
+        const personaMode: 'strategist' | 'mathematician' =
+          body.personaMode === 'mathematician' ? 'mathematician' : 'strategist';
+
         // First compute deterministic analysis & checklist as baseline / fallback
         const builtInResult = runBuiltInAiAssistant({
           mode,
+          personaMode,
           prompt: promptText,
           taskTitle: resolvedTaskTitle,
           taskDescription: resolvedTaskDescription,
@@ -4161,13 +4189,23 @@ export default async function handler(req: any, res: any) {
 
         if (executedActions.length > 0) {
           const actionSummaryLines = executedActions.map((act) => act.summary);
+          const teddyQuip =
+            personaMode === 'mathematician'
+              ? isEn
+                ? 'Zero bureaucratic friction: direct write to the database completed in 1 transaction.'
+                : 'Ноль бюрократических совещаний: прямая запись в ядро БД выполнена за 1 транзакцию.'
+              : isEn
+              ? 'Speak softly and carry a big stick — the directive is now in the execution contour.'
+              : 'Говорим мягко, но держим дисциплину — поручение уже в боевом контуре исполнения.';
           finalResult = {
             ...builtInResult,
-            headline: isEn ? 'Action Executed in Workspace' : 'Команда выполнена в базе данных',
+            headline: isEn
+              ? 'Teddy AI · Directive Executed in DB'
+              : 'Советник Teddy · Директива проведена в БД',
             sections: [],
             reply: isEn
-              ? `Done! ${actionSummaryLines.join(' ')} The workspace registry and Telegram notifications have been updated.`
-              : `Готово! ${actionSummaryLines.join('. ')}. Запись сохранена в реестре компании, уведомление отправлено.`,
+              ? `Executed! ${actionSummaryLines.join(' ')} ${teddyQuip}`
+              : `Выполнено! ${actionSummaryLines.join('. ')}. ${teddyQuip}`,
           };
         }
 
@@ -4292,6 +4330,11 @@ export default async function handler(req: any, res: any) {
                   ? 'Проведи живой управленческий анализ распределения задач по сотрудникам и конверсии сделок CRM, дай 2–3 точные рекомендации без КАПСЛОКА.'
                   : `Ответь на запрос сотрудника: «${promptText}» живо, по делу и на основе реальных данных компании без КАПСЛОКА.`;
 
+              const personaInstruction =
+                personaMode === 'mathematician'
+                  ? 'Режим мышления: «Системный Математик (Анти-Бюрократия)» в духе математической точности Теда Качинского — вскрывай узкие места, высмеивай пустую корпоративную бюрократию и совещания ради совещаний, опирайся строго на математику конверсии и нагрузки.'
+                  : 'Режим мышления: «Стратег (Доктрина Рузвельта)» в духе президента Теодора Рузвельта — железная исполнительская дисциплина («Говори мягко, но держи в руках большую дубинку»), дожим сделок CRM до оплаты и персональная ответственность каждого сотрудника.';
+
               const geminiRes = await fetch(geminiEndpoint, {
                 method: 'POST',
                 headers: {
@@ -4303,7 +4346,9 @@ export default async function handler(req: any, res: any) {
                     {
                       parts: [
                         {
-                          text: `Ты — интеллектуальный бизнес-ассистент TedCloud Intelligence (Claude / Linear Ask standard). Отвечай живо, лаконично и по существу, без КАПСЛОКА и без канцелярита.
+                          text: `Ты — «Teddy AI» (Советник Teddy), харизматичный главный советник руководителя и системный математик платформы TedCloud.
+Твой характер сочетает стратегический масштаб Теодора Рузвельта и бритвенно-острый математический ум Теда Качинского (презрение к корпоративной бюрократии и имитации бурной деятельности).
+${personaInstruction}
 Контекст компании (JSON): ${contextDigest}
 Базовая аналитическая выжимка:
 ${builtInResult.reply}

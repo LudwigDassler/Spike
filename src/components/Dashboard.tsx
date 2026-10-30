@@ -6349,8 +6349,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 showToast={showToast}
               />
 
-              {/* 6. АВТОМАТИЗИРОВАННЫЙ QA & SECURITY E2E САМОДИАГНОСТИЧЕСКИЙ РАННЕР (СУПЕРАДМИН) */}
-              <SuperadminQaAuditPanel onRefresh={onRefresh} showToast={showToast} />
+              {/* 6. ЦЕНТР БЕЗОПАСНОСТИ И ЗДОРОВЬЯ КОНТУРА + РЕЖИМ ТЕСТИРОВЩИКА (E2E SANDBOX 8/8) */}
+              <SuperadminQaAuditPanel
+                company={company}
+                nodes={safeNodes}
+                tasks={safeTasks}
+                leads={safeLeads}
+                onSendMessage={onSendMessage}
+                onNavigateToSection={(sec) => setActiveSection(sec)}
+                onRefresh={onRefresh}
+                showToast={showToast}
+              />
             </div>
           )}
         </main>
@@ -6684,12 +6693,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Product Showcase & Pricing Modal (О платформе и Тарифы) */}
       {isProductShowcaseOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md overflow-y-auto"
+          className="fixed inset-0 z-50 bg-[#060609] overflow-y-auto"
           role="dialog"
           aria-modal="true"
         >
           <AuthGate
+            existingNodes={safeNodes}
             nodes={safeNodes}
+            existingCompany={company}
+            company={company}
+            currentUser={currentProfile}
             botUsername={botUsername}
             showcaseOnly
             onCloseShowcase={() => setIsProductShowcaseOpen(false)}

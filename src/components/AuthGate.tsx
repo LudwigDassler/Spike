@@ -6,6 +6,7 @@ import {
   AlertCircle,
   ShieldCheck,
   ArrowRight,
+  ArrowLeft,
   Lock,
   Send,
   Check,
@@ -20,14 +21,23 @@ import {
   Sun,
   Moon,
   X,
+  FileText,
+  Sparkles,
+  TrendingUp,
+  Zap,
 } from 'lucide-react';
 import { Company, CurrencyCode, OrganizationNode, SubscriptionPlanTier } from '../types/database';
 import { useLocale, SupportedLocale } from '../i18n/LocaleContext';
 import { formatError, getPlanPrice, PRICING_PLANS } from '../utils/enterpriseLogic';
+import { TeddyAvatar } from './TedCloudAiDrawer';
 
 interface AuthGateProps {
-  existingNodes: OrganizationNode[];
-  existingCompany: Company | null;
+  existingNodes?: OrganizationNode[];
+  nodes?: OrganizationNode[];
+  existingCompany?: Company | null;
+  company?: Company | null;
+  currentUser?: OrganizationNode | null;
+  botUsername?: string;
   onAuthenticated: (profile: OrganizationNode, company: Company | null) => void;
   showcaseOnly?: boolean;
   onCloseShowcase?: () => void;
@@ -45,7 +55,10 @@ type TelegramVerifyMethod = 'otp' | 'password';
 
 export const AuthGate: React.FC<AuthGateProps> = ({
   existingNodes,
+  nodes,
   existingCompany,
+  company,
+  currentUser = null,
   onAuthenticated,
   showcaseOnly = false,
   onCloseShowcase,
@@ -54,9 +67,17 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   const { locale, setLocale, theme, toggleTheme, t } = useLocale();
   const isEn = locale === 'en';
 
+  const safeExistingNodes: OrganizationNode[] = Array.isArray(existingNodes)
+    ? existingNodes
+    : Array.isArray(nodes)
+    ? nodes
+    : [];
+  const safeExistingCompany: Company | null = existingCompany ?? company ?? null;
+  const isAuthenticatedUser = Boolean(showcaseOnly || currentUser);
+
   const [topView, setTopView] = useState<TopViewMode>(showcaseOnly ? 'showcase' : 'auth');
   const [mode, setMode] = useState<AuthTabMode>(
-    existingNodes.length === 0 ? 'register' : 'signin'
+    (safeExistingNodes || []).length === 0 ? 'register' : 'signin'
   );
   const [loginMethod, setLoginMethod] = useState<LoginSubMode>('invite');
   const [telegramMethod, setTelegramMethod] = useState<TelegramVerifyMethod>('otp');
@@ -124,8 +145,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
       }
 
       const q = code.toLowerCase();
-      const matchedNode = existingNodes.find(
-        (node) => String(node.invite_code || '').trim().toLowerCase() === q
+      const matchedNode = (safeExistingNodes || []).find(
+        (node) => String(node?.invite_code || '').trim().toLowerCase() === q
       );
 
       if (!matchedNode) {
@@ -142,8 +163,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
 
       onAuthenticated(
         matchedNode,
-        existingCompany && existingCompany.id === matchedNode.company_id
-          ? existingCompany
+        safeExistingCompany && safeExistingCompany.id === matchedNode.company_id
+          ? safeExistingCompany
           : null
       );
     } catch (err: any) {
@@ -365,20 +386,24 @@ export const AuthGate: React.FC<AuthGateProps> = ({
     }
   };
 
+  const isShowcaseMode = showcaseOnly || topView === 'showcase';
+
   return (
     <div
-      className={`${
-        showcaseOnly ? 'min-h-full' : 'min-h-screen'
-      } bg-[#0b0d13] text-[#EDEDED] font-sans antialiased flex flex-col justify-between p-4 sm:p-6`}
+      className={
+        isShowcaseMode
+          ? 'tc-dark-promo min-h-screen w-full bg-[#060609] !text-white font-sans antialiased overflow-x-hidden relative flex flex-col justify-between'
+          : 'min-h-screen bg-[#0b0d13] text-[#EDEDED] font-sans antialiased flex flex-col justify-between p-4 sm:p-6'
+      }
     >
-      {/* Top Bar: Brand, Top Switcher («Авторизация» / «О платформе и Тарифы»), Theme & Language */}
-      {!showcaseOnly && (
+      {/* Top Bar: Shown ONLY on Auth login screen (hidden on full-bleed Showcase promo website) */}
+      {!isShowcaseMode && (
         <header className="max-w-6xl w-full mx-auto flex flex-wrap items-center justify-between gap-3 pb-2">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-md bg-indigo-600 text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm">
+            <div className="w-7 h-7 rounded-md bg-indigo-600 !text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm">
               TC
             </div>
-            <span className="text-sm font-semibold text-white tracking-tight">TedCloud</span>
+            <span className="text-sm font-semibold !text-white tracking-tight">TedCloud</span>
             <span className="hidden sm:inline-flex text-[11px] px-2 py-0.5 rounded bg-[#18181B] text-[#A1A1AA] border border-white/[0.08] whitespace-nowrap">
               {t('brand.edition')}
             </span>
@@ -955,532 +980,911 @@ export const AuthGate: React.FC<AuthGateProps> = ({
         </main>
       ) : (
         /* =====================================================================
-            VIEW 2: HIGH-CONVERTING STANDALONE MARKETING WEBSITE (БЛОК 5)
-            Linear.app / Stripe.com / Attio Enterprise Standard
+            VIEW 2: MASTERPIECE FULL-BLEED PROMO WEBSITE (БЛОК 2)
+            Linear.app / Stripe.com / Raycast Enterprise Aesthetic
         ====================================================================== */
-        <main className="my-auto py-4 w-full max-w-6xl mx-auto space-y-10">
-          {/* 1. Dedicated Sticky Marketing Navigation Bar */}
-          <nav className="sticky top-3 z-40 rounded-2xl border border-white/[0.1] bg-[#111115]/95 backdrop-blur-xl px-4 py-3 shadow-2xl flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-6">
+        <div className="relative w-full flex-1">
+          {/* Multi-layered Aurora Mesh & Perspective Grid Background */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(99,102,241,0.22),rgba(16,185,129,0.05),transparent)]"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute top-32 left-1/2 -translate-x-1/2 w-[920px] h-[420px] rounded-full bg-[conic-gradient(from_180deg_at_50%_50%,rgba(99,102,241,0.16)_0deg,rgba(245,158,11,0.10)_140deg,rgba(16,185,129,0.12)_260deg,rgba(99,102,241,0.16)_360deg)] blur-3xl opacity-75"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px]"
+          />
+
+          {/* 1. Sticky Glassmorphic Capsule Navbar */}
+          <header className="sticky top-4 z-50 px-4 sm:px-8 pt-4">
+            <nav className="max-w-7xl mx-auto rounded-2xl backdrop-blur-2xl bg-white/[0.03] border border-white/[0.08] px-4 sm:px-6 py-3 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 !text-white flex items-center justify-center font-extrabold text-xs shadow-[0_0_24px_rgba(99,102,241,0.5)] border border-white/20">
+                    TC
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-extrabold !text-white leading-none tracking-tight">
+                        TedCloud
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 !text-indigo-200">
+                        OS 4.0
+                      </span>
+                    </div>
+                    <div className="text-[11px] !text-zinc-400 mt-0.5">
+                      {isEn
+                        ? 'Enterprise Operating System & Teddy AI'
+                        : 'Операционная система бизнеса и Советник Teddy'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hidden xl:flex items-center gap-6 text-xs font-medium !text-zinc-300">
+                  <a href="#interactive-demo" className="hover:!text-white transition-colors">
+                    {isEn ? '3D Live Demo' : '3D-Демо продукта'}
+                  </a>
+                  <a href="#features" className="hover:!text-white transition-colors">
+                    {isEn ? 'Process Conveyor' : 'Конвейер процессов'}
+                  </a>
+                  <a href="#industries" className="hover:!text-white transition-colors">
+                    {isEn ? 'Industries & ROI' : 'Индустрии и Кейсы'}
+                  </a>
+                  <a href="#comparison" className="hover:!text-white transition-colors">
+                    {isEn ? 'vs Jira & Bitrix24' : 'Сравнение'}
+                  </a>
+                  <a href="#pricing" className="hover:!text-white transition-colors">
+                    {isEn ? 'Pricing' : 'Тарифы'}
+                  </a>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                  TC
+                {/* Language Switcher */}
+                <div className="hidden sm:inline-flex items-center rounded-xl border border-white/[0.08] bg-white/[0.03] p-0.5">
+                  {locales.map((loc) => (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => setLocale(loc)}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-bold uppercase transition-colors ${
+                        locale === loc
+                          ? 'bg-indigo-600 !text-white'
+                          : '!text-zinc-400 hover:!text-white'
+                      }`}
+                    >
+                      {loc}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-white leading-none tracking-tight">
-                    TedCloud OS
-                  </div>
-                  <div className="text-[10px] text-[#8E8E93] mt-0.5">
-                    {isEn ? 'Enterprise B2B Platform' : 'Операционная система бизнеса'}
-                  </div>
-                </div>
-              </div>
 
-              <div className="hidden lg:flex items-center gap-5 text-xs font-medium text-[#A1A1AA]">
-                <a href="#features" className="hover:text-white transition-colors">
-                  {isEn ? 'Features' : 'Возможности'}
-                </a>
-                <a href="#interactive-demo" className="hover:text-white transition-colors">
-                  {isEn ? 'Interactive Demo' : 'Интерактивное демо'}
-                </a>
-                <a href="#comparison" className="hover:text-white transition-colors">
-                  {isEn ? 'vs Jira & Bitrix24' : 'Сравнение с Jira и Битрикс24'}
-                </a>
-                <a href="#pricing" className="hover:text-white transition-colors">
-                  {isEn ? 'Pricing' : 'Тарифы'}
-                </a>
-                <a href="#desktop-app" className="hover:text-white transition-colors">
-                  Desktop App
-                </a>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {showcaseOnly && onCloseShowcase ? (
-                <button
-                  type="button"
-                  onClick={onCloseShowcase}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.12] bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-white transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  <span>{isEn ? 'Back to Workspace' : 'Вернуться в систему'}</span>
-                </button>
-              ) : (
-                <>
+                {isAuthenticatedUser && onCloseShowcase ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      setTopView('auth');
-                      setMode('signin');
-                    }}
-                    className="px-3.5 py-2 rounded-lg border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-semibold text-white transition-colors"
+                    onClick={onCloseShowcase}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 !text-white text-xs font-semibold shadow-[0_0_25px_rgba(99,102,241,0.45)] border border-indigo-400/30 transition-all cursor-pointer"
                   >
-                    {isEn ? 'Sign In' : 'Войти'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTopView('auth');
-                      setMode('register');
-                    }}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm"
-                  >
-                    <span>{isEn ? 'Start Free' : 'Запустить бесплатно'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-            </div>
-          </nav>
-
-          {/* 2. Hero Section with Live Visual Mockup */}
-          <section
-            id="interactive-demo"
-            className="rounded-3xl border border-white/[0.09] bg-[#111115] p-6 sm:p-10 shadow-2xl space-y-8"
-          >
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-              <div className="lg:col-span-6 space-y-4">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-[11px] font-semibold text-indigo-300">
-                  <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>
-                    {isEn
-                      ? 'Linear Speed · Two-Way Telegram · Built-in CRM & Shifts'
-                      : 'Скорость Linear · Двусторонний Telegram · CRM и Табель смен'}
-                  </span>
-                </span>
-
-                <h1 className="text-2xl sm:text-4xl font-bold text-white tracking-tight leading-[1.15]">
-                  {isEn ? (
-                    <>
-                      Run Your Entire Company in{' '}
-                      <span className="text-indigo-400">One Ultra-Fast OS</span>
-                    </>
-                  ) : (
-                    <>
-                      Управляйте поручениями, продажами и сменами в{' '}
-                      <span className="text-indigo-400">едином контуре</span>
-                    </>
-                  )}
-                </h1>
-
-                <p className="text-xs sm:text-sm text-[#A1A1AA] leading-relaxed">
-                  {isEn
-                    ? 'Replace bloated Jira and Bitrix24 portals with a precision workspace. Instant task delegation, automated CRM deal pipelines, real-time employee shift attendance, and native 2-way Telegram synchronization.'
-                    : 'Замените перегруженные Jira и Битрикс24 на быструю операционную систему. Мгновенная постановка задач за 2 секунды, авто-воронка CRM с генерацией договоров и счетов, живой учет смен и двусторонний Telegram-бот.'}
-                </p>
-
-                <div className="pt-2 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (showcaseOnly && onCloseShowcase) {
-                        onCloseShowcase();
-                      } else {
-                        setTopView('auth');
-                        setMode('register');
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-lg"
-                  >
-                    <Building2 className="w-4 h-4" />
+                    <ArrowLeft className="w-3.5 h-3.5" />
                     <span>
-                      {showcaseOnly
-                        ? isEn
-                          ? 'Return to Active Workspace'
-                          : 'Продолжить работу в пространстве'
-                        : isEn
-                        ? 'Launch Free Company Workspace'
-                        : 'Запустить бесплатно за 60 секунд'}
+                      {isEn ? '← Back to Workspace' : '← Вернуться в рабочее пространство'}
                     </span>
                   </button>
-                  {!showcaseOnly && (
+                ) : (
+                  <>
                     <button
                       type="button"
                       onClick={() => {
                         setTopView('auth');
                         setMode('signin');
                       }}
-                      className="inline-flex items-center gap-2 px-4 py-3 rounded-xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-white text-xs font-semibold transition-colors"
+                      className="px-3.5 py-2 rounded-xl border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.09] text-xs font-semibold !text-white transition-colors cursor-pointer"
+                    >
+                      {isEn ? 'Sign In' : 'Войти в систему'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTopView('auth');
+                        setMode('register');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white text-xs font-semibold transition-all shadow-[0_0_24px_rgba(99,102,241,0.45)] cursor-pointer"
+                    >
+                      <span>{isEn ? 'Start Free' : 'Запустить бесплатно'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </nav>
+          </header>
+
+          <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 pt-10 pb-20 space-y-20">
+            {/* 2. Hero Section + Interactive 3D Product Showcase */}
+            <section id="interactive-demo" className="space-y-10">
+              {/* Centered High-Impact Hero Copy */}
+              <div className="max-w-4xl mx-auto text-center space-y-5">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-xs font-semibold !text-indigo-200 shadow-[0_0_30px_rgba(99,102,241,0.2)]">
+                  <TeddyAvatar size="xs" />
+                  <span>
+                    {isEn
+                      ? 'Linear Speed · Two-Way Telegram · Built-in CRM & Teddy AI Advisor'
+                      : 'Скорость Linear · Двусторонний Telegram · Авто-CRM и Советник Teddy AI'}
+                  </span>
+                </div>
+
+                <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold !text-white tracking-tight leading-[1.08]">
+                  {isEn ? (
+                    <>
+                      Run Your Entire Company in{' '}
+                      <span className="bg-gradient-to-r from-indigo-300 via-indigo-400 to-emerald-300 bg-clip-text text-transparent">
+                        One Ultra-Fast OS
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      Операционная система бизнеса{' '}
+                      <span className="bg-gradient-to-r from-indigo-300 via-indigo-400 to-emerald-300 bg-clip-text text-transparent">
+                        сверхзвуковой скорости
+                      </span>
+                    </>
+                  )}
+                </h1>
+
+                <p className="max-w-2xl mx-auto text-sm sm:text-base !text-zinc-300 leading-relaxed">
+                  {isEn
+                    ? 'Replace bloated Jira and Bitrix24 portals with an obsidian-grade workspace. Delegate tasks in 2 seconds, generate print-ready white A4 contracts in 0.1s, track shifts live, and consult Teddy AI.'
+                    : 'Замените тяжеловесные Jira и Битрикс24 на кристаллическую операционную систему. Поручения за 2 секунды, авто-генерация договоров А4 за 0.1с, двусторонний мост с Telegram и стратегический советник Teddy AI.'}
+                </p>
+
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-3.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isAuthenticatedUser && onCloseShowcase) {
+                        onCloseShowcase();
+                      } else {
+                        setTopView('auth');
+                        setMode('register');
+                      }
+                    }}
+                    className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white text-xs sm:text-sm font-bold transition-all shadow-[0_0_35px_rgba(99,102,241,0.5)] border border-indigo-400/30 cursor-pointer"
+                  >
+                    <Building2 className="w-4 h-4" />
+                    <span>
+                      {isAuthenticatedUser
+                        ? isEn
+                          ? '← Return to Active Workspace'
+                          : '← Вернуться в рабочее пространство'
+                        : isEn
+                        ? 'Launch Free Company Workspace (60s)'
+                        : 'Запустить контур компании за 60 секунд'}
+                    </span>
+                  </button>
+
+                  {!isAuthenticatedUser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTopView('auth');
+                        setMode('signin');
+                      }}
+                      className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.09] !text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
                     >
                       <KeyRound className="w-4 h-4 text-indigo-400" />
                       <span>
-                        {isEn ? 'Sign In with Employee Pass' : 'Войти по пропуску сотрудника'}
+                        {isEn ? 'Sign In with Employee Pass' : 'Войти по цифровому пропуску'}
                       </span>
                     </button>
                   )}
                 </div>
-
-                <div className="pt-2 flex flex-wrap items-center gap-4 text-[11px] text-[#8E8E93]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{isEn ? 'Free up to 5 employees' : 'Бесплатно до 5 сотрудников'}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{isEn ? 'Telegram 2FA & Push Sync' : 'Синхронизация с Telegram за 1 клик'}</span>
-                  </span>
-                </div>
               </div>
 
-              {/* Live Interactive UI Preview Window */}
-              <div className="lg:col-span-6 rounded-2xl border border-white/[0.1] bg-[#16161C] p-4 shadow-2xl space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400/80" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
-                    <span className="ml-2 text-[11px] font-semibold text-[#A1A1AA]">
-                      TedCloud Live Preview
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1 rounded-lg bg-[#111115] p-1 border border-white/[0.07]">
-                    {[
-                      {
-                        id: 'tasks' as const,
-                        label: isEn ? 'Kanban' : 'Канбан',
-                        icon: CheckCircle2,
-                      },
-                      {
-                        id: 'crm' as const,
-                        label: isEn ? 'CRM Deal' : 'Воронка CRM',
-                        icon: Briefcase,
-                      },
-                      {
-                        id: 'shifts' as const,
-                        label: isEn ? 'Shifts' : 'Смены',
-                        icon: Clock,
-                      },
-                      {
-                        id: 'ai' as const,
-                        label: 'Telegram',
-                        icon: Send,
-                      },
-                    ].map((tab) => {
-                      const Icon = tab.icon;
-                      return (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setActiveShowcaseModule(tab.id)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                            activeShowcaseModule === tab.id
-                              ? 'bg-indigo-600 text-white'
-                              : 'text-[#A1A1AA] hover:text-white'
-                          }`}
-                        >
-                          <Icon className="w-3 h-3" />
-                          <span>{tab.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* Interactive 3D Product Showcase Stage */}
+              <div className="relative pt-4">
+                {/* Floating Glass Badges around the 3D Frame */}
+                <div className="hidden lg:flex items-center gap-2.5 absolute -top-3 left-6 z-20 px-3.5 py-2 rounded-xl backdrop-blur-xl bg-[#11131f]/90 border border-indigo-500/35 shadow-2xl animate-float">
+                  <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="text-xs font-bold !text-white">
+                    {isEn ? '⚡ Core Latency < 40 ms' : '⚡ Отклик ядра < 40 мс'}
+                  </span>
                 </div>
 
-                {/* Live Interactive Mockup Content */}
-                {activeShowcaseModule === 'tasks' && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-[11px] text-[#A1A1AA] px-1">
-                      <span>{isEn ? 'ACTIVE SPRINT · SLA CONTROL' : 'АКТИВНЫЙ СПРИНТ · КОНТРОЛЬ ПОРУЧЕНИЙ'}</span>
-                      <span className="text-emerald-400 font-semibold">● Live Sync</span>
+                <div className="hidden lg:flex items-center gap-2.5 absolute -top-3 right-6 z-20 px-3.5 py-2 rounded-xl backdrop-blur-xl bg-[#11131f]/90 border border-amber-500/35 shadow-2xl animate-float-delayed">
+                  <TeddyAvatar size="xs" />
+                  <span className="text-xs font-bold !text-white">
+                    {isEn
+                      ? '🐻 Teddy AI: +38% Deal Win-Rate'
+                      : '🐻 Teddy AI: +38% к закрытию сделок'}
+                  </span>
+                </div>
+
+                <div className="hidden lg:flex items-center gap-2.5 absolute -bottom-4 right-14 z-20 px-3.5 py-2 rounded-xl backdrop-blur-xl bg-[#11131f]/90 border border-emerald-500/35 shadow-2xl animate-float">
+                  <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold !text-white">
+                    {isEn ? '📄 White A4 Contract in 0.1s' : '📄 Договор А4 за 0.1 сек'}
+                  </span>
+                </div>
+
+                {/* 3D Glassmorphic Application Window */}
+                <div className="rounded-3xl border border-white/[0.12] bg-[#0B0C14]/95 backdrop-blur-2xl shadow-[0_30px_100px_-20px_rgba(99,102,241,0.32)] overflow-hidden">
+                  {/* Window Top Chrome & 4 Interactive Scene Switchers */}
+                  <div className="px-4 sm:px-6 py-3.5 border-b border-white/[0.08] bg-[#10121d] flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-rose-500/80" />
+                      <span className="w-3 h-3 rounded-full bg-amber-400/80" />
+                      <span className="w-3 h-3 rounded-full bg-emerald-500/80" />
+                      <span className="ml-2 text-xs font-semibold !text-zinc-300">
+                        TedCloud Enterprise Workspace — Live Interactive Scene
+                      </span>
                     </div>
-                    {[
-                      {
-                        title: isEn
-                          ? 'Prepare Enterprise Q4 Contract & SLA Annex'
-                          : 'Согласовать договор поставки и спецификацию Q4',
-                        assignee: 'А. Лытнев',
-                        dept: isEn ? 'Legal' : 'Юр. отдел',
-                        status: isEn ? 'In Progress' : 'В работе',
-                        badgeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-                      },
-                      {
-                        title: isEn
-                          ? 'Deploy Telegram Webhook & 2FA Passwords'
-                          : 'Провести аудит конверсии CRM и закрыть акты',
-                        assignee: 'Е. Соколова',
-                        dept: isEn ? 'Sales' : 'Отдел продаж',
-                        status: isEn ? 'Approved' : 'Согласовано',
-                        badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-                      },
-                      {
-                        title: isEn
-                          ? 'Export Monthly Payroll Shift Timesheet (CSV)'
-                          : 'Выгрузить табель смен сотрудников в CSV для бухгалтерии',
-                        assignee: 'М. Волков',
-                        dept: 'HR & Ops',
-                        status: isEn ? 'Done' : 'Выполнено',
-                        badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-                      },
-                    ].map((card, i) => (
-                      <div
-                        key={i}
-                        className="rounded-xl border border-white/[0.08] bg-[#111115] p-3 flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-white truncate">{card.title}</div>
-                          <div className="flex items-center gap-2 mt-1 text-[11px] text-[#8E8E93]">
-                            <span className="inline-flex items-center gap-1 text-zinc-200 font-medium">
-                              <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] inline-flex items-center justify-center font-bold">
-                                {card.assignee[0]}
+
+                    {/* 4 Interactive Product Showcase Tabs */}
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-[#090A10] p-1 border border-white/[0.08]">
+                      {[
+                        {
+                          id: 'tasks' as const,
+                          label: isEn ? 'Kanban Wall' : 'Канбан-стена',
+                          icon: CheckCircle2,
+                        },
+                        {
+                          id: 'crm' as const,
+                          label: isEn ? 'CRM & A4 Contracts' : 'Воронка CRM и Договоры',
+                          icon: Briefcase,
+                        },
+                        {
+                          id: 'ai' as const,
+                          label: isEn ? 'Advisor Teddy AI' : 'Советник Teddy AI',
+                          icon: Sparkles,
+                        },
+                        {
+                          id: 'shifts' as const,
+                          label: isEn ? '2-Way Telegram Bridge' : 'Двусторонний Telegram-мост',
+                          icon: Send,
+                        },
+                      ].map((tab) => {
+                        const Icon = tab.icon;
+                        const active = activeShowcaseModule === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveShowcaseModule(tab.id)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                              active
+                                ? 'bg-indigo-600 !text-white shadow-[0_0_20px_rgba(99,102,241,0.5)]'
+                                : '!text-zinc-400 hover:!text-white hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            <Icon className="w-3.5 h-3.5" />
+                            <span>{tab.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Scene Body */}
+                  <div className="p-5 sm:p-7 bg-gradient-to-b from-[#0D0F18] to-[#08090F]">
+                    {/* TAB 1: KANBAN WALL */}
+                    {activeShowcaseModule === 'tasks' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        {[
+                          {
+                            colTitle: isEn ? 'TO DO · SLA QUEUE' : 'К ВЫПОЛНЕНИЮ · ОЧЕРЕДЬ SLA',
+                            colCount: 3,
+                            accent: 'border-amber-500/30 text-amber-300',
+                            cards: [
+                              {
+                                tag: 'SLA 4h',
+                                title: isEn
+                                  ? 'Approve Q4 Enterprise Supply Contract'
+                                  : 'Согласовать договор поставки и спецификацию Q4',
+                                assignee: 'А. Лытнев',
+                                dept: isEn ? 'Executive' : 'Дирекция',
+                                progress: 35,
+                              },
+                              {
+                                tag: 'CRM Auto',
+                                title: isEn
+                                  ? 'Prepare Technical Annex for Severstal'
+                                  : 'Подготовить ТЗ и смету для ПАО «Северсталь»',
+                                assignee: 'М. Волков',
+                                dept: isEn ? 'Engineering' : 'Инжиниринг',
+                                progress: 20,
+                              },
+                            ],
+                          },
+                          {
+                            colTitle: isEn ? 'IN PROGRESS · ACTIVE SPRINT' : 'В РАБОТЕ · АКТИВНЫЙ СПРИНТ',
+                            colCount: 4,
+                            accent: 'border-indigo-500/30 text-indigo-300',
+                            cards: [
+                              {
+                                tag: 'Telegram Sync',
+                                title: isEn
+                                  ? 'Audit Conversion Funnel & Sign Acts'
+                                  : 'Провести аудит конверсии CRM и закрыть акты',
+                                assignee: 'Е. Соколова',
+                                dept: isEn ? 'Sales' : 'Отдел продаж',
+                                progress: 75,
+                              },
+                              {
+                                tag: 'Teddy AI',
+                                title: isEn
+                                  ? 'Automate Shift Timesheet Export (CSV)'
+                                  : 'Выгрузить табель смен сотрудников в CSV для бухгалтерии',
+                                assignee: 'И. Громов',
+                                dept: 'HR & Ops',
+                                progress: 90,
+                              },
+                            ],
+                          },
+                          {
+                            colTitle: isEn ? 'COMPLETED · VERIFIED' : 'ГОТОВО · ПРОВЕРЕНО',
+                            colCount: 18,
+                            accent: 'border-emerald-500/30 text-emerald-300',
+                            cards: [
+                              {
+                                tag: '0.1s PDF',
+                                title: isEn
+                                  ? 'Invoice #TC-409 Sent via Telegram Bridge'
+                                  : 'Счет-договор №TC-409 отправлен клиенту в Telegram',
+                                assignee: 'Е. Соколова',
+                                dept: isEn ? 'Sales' : 'Отдел продаж',
+                                progress: 100,
+                              },
+                              {
+                                tag: 'Security 98%',
+                                title: isEn
+                                  ? 'Multi-Tenant Isolation & 2FA Verified'
+                                  : 'Криптографическая изоляция контура и 2FA подтверждены',
+                                assignee: 'А. Лытнев',
+                                dept: 'SecOps',
+                                progress: 100,
+                              },
+                            ],
+                          },
+                        ].map((col, cIdx) => (
+                          <div
+                            key={cIdx}
+                            className="rounded-2xl border border-white/[0.08] bg-[#11131E] p-4 space-y-3"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold tracking-wider uppercase !text-zinc-300">
+                                {col.colTitle}
                               </span>
-                              {card.assignee}
+                              <span
+                                className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${col.accent}`}
+                              >
+                                {col.colCount}
+                              </span>
+                            </div>
+
+                            <div className="space-y-2.5">
+                              {col.cards.map((card, idx) => (
+                                <div
+                                  key={idx}
+                                  className="rounded-xl border border-white/[0.07] bg-[#171926] p-3.5 space-y-2.5 hover:border-indigo-500/40 transition-all"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="px-2 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-[10px] font-semibold !text-indigo-200">
+                                      {card.tag}
+                                    </span>
+                                    <span className="text-[10px] font-mono !text-emerald-400">
+                                      {card.progress}%
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-semibold !text-white leading-snug">
+                                    {card.title}
+                                  </div>
+                                  <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-400"
+                                      style={{ width: `${card.progress}%` }}
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-between text-[11px] !text-zinc-400 pt-0.5">
+                                    <span className="inline-flex items-center gap-1.5 !text-zinc-200 font-medium">
+                                      <span className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 !text-white text-[10px] inline-flex items-center justify-center font-bold">
+                                        {card.assignee[0]}
+                                      </span>
+                                      {card.assignee}
+                                    </span>
+                                    <span>{card.dept}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* TAB 2: CRM PIPELINE & A4 CONTRACTS */}
+                    {activeShowcaseModule === 'crm' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                        <div className="lg:col-span-7 rounded-2xl border border-white/[0.08] bg-[#11131E] p-4 space-y-3">
+                          <div className="flex items-center justify-between border-b border-white/[0.07] pb-2.5">
+                            <span className="text-xs font-bold uppercase tracking-wider !text-zinc-200">
+                              {isEn
+                                ? 'B2B Revenue Pipeline · Auto-Triggers'
+                                : 'Воронка B2B-сделок · Авто-триггеры задач'}
                             </span>
-                            <span>·</span>
-                            <span>{card.dept}</span>
+                            <span className="text-xs font-bold !text-emerald-400 tabular-nums">
+                              4 850 000 ₽
+                            </span>
+                          </div>
+                          {[
+                            {
+                              client: 'ПАО «Северсталь Инжиниринг»',
+                              inn: 'ИНН 7701234560 · КПП 770101001',
+                              amount: '2 400 000 ₽',
+                              stage: isEn ? 'Contract & Invoice Ready' : 'Договор и Счет сформированы',
+                            },
+                            {
+                              client: 'ООО «Альфа Логистика Групп»',
+                              inn: 'ИНН 7810987654 · НДС 20%',
+                              amount: '1 650 000 ₽',
+                              stage: isEn
+                                ? 'Negotiation → Task Assigned to Legal'
+                                : 'Переговоры → Авто-задача юристам',
+                            },
+                            {
+                              client: 'АО «Технопром Холдинг»',
+                              inn: 'ИНН 5024112233 · Оплачено',
+                              amount: '800 000 ₽',
+                              stage: isEn ? 'Closed Won · Act Signed' : 'Успешно закрыта · Акт подписан',
+                            },
+                          ].map((deal, i) => (
+                            <div
+                              key={i}
+                              className="rounded-xl border border-white/[0.07] bg-[#171926] p-3.5 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold !text-white truncate">
+                                  {deal.client}
+                                </div>
+                                <div className="text-[11px] !text-zinc-400 mt-0.5">{deal.inn}</div>
+                                <div className="text-[11px] !text-indigo-300 mt-1 font-medium">
+                                  {deal.stage}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="text-sm font-extrabold !text-emerald-400 tabular-nums">
+                                  {deal.amount}
+                                </div>
+                                <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded bg-indigo-500/20 text-[10px] font-semibold !text-indigo-200">
+                                  <FileText className="w-3 h-3" />
+                                  PDF A4
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Live White A4 Document Sheet Preview */}
+                        <div className="lg:col-span-5 rounded-2xl border border-indigo-500/30 bg-[#141726] p-4 flex flex-col justify-between space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold !text-indigo-200">
+                              {isEn
+                                ? '1-Click White A4 Generator (0.1s)'
+                                : 'Генератор белого листа А4 за 0.1 сек'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-[10px] font-bold !text-emerald-300">
+                              ГОСТ / Печать и Подпись
+                            </span>
+                          </div>
+
+                          <div className="rounded-xl bg-white text-slate-900 p-4 shadow-xl space-y-2 text-[11px]">
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                              <span className="font-extrabold text-slate-900 uppercase">
+                                ДОГОВОР-СЧЕТ № TC-2026/09
+                              </span>
+                              <span className="text-[10px] font-semibold text-indigo-700">
+                                С НДС 20%
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-600">
+                              Заказчик: ПАО «Северсталь Инжиниринг» (ИНН 7701234560)
+                            </div>
+                            <div className="rounded border border-slate-200 p-2 bg-slate-50 flex items-center justify-between font-semibold text-slate-900">
+                              <span>Лицензия и внедрение контура</span>
+                              <span>2 400 000 ₽</span>
+                            </div>
+                            <div className="flex items-center justify-between pt-1 text-[10px] text-slate-500">
+                              <span>М.П. Подпись руководителя</span>
+                              <span className="font-bold text-emerald-700">✓ Готово к печати</span>
+                            </div>
                           </div>
                         </div>
-                        <span
-                          className={`px-2 py-0.5 rounded-md border text-[10px] font-semibold shrink-0 ${card.badgeClass}`}
-                        >
-                          {card.status}
-                        </span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {activeShowcaseModule === 'crm' && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-[11px] text-[#A1A1AA] px-1">
-                      <span>{isEn ? 'B2B REVENUE PIPELINE' : 'ВОРОНКА B2B ПРОДАЖ И ДОКУМЕНТЫ'}</span>
-                      <span className="text-indigo-400 font-semibold">4 850 000 ₽</span>
-                    </div>
-                    {[
-                      {
-                        client: 'ПАО «Северсталь Инжиниринг»',
-                        value: '2 400 000 ₽',
-                        stage: isEn ? 'Contract & Invoice Ready' : 'Договор и Счет сформированы',
-                        action: isEn ? 'PDF A4 in 0.1s' : 'Печать PDF A4 за 0.1с',
-                      },
-                      {
-                        client: 'ООО «Альфа Логистика Групп»',
-                        value: '1 650 000 ₽',
-                        stage: isEn ? 'Negotiation → Legal Task Auto-Created' : 'Переговоры → Авто-задача юристам',
-                        action: isEn ? 'Deal Room Active' : 'Витрина клиента',
-                      },
-                      {
-                        client: 'АО «Технопром Холдинг»',
-                        value: '800 000 ₽',
-                        stage: isEn ? 'Closed Won · Paid' : 'Успешно закрыта · Оплачено',
-                        action: isEn ? 'Act Signed' : 'Акт подписан',
-                      },
-                    ].map((deal, i) => (
-                      <div
-                        key={i}
-                        className="rounded-xl border border-white/[0.08] bg-[#111115] p-3 flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-white truncate">{deal.client}</div>
-                          <div className="text-[11px] text-[#8E8E93] mt-0.5 truncate">{deal.stage}</div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-xs font-bold text-emerald-400 tabular-nums">{deal.value}</div>
-                          <div className="text-[10px] text-indigo-300 mt-0.5">{deal.action}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                    {/* TAB 3: ADVISOR TEDDY AI (ROOSEVELT x KACZYNSKI) */}
+                    {activeShowcaseModule === 'ai' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+                        <div className="lg:col-span-5 rounded-2xl border border-amber-500/30 bg-[#121320] p-5 space-y-4">
+                          <div className="flex items-center gap-3">
+                            <TeddyAvatar size="lg" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-base font-extrabold !text-white">
+                                  {isEn ? 'Advisor Teddy AI' : 'Советник Teddy AI'}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-[10px] font-bold !text-amber-300">
+                                  ROOSEVELT × MATH
+                                </span>
+                              </div>
+                              <p className="text-xs !text-zinc-400 mt-0.5">
+                                {isEn
+                                  ? 'Strategic clarity & anti-bureaucratic systems engineering'
+                                  : 'Доктрина Рузвельта и математическая зачистка бюрократии'}
+                              </p>
+                            </div>
+                          </div>
 
-                {activeShowcaseModule === 'shifts' && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-[11px] text-[#A1A1AA] px-1">
-                      <span>{isEn ? 'LIVE ATTENDANCE ROSTER' : 'ТАБЛО СМЕН В РЕАЛЬНОМ ВРЕМЕНИ'}</span>
-                      <span className="text-emerald-400 font-semibold">
-                        {isEn ? '18 Online · 2 Break' : '18 на смене · 2 перерыв'}
-                      </span>
-                    </div>
-                    {[
-                      {
-                        name: 'Лытнев Артем Олегович',
-                        role: isEn ? 'Chief Executive' : 'Генеральный директор',
-                        status: isEn ? 'On Shift · 06h 42m' : 'На смене · 06ч 42м',
-                        dot: 'bg-emerald-400',
-                      },
-                      {
-                        name: 'Соколова Елена Викторовна',
-                        role: isEn ? 'Head of Sales' : 'Руководитель отдела продаж',
-                        status: isEn ? 'On Shift · 05h 18m' : 'На смене · 05ч 18м',
-                        dot: 'bg-emerald-400',
-                      },
-                      {
-                        name: 'Волков Максим Игоревич',
-                        role: isEn ? 'Lead Engineer' : 'Ведущий инженер',
-                        status: isEn ? 'Break · 14m' : 'Перерыв · 14м',
-                        dot: 'bg-amber-400',
-                      },
-                    ].map((emp, i) => (
-                      <div
-                        key={i}
-                        className="rounded-xl border border-white/[0.08] bg-[#111115] p-3 flex items-center justify-between gap-3"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${emp.dot}`} />
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-white truncate">{emp.name}</div>
-                            <div className="text-[11px] text-[#8E8E93] truncate">{emp.role}</div>
+                          <div className="space-y-2 text-xs !text-zinc-200 leading-relaxed rounded-xl bg-white/[0.03] border border-white/[0.07] p-3.5">
+                            <p className="font-semibold !text-amber-200">
+                              «Говори мягко, но держи в руках большую дубинку дисциплины».
+                            </p>
+                            <p className="!text-zinc-300">
+                              Teddy не пишет банальные отписки — он анализирует живую базу компании,
+                              находит зависшие сделки, узкие места по SLA и в 1 клик назначает задачи
+                              исполнителям.
+                            </p>
                           </div>
                         </div>
-                        <span className="px-2.5 py-1 rounded-md bg-white/[0.05] border border-white/[0.08] text-[11px] font-semibold text-zinc-200 tabular-nums shrink-0">
-                          {emp.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
 
-                {activeShowcaseModule === 'ai' && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-[11px] text-[#A1A1AA] px-1">
-                      <span>{isEn ? 'TELEGRAM BOT & FILE BRIDGE' : 'СИНХРОНИЗАЦИЯ ЧАТА И ФАЙЛОВ С TELEGRAM'}</span>
-                      <span className="text-indigo-400 font-semibold">@TedCloudBot</span>
-                    </div>
-                    <div className="rounded-xl border border-white/[0.08] bg-[#111115] p-3 space-y-2">
-                      <div className="text-[11px] text-indigo-300 font-semibold">
-                        {isEn ? 'Web Chat ➔ Telegram Delivery (0.2s)' : 'Веб-чат ➔ Мгновенная доставка в Telegram (0.2с)'}
+                        <div className="lg:col-span-7 rounded-2xl border border-white/[0.08] bg-[#11131E] p-5 space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold !text-indigo-300">
+                              {isEn
+                                ? 'LIVE EXECUTIVE BRIEFING FROM TEDDY'
+                                : 'ЖИВОЙ ДОКЛАД СОВЕТНИКА ТЕДДИ РУКОВОДИТЕЛЮ'}
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-[11px] font-semibold !text-emerald-300">
+                              Actionable AI
+                            </span>
+                          </div>
+                          <div className="rounded-xl border border-white/[0.07] bg-[#171926] p-4 space-y-2.5 text-xs !text-zinc-200">
+                            <div className="font-bold !text-white">
+                              Приветствую! Я Тедди — ваш стратегический советник.
+                            </div>
+                            <p className="!text-zinc-300 leading-relaxed">
+                              Математически: каждое лишнее совещание снижает КПД отдела на 14%. В вашем
+                              контуре сейчас 3 высокоприоритетные сделки на 4,85 млн ₽. Предлагаю
+                              немедленно дожать договор по «Северстали» и срезать 2 дублирующих
+                              согласования.
+                            </p>
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <span className="px-3 py-1 rounded-lg bg-indigo-600/30 border border-indigo-400/30 text-[11px] font-semibold !text-indigo-200">
+                                ⚡ Декомпозировать спринт в 1 клик
+                              </span>
+                              <span className="px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30 text-[11px] font-semibold !text-amber-200">
+                                📊 Рассчитать юнит-экономику отдела
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-xs text-zinc-200">
-                        {isEn
-                          ? 'Attached PDF contracts, invoices, and photos are delivered directly to employee Telegram chats via native binary stream.'
-                          : 'Прикрепленные PDF-договоры, счета и изображения мгновенно приходят сотруднику прямо в Telegram без потери качества.'}
-                      </p>
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-semibold text-emerald-300">
-                          {isEn ? '✓✓ Delivered to Telegram' : '✓✓ Доставлено в Telegram'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-[10px] font-semibold text-indigo-300">
-                          {isEn ? '1-Click Message → Task' : '1 клик: Сообщение → Задача'}
-                        </span>
+                    )}
+
+                    {/* TAB 4: TWO-WAY TELEGRAM BRIDGE */}
+                    {activeShowcaseModule === 'shifts' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        <div className="rounded-2xl border border-white/[0.08] bg-[#11131E] p-5 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold uppercase tracking-wider !text-indigo-300">
+                              1. TedCloud Web Workspace
+                            </span>
+                            <span className="text-[11px] font-semibold !text-emerald-400">
+                              Binary Stream 0.2s
+                            </span>
+                          </div>
+                          <div className="rounded-xl border border-white/[0.07] bg-[#171926] p-4 space-y-2">
+                            <div className="text-xs font-bold !text-white">
+                              Отправка PDF-договора и задачи из веб-чата
+                            </div>
+                            <p className="text-xs !text-zinc-300">
+                              Вы прикрепляете договор, счет или фото в корпоративном чате TedCloud —
+                              файл мгновенно улетает сотруднику в Telegram через нативный multipart
+                              поток.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-emerald-500/30 bg-[#111820] p-5 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold uppercase tracking-wider !text-emerald-300">
+                              2. Telegram Smartphone Bot (@TedCloudBot)
+                            </span>
+                            <span className="text-[11px] font-semibold !text-emerald-400">
+                              ✓✓ Delivered
+                            </span>
+                          </div>
+                          <div className="rounded-xl border border-white/[0.08] bg-[#15202B] p-4 space-y-2">
+                            <div className="text-xs font-bold !text-white">
+                              Мгновенный пуш, смена статуса и 2FA-код
+                            </div>
+                            <p className="text-xs !text-zinc-200">
+                              Сотрудник нажимает «Взять в работу» или «Выполнено» прямо в Telegram,
+                              отмечает смену и получает 4-значный 2FA-код входа за 1 секунду.
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* 3. Visual Workflow Bento Cards (3-Step Pipeline) */}
-          <section id="features" className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                  {isEn
-                    ? 'End-to-End Corporate Execution Flow'
-                    : 'Бесшовный цикл работы компании без потери контекста'}
-                </h2>
-                <p className="text-xs text-[#8E8E93] mt-0.5">
-                  {isEn
-                    ? 'From task creation to Telegram execution and automated B2B document generation'
-                    : 'От постановки задачи за 2 секунды до ответа из Telegram и авто-генерации договора'}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[
-                {
-                  step: '01',
-                  title: isEn
-                    ? '1. Create Task in 2 Seconds'
-                    : '1. Постановка задачи за 2 сек',
-                  desc: isEn
-                    ? 'Type a task inline or convert any chat message into an assigned task with SLA deadline and AI checklist decomposition.'
-                    : 'Создавайте поручения прямо в строке по Enter или превращайте любое сообщение чата в задачу с дедлайном и ИИ-декомпозицией на чек-лист.',
-                  metric: isEn ? '< 50ms UI Response' : 'Мгновенный отклик < 50 мс',
-                },
-                {
-                  step: '02',
-                  title: isEn
-                    ? '2. Instant Push & Reply in Telegram'
-                    : '2. Мгновенный пуш и ответ в Telegram',
-                  desc: isEn
-                    ? 'The assignee receives the task and attached files in Telegram, updates status in 1 tap, or replies straight from their phone.'
-                    : 'Сотрудник мгновенно получает пуш и прикрепленные PDF-файлы в Telegram, меняет статус в 1 клик или отвечает прямо со смартфона.',
-                  metric: isEn ? '2-Way Native Sync' : 'Двусторонняя синхронизация',
-                },
-                {
-                  step: '03',
-                  title: isEn
-                    ? '3. Auto-Contract & Invoice from Deal'
-                    : '3. Авто-генерация договора и счета из сделки',
-                  desc: isEn
-                    ? 'Move a CRM deal to Negotiation and generate a print-ready white A4 Contract, Invoice, or Act in 0.1 seconds.'
-                    : 'Переведите сделку в CRM на следующий этап и распечатайте готовый белый лист А4 (Договор, Счет с НДС или Акт) за 0.1 секунды.',
-                  metric: isEn ? 'Instant PDF A4 Print' : 'Печать А4 в PDF за 0.1 сек',
-                },
-              ].map((bento) => (
-                <div
-                  key={bento.step}
-                  className="rounded-2xl border border-white/[0.08] bg-[#111115] p-6 flex flex-col justify-between space-y-4 shadow-xl"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="px-2.5 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-xs font-bold text-indigo-400 tabular-nums">
-                        STEP {bento.step}
-                      </span>
-                      <span className="text-[11px] font-semibold text-emerald-400">
-                        {bento.metric}
-                      </span>
-                    </div>
-                    <h3 className="text-sm font-bold text-white">{bento.title}</h3>
-                    <p className="text-xs text-[#A1A1AA] leading-relaxed">{bento.desc}</p>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
+              </div>
+            </section>
 
-          {/* 4. Comparison vs Jira & Bitrix24 */}
-          <section
-            id="comparison"
-            className="rounded-2xl border border-white/[0.08] bg-[#111115] p-6 space-y-4 shadow-xl"
-          >
-            <h2 className="text-base font-bold text-white border-b border-white/[0.07] pb-3">
-              {isEn
-                ? 'Why High-Performing Teams Switch from Jira & Bitrix24 to TedCloud'
-                : 'Почему компании переходят с тяжеловесных Jira и Битрикс24 на TedCloud'}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              {[
-                {
-                  title: isEn
-                    ? 'Onboarding in 60 seconds via Digital Pass'
-                    : 'Онбординг за 60 секунд по Цифровому пропуску',
-                  vs: isEn
-                    ? 'vs weeks of complex setup and training in Jira / Bitrix24'
-                    : 'вместо недель сложного внедрения и обучения в Битрикс24',
-                },
-                {
-                  title: isEn
-                    ? 'Native 2-Way Telegram Sync & File Delivery'
-                    : 'Двусторонний Telegram-бот и доставка PDF из коробки',
-                  vs: isEn
-                    ? 'vs paid third-party plugins that constantly disconnect'
-                    : 'вместо платных сторонних коннекторов, которые постоянно отваливаются',
-                },
-                {
-                  title: isEn
-                    ? 'Tasks + CRM + Shifts + Vault in One Clean Window'
-                    : 'Задачи + CRM + Табель смен + Регламенты в одном окне',
-                  vs: isEn
-                    ? 'vs overloaded portals with 50+ unused menu tabs'
-                    : 'вместо перегруженных порталов с десятками ненужных вкладок',
-                },
-              ].map((item, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-xl border border-white/[0.06] bg-[#16161B] p-4 space-y-1.5"
-                >
-                  <div className="flex items-center gap-2 font-semibold text-white">
-                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>{item.title}</span>
-                  </div>
-                  <p className="text-[11px] text-[#8E8E93] pl-6">{item.vs}</p>
+            {/* 3. Animated Process Conveyor (Вместо плоских карточек STEP 01/02/03) */}
+            <section id="features" className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-widest !text-indigo-400">
+                    {isEn ? 'AUTOMATED EXECUTION CONVEYOR' : 'АВТОМАТИЗИРОВАННЫЙ КОНВЕЙЕР ИСПОЛНЕНИЯ'}
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold !text-white tracking-tight mt-1">
+                    {isEn
+                      ? 'From Chat Message to Signed A4 Contract in 3 Steps'
+                      : 'От сообщения в чате до подписанного договора А4 за 3 шага'}
+                  </h2>
                 </div>
-              ))}
-            </div>
-          </section>
+                <span className="text-xs !text-zinc-400">
+                  {isEn
+                    ? 'Zero context switching · Real-time impulse across contours'
+                    : 'Единый световой маршрут данных без потери контекста'}
+                </span>
+              </div>
+
+              <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Connecting glowing route line on desktop */}
+                <div
+                  aria-hidden="true"
+                  className="hidden md:block pointer-events-none absolute top-1/2 left-[12%] right-[12%] h-[2px] -translate-y-1/2 bg-gradient-to-r from-indigo-500/20 via-indigo-400/70 to-emerald-400/40 animate-shimmer"
+                />
+
+                {[
+                  {
+                    step: '01',
+                    badge: isEn ? '< 40ms Response' : 'Отклик < 40 мс',
+                    title: isEn
+                      ? 'Instant Task & AI Decomposition'
+                      : 'Постановка задачи и ИИ-декомпозиция',
+                    desc: isEn
+                      ? 'Press Enter or convert any chat message into an SLA task with automatic sub-steps generated by Teddy AI.'
+                      : 'Нажмите Enter или превратите сообщение чата в поручение с дедлайном и авто-декомпозицией от советника Teddy AI.',
+                    preview: (
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0B0D16] p-3 space-y-2 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold !text-white">
+                            + В задачу: Согласовать смету
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 !text-indigo-300 text-[10px]">
+                            SLA 18:00
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 !text-emerald-400 text-[10px]">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Teddy AI создал 4 подпункта чек-листа</span>
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    step: '02',
+                    badge: isEn ? '2-Way Telegram' : 'Двусторонний Telegram',
+                    title: isEn
+                      ? 'Native Push & Binary File Delivery'
+                      : 'Мгновенный пуш и доставка файлов в Telegram',
+                    desc: isEn
+                      ? 'Assignees receive tasks and attached PDFs straight in Telegram and update progress in 1 tap from their phone.'
+                      : 'Исполнитель за 0.2с получает пуш и PDF-вложения в Telegram, меняет статус в 1 тап или отвечает голосом/текстом.',
+                    preview: (
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0B0D16] p-3 space-y-2 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold !text-indigo-300">@TedCloudBot</span>
+                          <span className="text-[10px] !text-emerald-400">✓✓ Доставлено</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded bg-white/[0.06] !text-zinc-200 text-[10px]">
+                            📎 Спецификация_Q4.pdf
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 !text-emerald-300 text-[10px]">
+                            ✓ Принято в работу
+                          </span>
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    step: '03',
+                    badge: isEn ? 'A4 PDF in 0.1s' : 'Белый А4 за 0.1 сек',
+                    title: isEn
+                      ? 'Auto-Contract, Invoice & Shift Analytics'
+                      : 'Авто-договор А4, счет с НДС и юнит-экономика',
+                    desc: isEn
+                      ? 'Move the deal in CRM and print a white A4 contract or VAT invoice while executive radar tracks margin.'
+                      : 'Переведите сделку на следующий этап и распечатайте готовый белый лист А4 (Договор, Счет с НДС или Акт) в 1 клик.',
+                    preview: (
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0B0D16] p-3 space-y-2 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold !text-white">Договор №TC-2026</span>
+                          <span className="font-bold !text-emerald-400">2 400 000 ₽</span>
+                        </div>
+                        <div className="text-[10px] !text-zinc-400">
+                          Авто-заполнение по ИНН · Печать в PDF за 0.1с
+                        </div>
+                      </div>
+                    ),
+                  },
+                ].map((node) => (
+                  <div
+                    key={node.step}
+                    className="relative z-10 rounded-2xl border border-white/[0.09] bg-[#10121C]/95 p-6 flex flex-col justify-between space-y-4 hover:border-indigo-500/40 hover:shadow-[0_0_40px_-10px_rgba(99,102,241,0.3)] transition-all duration-300"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-xs font-extrabold !text-indigo-300 tabular-nums">
+                          STEP {node.step}
+                        </span>
+                        <span className="text-[11px] font-semibold !text-emerald-400">
+                          {node.badge}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold !text-white">{node.title}</h3>
+                      <p className="text-xs !text-zinc-300 leading-relaxed">{node.desc}</p>
+                    </div>
+                    {node.preview}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* 4. Секция «Индустрии и результаты внедрения» (БЛОК 2.5) */}
+            <section id="industries" className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-widest !text-emerald-400">
+                    {isEn ? 'PROVEN ENTERPRISE IMPACT' : 'ИНДУСТРИИ И РЕЗУЛЬТАТЫ ВНЕДРЕНИЯ'}
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold !text-white tracking-tight mt-1">
+                    {isEn
+                      ? 'Measurable Efficiency Across Key B2B Sectors'
+                      : 'Измеримый рост скорости и маржинальности в реальном секторе'}
+                  </h2>
+                </div>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold !text-indigo-300">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  <span>
+                    {isEn ? 'Verified across 4 core industries' : 'Подтверждено в 4 ключевых отраслях'}
+                  </span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {[
+                  {
+                    sector: isEn
+                      ? 'IT Companies & Digital Agencies'
+                      : 'IT-компании и Digital-агентства',
+                    metric: '-42%',
+                    metricLabel: isEn ? 'fewer missed deadlines' : 'снижение просрочек по спринтам',
+                    desc: isEn
+                      ? 'Instant task creation from client chats, transparent shift tracking, and zero Jira lag.'
+                      : 'Мгновенная постановка задач из переписки, контроль загрузки разработчиков и 0 секунд ожидания.',
+                    accent: 'from-indigo-500/20 to-violet-500/5 border-indigo-500/30',
+                  },
+                  {
+                    sector: isEn
+                      ? 'Engineering & Construction Bureaus'
+                      : 'Проектные и строительные бюро',
+                    metric: '60 сек',
+                    metricLabel: isEn ? 'spec & contract approval' : 'согласование смет и договоров',
+                    desc: isEn
+                      ? 'Field engineers receive drawings and PDF specs directly in Telegram and report shift completion.'
+                      : 'Главные инженеры получают чертежи и PDF-акты прямо в Telegram на объекте и закрывают смены в 1 клик.',
+                    accent: 'from-emerald-500/20 to-teal-500/5 border-emerald-500/30',
+                  },
+                  {
+                    sector: isEn
+                      ? 'B2B Sales & Wholesale Distribution'
+                      : 'Отделы B2B-продаж и дистрибуции',
+                    metric: '+38%',
+                    metricLabel: isEn ? 'conversion to paid invoice' : 'рост конверсии в оплату счета',
+                    desc: isEn
+                      ? 'Auto-generated white A4 contracts with VAT 20% and automated follow-up tasks from Teddy AI.'
+                      : 'Авто-генерация договоров и счетов А4 с НДС 20% за 0.1с + жесткий контроль дожима сделок от Teddy AI.',
+                    accent: 'from-amber-500/20 to-orange-500/5 border-amber-500/30',
+                  },
+                  {
+                    sector: isEn
+                      ? 'Logistics & Manufacturing Plants'
+                      : 'Логистика и производственные холдинги',
+                    metric: '100%',
+                    metricLabel: isEn ? 'shift discipline & 2FA' : 'прозрачность табеля смен и 2FA',
+                    desc: isEn
+                      ? 'Real-time attendance roster, cryptographic multi-tenant isolation, and 7-contour Excel export.'
+                      : 'Живое табло присутствия на смене, криптографическая изоляция контура и выгрузка 7 реестров в Excel.',
+                    accent: 'from-sky-500/20 to-indigo-500/5 border-sky-500/30',
+                  },
+                ].map((item, idx) => (
+                  <div
+                    key={idx}
+                    className={`rounded-2xl border bg-gradient-to-b ${item.accent} bg-[#10121C] p-5 flex flex-col justify-between space-y-4 hover:shadow-[0_0_35px_-10px_rgba(99,102,241,0.3)] transition-all`}
+                  >
+                    <div className="space-y-2">
+                      <div className="text-xs font-bold !text-zinc-200">{item.sector}</div>
+                      <div className="pt-1">
+                        <div className="text-3xl font-extrabold !text-white tracking-tight tabular-nums">
+                          {item.metric}
+                        </div>
+                        <div className="text-[11px] font-semibold !text-emerald-300 mt-0.5">
+                          {item.metricLabel}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs !text-zinc-300 leading-relaxed">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* 5. Comparison vs Jira & Bitrix24 */}
+            <section
+              id="comparison"
+              className="rounded-3xl border border-white/[0.09] bg-[#10121C]/95 p-6 sm:p-8 space-y-5 shadow-2xl"
+            >
+              <h2 className="text-lg sm:text-xl font-extrabold !text-white border-b border-white/[0.08] pb-3.5">
+                {isEn
+                  ? 'Why High-Performing Teams Switch from Jira & Bitrix24 to TedCloud'
+                  : 'Почему компании переходят с тяжеловесных Jira и Битрикс24 на TedCloud'}
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                {[
+                  {
+                    title: isEn
+                      ? 'Onboarding in 60 seconds via Digital Pass'
+                      : 'Онбординг за 60 секунд по Цифровому пропуску',
+                    vs: isEn
+                      ? 'vs weeks of complex setup and costly integrators in Jira / Bitrix24'
+                      : 'вместо недель сложного внедрения и платных интеграторов в Битрикс24',
+                  },
+                  {
+                    title: isEn
+                      ? 'Native 2-Way Telegram Sync & File Delivery'
+                      : 'Двусторонний Telegram-бот и доставка PDF из коробки',
+                    vs: isEn
+                      ? 'vs paid third-party plugins that constantly disconnect'
+                      : 'вместо платных сторонних коннекторов, которые постоянно отваливаются',
+                  },
+                  {
+                    title: isEn
+                      ? 'Tasks + CRM + Shifts + Teddy AI in One Window'
+                      : 'Задачи + CRM + Табель смен + Советник Teddy в одном окне',
+                    vs: isEn
+                      ? 'vs overloaded portals with 50+ unused menu tabs'
+                      : 'вместо перегруженных порталов с десятками ненужных вкладок',
+                  },
+                ].map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-2xl border border-white/[0.07] bg-[#161826] p-4 space-y-2"
+                  >
+                    <div className="flex items-center gap-2 font-bold !text-white">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>{item.title}</span>
+                    </div>
+                    <p className="text-xs !text-zinc-400 pl-6">{item.vs}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
 
           {/* 5. Interactive Pricing Calculator + Unified Pricing Matrix (PRICING_PLANS) */}
           <section id="pricing" className="space-y-6">
@@ -1675,14 +2079,14 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                             'Full CRM Pipeline & Auto-Triggers',
                             '1-Click White A4 Contract & Invoice PDF',
                             'Client Deal Rooms & RBAC Matrix',
-                            'TedCloud Intelligence AI Studio',
+                            'Advisor Teddy AI (Roosevelt × Math)',
                           ]
                         : [
                             'До 50 сотрудников включено',
                             'Полная CRM-воронка и Авто-триггеры',
                             'Генератор договоров и счетов А4 в 1 клик',
                             'Внешние комнаты сделок и RBAC-матрица',
-                            'Центральная ИИ-студия TedCloud Intelligence',
+                            'Советник руководителя Teddy AI (Рузвельт × Качинский)',
                           ]
                       : isEn
                       ? [
@@ -1829,10 +2233,11 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               </span>
             </div>
           </section>
-        </main>
+          </main>
+        </div>
       )}
 
-      <footer className="max-w-6xl w-full mx-auto text-center text-[11px] text-[#71717A] pt-4">
+      <footer className="max-w-6xl w-full mx-auto text-center text-[11px] text-[#71717A] py-4">
         TedCloud Enterprise Platform — {t('auth.subtitle')}
       </footer>
     </div>

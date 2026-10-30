@@ -253,6 +253,7 @@ export interface AiAssistantSection {
 
 export interface AiAssistantInput {
   mode: AiAssistantMode;
+  personaMode?: 'strategist' | 'mathematician';
   lang?: 'ru' | 'en';
   prompt?: string;
   taskTitle?: string;
@@ -322,6 +323,7 @@ export function formatCompanyCurrency(
 export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutput {
   const {
     mode,
+    personaMode = 'strategist',
     lang = 'ru',
     prompt = '',
     taskTitle = '',
@@ -336,6 +338,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   } = input;
 
   const isEn = lang === 'en';
+  const isMath = personaMode === 'mathematician';
   const fmtMoney = (val: number | string | null | undefined) =>
     formatCompanyCurrency(val, currency, lang);
 
@@ -556,8 +559,13 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       { title: 'Коммерческий контур CRM', items: crmItems },
     ];
 
+    const teddyNote = isMath
+      ? `[Системный Математик · Анти-Бюрократия] Индустриальное общество любит плодить совещания, а мы опираемся на строгий математический расчет: в работе ${openTasks.length} поручений, КПД конверсии воронки — ${conversionRate}%.`
+      : `[Стратег · Доктрина Рузвельта] Говорим мягко, но держим железную дисциплину: под контролем ${highPriorityTasks.length} срочных поручений и ${activeLeads.length} сделок.`;
+
     const lines: string[] = [
-      `Персональная сводка дня — ${userName} (${userRole}), ${companyName}`,
+      `Советник Teddy · Сводка дня — ${userName} (${userRole}), ${companyName}`,
+      teddyNote,
       '',
       'Операционный контур задач:',
       ...taskItems.map((i) => `• ${i}`),
@@ -571,7 +579,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
 
     return {
       mode: 'daily_brief',
-      headline: `Персональная сводка дня — ${userName} (${userRole})`,
+      headline: `Советник Teddy · Сводка дня — ${userName} (${userRole})`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),
@@ -724,13 +732,13 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
         items: crmAuditItems,
       },
       {
-        title: 'Рекомендации TedCloud Intelligence',
+        title: 'Директивы Советника Teddy (Дисциплина и Математика)',
         items: recommendationItems,
       },
     ];
 
     const lines: string[] = [
-      `Анализ загрузки команды и воронки CRM — ${companyName}`,
+      `Советник Teddy · Анализ загрузки команды и воронки CRM — ${companyName}`,
       '',
       'Баланс нагрузки по штату:',
       ...staffItems.map((i) => `• ${i}`),
@@ -738,13 +746,13 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       'Аудит коммерческой воронки CRM:',
       ...crmAuditItems.map((i) => `• ${i}`),
       '',
-      'Рекомендации TedCloud Intelligence:',
+      'Директивы Советника Teddy:',
       ...recommendationItems.map((i) => `• ${i}`),
     ];
 
     return {
       mode: 'workload_analysis',
-      headline: `Анализ загрузки команды и воронки CRM — ${companyName}`,
+      headline: `Советник Teddy · Аудит нагрузки и воронки CRM — ${companyName}`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),

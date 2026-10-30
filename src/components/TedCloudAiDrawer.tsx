@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
-  Cpu,
   Send,
   Loader2,
   CheckCircle2,
@@ -11,12 +10,13 @@ import {
   Check,
   Paperclip,
   ListChecks,
-  Layers,
   ArrowUpRight,
   Maximize2,
   Minimize2,
   Trash2,
   RefreshCw,
+  ShieldAlert,
+  Calculator,
 } from 'lucide-react';
 import {
   AiAssistantMode,
@@ -41,6 +41,163 @@ import {
   processFilesToAttachments,
 } from './AttachmentSystem';
 
+export type TeddyPersonaMode = 'strategist' | 'mathematician';
+
+/**
+ * Авторский геометрический SVG-аватар «Teddy AI» (Faceted Noble Bear · Roosevelt × Kaczynski)
+ * С янтарно-индиговыми гранями, благородным силуэтом и живым свечением
+ */
+export const TeddyAvatar: React.FC<{
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  persona?: TeddyPersonaMode;
+  className?: string;
+}> = ({ size = 'md', persona = 'strategist', className = '' }) => {
+  const dim =
+    size === 'xs'
+      ? 'w-4 h-4'
+      : size === 'sm'
+      ? 'w-5 h-5'
+      : size === 'lg'
+      ? 'w-11 h-11'
+      : 'w-7 h-7';
+
+  const isMath = persona === 'mathematician';
+
+  return (
+    <div
+      className={`relative inline-flex items-center justify-center select-none shrink-0 ${dim} ${className}`}
+      aria-hidden="true"
+    >
+      <span
+        className={`absolute inset-0 rounded-full blur-[6px] opacity-60 transition-colors duration-300 ${
+          isMath ? 'bg-amber-500/40' : 'bg-indigo-500/45'
+        }`}
+      />
+      <svg
+        viewBox="0 0 64 64"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="relative w-full h-full drop-shadow-[0_2px_8px_rgba(99,102,241,0.35)]"
+      >
+        <defs>
+          <linearGradient id="teddyCrownGrad" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor={isMath ? '#F59E0B' : '#818CF8'} />
+            <stop offset="52%" stopColor="#6366F1" />
+            <stop offset="100%" stopColor="#F59E0B" />
+          </linearGradient>
+          <linearGradient id="teddyFaceShield" x1="16" y1="14" x2="48" y2="54" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#1E1B4B" />
+            <stop offset="60%" stopColor="#111827" />
+            <stop offset="100%" stopColor="#312E81" />
+          </linearGradient>
+          <linearGradient id="teddyMuzzleGrad" x1="22" y1="32" x2="42" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FBBF24" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#D97706" stopOpacity="0.85" />
+          </linearGradient>
+        </defs>
+
+        {/* Left & Right Faceted Bear Ears */}
+        <polygon
+          points="10,22 6,10 18,8 23,17"
+          fill="url(#teddyFaceShield)"
+          stroke="url(#teddyCrownGrad)"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        <polygon points="11,18 9,12 16,11 19,16" fill="#F59E0B" fillOpacity="0.45" />
+
+        <polygon
+          points="54,22 58,10 46,8 41,17"
+          fill="url(#teddyFaceShield)"
+          stroke="url(#teddyCrownGrad)"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        <polygon points="53,18 55,12 48,11 45,16" fill="#818CF8" fillOpacity="0.5" />
+
+        {/* Outer Geometric Cranium & Jaw */}
+        <polygon
+          points="20,12 44,12 55,25 51,45 32,57 13,45 9,25"
+          fill="url(#teddyFaceShield)"
+          stroke="url(#teddyCrownGrad)"
+          strokeWidth="2.2"
+          strokeLinejoin="round"
+        />
+
+        {/* Internal Faceted Brow & Cheek Planes */}
+        <polyline
+          points="20,12 32,24 44,12"
+          stroke="#818CF8"
+          strokeOpacity="0.55"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <polyline
+          points="9,25 22,30 32,24 42,30 55,25"
+          stroke="#F59E0B"
+          strokeOpacity="0.45"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <polyline
+          points="13,45 23,38 10,26"
+          stroke="#6366F1"
+          strokeOpacity="0.45"
+          strokeWidth="1.2"
+        />
+        <polyline
+          points="51,45 41,38 54,26"
+          stroke="#6366F1"
+          strokeOpacity="0.45"
+          strokeWidth="1.2"
+        />
+
+        {/* Roosevelt Pince-Nez / Mathematical Analytical Optics */}
+        <polygon
+          points="17,27 27,26 28,32 19,33"
+          fill={isMath ? '#34D399' : '#FBBF24'}
+          fillOpacity="0.95"
+        />
+        <polygon
+          points="47,27 37,26 36,32 45,33"
+          fill={isMath ? '#34D399' : '#FBBF24'}
+          fillOpacity="0.95"
+        />
+        {/* Pince-Nez Bridge */}
+        <line
+          x1="28"
+          y1="28.5"
+          x2="36"
+          y2="28.5"
+          stroke="#FDE68A"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+
+        {/* Faceted Amber Muzzle & Nose */}
+        <polygon
+          points="32,31 42,38 38,50 26,50 22,38"
+          fill="url(#teddyMuzzleGrad)"
+          stroke="#FDE68A"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        <polygon points="27,36 37,36 32,42" fill="#09090B" />
+        <line x1="32" y1="42" x2="32" y2="46.5" stroke="#09090B" strokeWidth="1.8" strokeLinecap="round" />
+        <polyline
+          points="28,46.5 32,48 36,46.5"
+          stroke="#09090B"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+};
+
 interface ExecutedAiActionItem {
   type: 'task_created' | 'deal_created' | 'message_sent';
   record: Record<string, any>;
@@ -52,6 +209,7 @@ interface AiChatEntry {
   id: string;
   role: 'user' | 'assistant';
   mode?: AiAssistantMode;
+  personaMode?: TeddyPersonaMode;
   headline?: string;
   metrics?: AiAssistantMetric[];
   sections?: AiAssistantSection[];
@@ -94,6 +252,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const isEn = language === 'en';
   const [entries, setEntries] = useState<AiChatEntry[]>([]);
   const [question, setQuestion] = useState('');
+  const [personaMode, setPersonaMode] = useState<TeddyPersonaMode>('strategist');
   const [pendingAttachments, setPendingAttachments] = useState<AttachmentItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFullWorkspaceSize, setIsFullWorkspaceSize] = useState(false);
@@ -123,6 +282,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  const safeNodes = Array.isArray(nodes) ? nodes : [];
+  const safeTasks = Array.isArray(tasks) ? tasks : [];
+  const safeLeads = Array.isArray(leads) ? leads : [];
+  const safeMessages = Array.isArray(messages) ? messages : [];
 
   const companyId = company?.id || currentProfile?.company_id || '';
   const companyName = company?.name || 'TedCloud';
@@ -169,20 +333,21 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
     const localBaseline = runBuiltInAiAssistant({
       mode,
+      personaMode,
       lang: language,
       currency,
       prompt: effectivePrompt,
       companyName,
       currentUser: currentProfile,
-      nodes,
-      tasks,
-      leads,
-      messages,
+      nodes: safeNodes,
+      tasks: safeTasks,
+      leads: safeLeads,
+      messages: safeMessages,
     });
 
     const suggestedTaskTitle = isEn
-      ? `Execute action plan: ${userPromptLabel.slice(0, 48)}`
-      : `План мероприятий: ${userPromptLabel.slice(0, 48)}`;
+      ? `Execute directive: ${userPromptLabel.slice(0, 48)}`
+      : `Директива Teddy: ${userPromptLabel.slice(0, 48)}`;
 
     try {
       const response = await fetch('/api/db', {
@@ -191,6 +356,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         body: JSON.stringify({
           action: 'ai_assistant',
           mode,
+          personaMode,
           lang: language,
           currency,
           prompt: effectivePrompt,
@@ -216,6 +382,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             id: `a_${Date.now()}`,
             role: 'assistant',
             mode,
+            personaMode,
             headline: payload.headline || localBaseline.headline,
             metrics: localBaseline.metrics,
             sections:
@@ -241,6 +408,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           id: `a_${Date.now()}`,
           role: 'assistant',
           mode,
+          personaMode,
           headline: localBaseline.headline,
           metrics: localBaseline.metrics,
           sections: localBaseline.sections,
@@ -283,8 +451,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             priority: 'High',
             status: 'Todo',
             department: currentProfile?.department || null,
-            assigned_to: currentProfile?.id || nodes[0]?.id || null,
-            owner_node_id: currentProfile?.id || nodes[0]?.id || null,
+            assigned_to: currentProfile?.id || safeNodes[0]?.id || null,
+            owner_node_id: currentProfile?.id || safeNodes[0]?.id || null,
             created_by: currentProfile?.id || null,
             checklist,
             ai_summary: summary,
@@ -304,22 +472,21 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
   const handleRebalanceEmployeeLoad = async (sourceNodeId: string) => {
     if (rebalancingNodeId || rebalancedNodeIds[sourceNodeId]) return;
-    const openTasksForNode = tasks.filter(
+    const openTasksForNode = safeTasks.filter(
       (t) =>
         t.status !== 'Done' &&
         (t.assigned_to === sourceNodeId || t.owner_node_id === sourceNodeId)
     );
     if (openTasksForNode.length === 0) return;
 
-    // Find least loaded colleague
-    const otherNodes = nodes.filter((n) => n.id !== sourceNodeId);
+    const otherNodes = safeNodes.filter((n) => n.id !== sourceNodeId);
     if (otherNodes.length === 0) return;
 
     const sortedByLoad = [...otherNodes].sort((a, b) => {
-      const aCount = tasks.filter(
+      const aCount = safeTasks.filter(
         (t) => t.status !== 'Done' && (t.assigned_to === a.id || t.owner_node_id === a.id)
       ).length;
-      const bCount = tasks.filter(
+      const bCount = safeTasks.filter(
         (t) => t.status !== 'Done' && (t.assigned_to === b.id || t.owner_node_id === b.id)
       ).length;
       return aCount - bCount;
@@ -358,7 +525,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     if (decomposingEntryId || decomposedEntryIds[entryId]) return;
     setDecomposingEntryId(entryId);
     try {
-      const openTasks = tasks.filter((t) => t.status !== 'Done').slice(0, 5);
+      const openTasks = safeTasks.filter((t) => t.status !== 'Done').slice(0, 5);
       for (const tk of openTasks) {
         if (!Array.isArray(tk.checklist) || tk.checklist.length === 0) {
           const { checklist, summary } = buildBuiltInChecklistForTask(
@@ -405,8 +572,13 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   };
 
   // Compute live employee workload for interactive chart
-  const openWorkspaceTasks = tasks.filter((t) => t.status !== 'Done');
-  const employeeWorkloadRows = nodes
+  const openWorkspaceTasks = safeTasks.filter((t) => t.status !== 'Done');
+  const onlineShiftsCount = safeNodes.filter(
+    (n) => n.shift_status === 'online' || n.shift_status === 'break'
+  ).length;
+  const activeShiftsDisplay = onlineShiftsCount > 0 ? onlineShiftsCount : safeNodes.length;
+
+  const employeeWorkloadRows = safeNodes
     .map((n) => {
       const count = openWorkspaceTasks.filter(
         (t) => t.assigned_to === n.id || t.owner_node_id === n.id
@@ -426,7 +598,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     .slice(0, 5);
   const maxWorkloadCount = Math.max(1, ...employeeWorkloadRows.map((r) => r.count), 4);
 
-  const activeDealsPreview = leads
+  const activeDealsPreview = safeLeads
     .filter((l) => (l.status || l.stage) !== 'Lost')
     .slice(0, 4);
 
@@ -438,74 +610,150 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       onClick={onClose}
     >
       <div
-        className={`w-full ${
+        className={`tc-teddy-modal w-full ${
           isFullWorkspaceSize
             ? 'max-w-6xl h-[88dvh]'
-            : 'max-w-3xl h-[82dvh] max-h-[780px]'
-        } rounded-2xl border border-white/10 bg-[#0D0D11] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-200`}
+            : 'max-w-3xl h-[84dvh] max-h-[820px]'
+        } rounded-2xl border border-white/10 bg-[#0D0D11] !text-white flex flex-col justify-between overflow-hidden shadow-[0_25px_90px_-15px_rgba(99,102,241,0.35)] transition-all duration-200`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Spotlight Header */}
-        <div className="px-5 py-3.5 border-b border-white/[0.07] bg-[#111116] flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center shrink-0">
-              <Cpu className="w-4 h-4 text-indigo-400" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-white tracking-tight truncate">
-                  TedCloud Intelligence Studio
-                </h2>
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                  Executive AI · {currency}
-                </span>
+        {/* Spotlight Header with Teddy Avatar + Thinking Focus Switcher */}
+        <div className="px-5 py-3.5 border-b border-white/[0.08] bg-[#111116] flex flex-col gap-3 shrink-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 via-indigo-950/40 to-amber-500/20 border border-indigo-400/30 flex items-center justify-center shrink-0">
+                <TeddyAvatar size="md" persona={personaMode} />
               </div>
-              <p className="text-[11px] text-zinc-400 truncate">
-                {companyName} · {openWorkspaceTasks.length}{' '}
-                {isEn ? 'open tasks' : 'активных задач'} · {leads.length} CRM ·{' '}
-                {nodes.length} {isEn ? 'staff' : 'сотр.'}
-              </p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-sm font-bold !text-white tracking-tight truncate">
+                    {isEn ? 'Teddy AI · Executive Advisor' : 'Советник Teddy (Teddy AI)'}
+                  </h2>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                    {personaMode === 'strategist'
+                      ? isEn
+                        ? 'Roosevelt Doctrine'
+                        : 'Доктрина Рузвельта'
+                      : isEn
+                      ? 'Systems Mathematician'
+                      : 'Системный Математик'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                  {companyName} · {openWorkspaceTasks.length}{' '}
+                  {isEn ? 'open tasks' : 'поручений в работе'} · {safeLeads.length}{' '}
+                  {isEn ? 'deals' : 'сделок CRM'} · {activeShiftsDisplay}{' '}
+                  {isEn ? 'staff on shift' : 'сотр. на смене'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {entries.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setEntries([])}
+                  title={isEn ? 'Clear conversation' : 'Очистить историю диалога с Teddy'}
+                  className="p-2 rounded-xl text-zinc-400 hover:!text-white hover:bg-white/[0.06] transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsFullWorkspaceSize((prev) => !prev)}
+                title={
+                  isFullWorkspaceSize
+                    ? isEn
+                      ? 'Restore standard Spotlight size'
+                      : 'Стандартный размер окна'
+                    : isEn
+                    ? 'Expand to full workspace'
+                    : 'Развернуть на весь рабочий экран'
+                }
+                className="p-2 rounded-xl text-zinc-400 hover:!text-white hover:bg-white/[0.06] transition-colors"
+              >
+                {isFullWorkspaceSize ? (
+                  <Minimize2 className="w-4 h-4" />
+                ) : (
+                  <Maximize2 className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={isEn ? 'Close Teddy AI' : 'Закрыть Советника Teddy'}
+                className="p-2 rounded-xl text-zinc-400 hover:!text-white hover:bg-white/[0.06] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            {entries.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setEntries([])}
-                title={isEn ? 'Clear conversation' : 'Очистить историю запросов'}
-                className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
+          {/* Переключатель фокуса мышления Teddy: Стратег (Доктрина Рузвельта) vs Системный Математик (Анти-Бюрократия) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setIsFullWorkspaceSize((prev) => !prev)}
-              title={
-                isFullWorkspaceSize
-                  ? isEn
-                    ? 'Restore standard Spotlight size'
-                    : 'Стандартный размер Spotlight'
-                  : isEn
-                  ? 'Expand to full workspace'
-                  : 'Развернуть на весь рабочий экран'
-              }
-              className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+              onClick={() => setPersonaMode('strategist')}
+              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                personaMode === 'strategist'
+                  ? 'border-indigo-500/60 bg-indigo-500/15 !text-white shadow-[0_0_25px_-8px_rgba(99,102,241,0.5)]'
+                  : 'border-white/[0.07] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05] hover:!text-white'
+              }`}
             >
-              {isFullWorkspaceSize ? (
-                <Minimize2 className="w-4 h-4" />
-              ) : (
-                <Maximize2 className="w-4 h-4" />
+              <div className="flex items-center gap-2 min-w-0">
+                <ShieldAlert
+                  className={`w-4 h-4 shrink-0 ${
+                    personaMode === 'strategist' ? 'text-indigo-400' : 'text-zinc-500'
+                  }`}
+                />
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold !text-white truncate">
+                    {isEn ? 'Strategist (Roosevelt Doctrine)' : 'Стратег (Доктрина Рузвельта)'}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 truncate">
+                    {isEn
+                      ? 'Iron SLA discipline, CRM deal closing & delegation'
+                      : 'Железный контроль сроков, дожим сделок CRM и делегирование'}
+                  </div>
+                </div>
+              </div>
+              {personaMode === 'strategist' && (
+                <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
               )}
             </button>
+
             <button
               type="button"
-              onClick={onClose}
-              aria-label={isEn ? 'Close TedCloud Intelligence' : 'Закрыть TedCloud Intelligence'}
-              className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+              onClick={() => setPersonaMode('mathematician')}
+              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                personaMode === 'mathematician'
+                  ? 'border-amber-500/60 bg-amber-500/15 !text-white shadow-[0_0_25px_-8px_rgba(245,158,11,0.45)]'
+                  : 'border-white/[0.07] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05] hover:!text-white'
+              }`}
             >
-              <X className="w-4 h-4" />
+              <div className="flex items-center gap-2 min-w-0">
+                <Calculator
+                  className={`w-4 h-4 shrink-0 ${
+                    personaMode === 'mathematician' ? 'text-amber-400' : 'text-zinc-500'
+                  }`}
+                />
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold !text-white truncate">
+                    {isEn
+                      ? 'Systems Mathematician (Anti-Bureaucracy)'
+                      : 'Системный Математик (Анти-Бюрократия)'}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 truncate">
+                    {isEn
+                      ? 'Bottleneck math, exposing fake busywork & unit economics'
+                      : 'Поиск узких мест, вскрытие имитации деятельности и юнит-экономика'}
+                  </div>
+                </div>
+              </div>
+              {personaMode === 'mathematician' && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+              )}
             </button>
           </div>
         </div>
@@ -564,7 +812,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               void triggerAiAction(
                 'decompose_task',
                 isEn ? 'Task Plan' : 'План задач',
-                tasks[0]?.title || (isEn ? 'Q4 Operational Execution Plan' : 'Операционный план квартала')
+                safeTasks[0]?.title ||
+                  (isEn ? 'Q4 Operational Execution Plan' : 'Операционный план квартала')
               )
             }
             className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
@@ -577,30 +826,69 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         {/* Conversational Stream */}
         <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-3.5">
           {entries.length === 0 && (
-            <div className="rounded-xl border border-white/[0.08] bg-[#131319] p-3.5 space-y-3 text-zinc-200">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-white flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                  TedCloud Action Engine
-                </span>
-                <span className="text-[10px] text-emerald-400 font-medium">
+            <div className="rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-[#141522] via-[#12131C] to-[#17141F] p-4 space-y-3.5 text-zinc-200 shadow-lg">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <TeddyAvatar size="sm" persona={personaMode} />
+                  <div>
+                    <div className="text-xs font-bold !text-white flex items-center gap-2">
+                      <span>
+                        {isEn
+                          ? 'Teddy AI · Chief Executive Advisor & Mathematician'
+                          : 'Советник Teddy · Главный стратег и системный математик'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-amber-300/90 font-medium">
+                      {personaMode === 'strategist'
+                        ? isEn
+                          ? '“Speak softly and carry a big stick” — T. Roosevelt'
+                          : '«Говори мягко, но держи в руках большую дубинку» — Т. Рузвельт'
+                        : isEn
+                        ? '“Zero tolerance for bureaucratic entropy” — Systems Math'
+                        : '«Математическая точность против корпоративной бюрократии»'}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold shrink-0">
                   {isEn ? 'Direct DB Execution' : 'Прямое управление БД'}
                 </span>
               </div>
-              <p className="text-xs text-zinc-300 leading-relaxed">
-                {isEn
-                  ? `Give direct natural commands to create tasks, add CRM deals, or message colleagues in "${companyName}".`
-                  : `Отдавайте прямые команды естественным языком: создавайте задачи, сделки в CRM или отправляйте сообщения коллегам в «${companyName}».`}
+
+              <p className="text-xs text-zinc-200 leading-relaxed">
+                {isEn ? (
+                  <>
+                    Greetings. I have audited the operational contour of{' '}
+                    <strong className="!text-white">“{companyName}”</strong>: there are{' '}
+                    <strong className="text-indigo-300">{openWorkspaceTasks.length}</strong> active
+                    assignments and <strong className="text-emerald-300">{safeLeads.length}</strong>{' '}
+                    CRM deals in flight (<strong className="text-amber-300">{activeShiftsDisplay}</strong>{' '}
+                    staff members in contour). Industrial society loves breeding chaos and endless
+                    meetings, whereas you and I prefer iron discipline and exact mathematical
+                    calculation. Which employee shall we steer on course today, or which deal shall
+                    we close?
+                  </>
+                ) : (
+                  <>
+                    Приветствую. Я проанализировал контур вашей организации{' '}
+                    <strong className="!text-white">«{companyName}»</strong>: в работе{' '}
+                    <strong className="text-indigo-300">{openWorkspaceTasks.length}</strong>{' '}
+                    поручений и <strong className="text-emerald-300">{safeLeads.length}</strong>{' '}
+                    сделок (на смене <strong className="text-amber-300">{activeShiftsDisplay}</strong>{' '}
+                    сотр.). Индустриальное общество обожает плодить хаос и совещания, а мы с вами
+                    любим железную дисциплину и точный математический расчет. Кого из сотрудников
+                    сегодня направим в нужное русло или какую сделку дожмем?
+                  </>
+                )}
               </p>
 
               {/* Quick Natural Command Chips */}
-              <div className="pt-1 flex flex-wrap gap-1.5">
+              <div className="pt-1 flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={isLoading}
                   onClick={() => {
                     const targetColleague =
-                      nodes.find((n) => n.id !== currentProfile?.id)?.name ||
+                      safeNodes.find((n) => n.id !== currentProfile?.id)?.name ||
                       currentProfile?.name ||
                       'команды';
                     const cmd = isEn
@@ -608,12 +896,12 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                       : `Создай задачу Подготовить финансовый отчет для ${targetColleague}`;
                     void triggerAiAction('custom', cmd, cmd);
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-[11px] font-medium text-indigo-300 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-[11px] font-semibold text-indigo-200 transition-colors cursor-pointer"
                 >
-                  <Plus className="w-3 h-3" />
+                  <Plus className="w-3.5 h-3.5 text-indigo-400" />
                   <span>
                     {isEn
-                      ? 'Create task via AI'
+                      ? 'Create task via Teddy'
                       : '«Создай задачу подготовить отчет...»'}
                   </span>
                 </button>
@@ -627,12 +915,12 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                       : 'Создай сделку Северсталь Логистика на 1.5 млн';
                     void triggerAiAction('custom', cmd, cmd);
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-[11px] font-medium text-emerald-300 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[11px] font-semibold text-emerald-200 transition-colors cursor-pointer"
                 >
-                  <Briefcase className="w-3 h-3" />
+                  <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
                   <span>
                     {isEn
-                      ? 'Create CRM deal via AI'
+                      ? 'Create CRM deal via Teddy'
                       : '«Создай сделку Северсталь на 1.5 млн»'}
                   </span>
                 </button>
@@ -670,14 +958,14 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                 }`}
               >
                 {entry.role === 'user' ? (
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600/90 px-3.5 py-2.5 text-white space-y-1 shadow-sm">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600/90 px-3.5 py-2.5 !text-white space-y-1 shadow-sm">
                     <div className="flex items-center justify-between gap-3 text-[10px] text-indigo-100/80">
-                      <span className="font-semibold text-white">
+                      <span className="font-semibold !text-white">
                         {currentProfile?.name || (isEn ? 'You' : 'Вы')}
                       </span>
                       <span className="tabular-nums">{entry.timestamp}</span>
                     </div>
-                    <div className="text-xs leading-relaxed">{entry.text}</div>
+                    <div className="text-xs leading-relaxed !text-white">{entry.text}</div>
                     {entry.attachments && entry.attachments.length > 0 && (
                       <AttachmentListRenderer
                         attachments={entry.attachments}
@@ -691,9 +979,12 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                     {/* Assistant Header */}
                     <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Cpu className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                        <span className="text-xs font-semibold text-white truncate">
-                          {entry.headline || 'TedCloud Intelligence'}
+                        <TeddyAvatar
+                          size="xs"
+                          persona={entry.personaMode || personaMode}
+                        />
+                        <span className="text-xs font-semibold !text-white truncate">
+                          {entry.headline || 'Советник Teddy (Teddy AI)'}
                         </span>
                       </div>
                       <span className="text-[10px] text-zinc-500 tabular-nums shrink-0">
@@ -734,7 +1025,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                                     onNavigateToTasks();
                                     onClose();
                                   }}
-                                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold !text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
                                 >
                                   <span>{isEn ? 'Open Tasks' : 'В задачи'}</span>
                                   <ArrowUpRight className="w-3 h-3" />
@@ -748,7 +1039,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                                     onNavigateToCrm();
                                     onClose();
                                   }}
-                                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold !text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
                                 >
                                   <span>{isEn ? 'Open CRM' : 'В воронку'}</span>
                                   <ArrowUpRight className="w-3 h-3" />
@@ -756,7 +1047,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                               )}
                             </div>
 
-                            <div className="text-xs font-medium text-white">
+                            <div className="text-xs font-medium !text-white">
                               {act.record?.title ||
                                 act.record?.client_name ||
                                 act.summary}
@@ -771,7 +1062,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                             {act.targetName && (
                               <div className="text-[11px] text-zinc-300">
                                 {isEn ? 'Assignee / Recipient:' : 'Исполнитель / Адресат:'}{' '}
-                                <span className="font-medium text-white">{act.targetName}</span>
+                                <span className="font-medium !text-white">{act.targetName}</span>
                               </div>
                             )}
                           </div>
@@ -790,7 +1081,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                             <div className="text-[10px] font-medium text-zinc-400 truncate">
                               {m.label}
                             </div>
-                            <div className="text-xs sm:text-sm font-semibold text-white tabular-nums truncate">
+                            <div className="text-xs sm:text-sm font-semibold !text-white tabular-nums truncate">
                               {m.value}
                             </div>
                             {m.sublabel && (
@@ -808,11 +1099,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                       employeeWorkloadRows.length > 0 && (
                         <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                            <span className="text-xs font-semibold !text-white flex items-center gap-1.5">
                               <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
                               {isEn
                                 ? 'Staff Workload Distribution'
-                                : 'Мини-график загрузки сотрудников'}
+                                : 'Матрица загрузки сотрудников'}
                             </span>
                             <span className="text-[10px] text-zinc-400">
                               {isEn ? 'Active tasks per specialist' : 'Активные задачи по штату'}
@@ -824,12 +1115,12 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                                 100,
                                 Math.max(8, Math.round((row.count / maxWorkloadCount) * 100))
                               );
-                              const isOverloaded = row.count >= 3 && nodes.length > 1;
+                              const isOverloaded = row.count >= 3 && safeNodes.length > 1;
                               return (
                                 <div key={row.id} className="space-y-1">
                                   <div className="flex items-center justify-between gap-2 text-xs">
                                     <div className="min-w-0 truncate">
-                                      <span className="font-medium text-white">{row.name}</span>
+                                      <span className="font-medium !text-white">{row.name}</span>
                                       <span className="text-[10px] text-zinc-400 ml-1.5">
                                         · {row.role}
                                       </span>
@@ -896,7 +1187,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                       activeDealsPreview.length > 0 && (
                         <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                            <span className="text-xs font-semibold !text-white flex items-center gap-1.5">
                               <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
                               {isEn ? 'Express CRM Deal Audit' : 'Экспресс-аудит сделок CRM'}
                             </span>
@@ -927,7 +1218,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                                 className="rounded-lg border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] p-2.5 flex items-center justify-between gap-2 cursor-pointer transition-colors"
                               >
                                 <div className="min-w-0">
-                                  <div className="text-xs font-semibold text-white truncate">
+                                  <div className="text-xs font-semibold !text-white truncate">
                                     {deal.client_name || deal.title}
                                   </div>
                                   <div className="text-[10px] text-zinc-400 truncate">
@@ -951,7 +1242,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                             key={sIdx}
                             className="rounded-xl border border-white/[0.06] bg-[#16161D] p-3 space-y-1.5"
                           >
-                            <h4 className="text-xs font-semibold text-white tracking-tight">
+                            <h4 className="text-xs font-semibold !text-white tracking-tight">
                               {sec.title}
                             </h4>
                             <ul className="space-y-1">
@@ -978,9 +1269,9 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                     {(!entry.executedActions || entry.executedActions.length === 0) && (
                       <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                          <span className="text-xs font-semibold !text-white flex items-center gap-1.5">
                             <ListChecks className="w-3.5 h-3.5 text-indigo-400" />
-                            {isEn ? 'Suggested Daily Initiatives' : 'Предложенные задачи на день'}
+                            {isEn ? 'Teddy’s Daily Directives' : 'Директивы Teddy на сегодня'}
                           </span>
                           <button
                             type="button"
@@ -1011,7 +1302,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                                 className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 flex items-center justify-between gap-3"
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-xs font-medium text-white truncate">
+                                  <div className="text-xs font-medium !text-white truncate">
                                     {sc.title}
                                   </div>
                                   <div className="flex items-center gap-2 mt-0.5 text-[10px] text-zinc-400">
@@ -1035,7 +1326,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                                   className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold shrink-0 transition-colors ${
                                     isCreated
                                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                                      : 'bg-indigo-600 hover:bg-indigo-500 !text-white'
                                   }`}
                                 >
                                   {isCreating ? (
@@ -1069,11 +1360,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
           {isLoading && (
             <div className="flex items-center gap-2.5 text-xs text-zinc-200 bg-[#14141B] border border-white/[0.08] rounded-xl px-3.5 py-2.5 w-fit">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
               <span>
                 {isEn
-                  ? 'TedCloud Intelligence is executing request...'
-                  : 'TedCloud Intelligence выполняет команду...'}
+                  ? 'Teddy AI is calculating directive...'
+                  : 'Советник Teddy выполняет математический расчет и запись...'}
               </span>
             </div>
           )}
@@ -1103,7 +1394,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="w-9 h-9 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 transition"
+              className="w-9 h-9 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:!text-white flex items-center justify-center shrink-0 transition"
               title={isEn ? 'Attach file or screenshot' : 'Прикрепить файл или скриншот'}
             >
               <Paperclip className="w-4 h-4" />
@@ -1115,17 +1406,17 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={
                 isEn
-                  ? 'Command: "Create task...", "Create deal...", or ask...'
-                  : 'Команда: «Создай задачу...», «Создай сделку...» или вопрос...'
+                  ? 'Ask Teddy or command: "Create task...", "Create deal...", "Message..."'
+                  : 'Поручение для Teddy: «Создай задачу...», «Создай сделку...» или вопрос...'
               }
-              className="flex-1 h-10 rounded-xl border border-white/10 bg-[#17171F] px-3.5 text-sm text-white placeholder:text-zinc-500 focus:border-white/30 focus:outline-none min-w-0"
+              className="flex-1 h-10 rounded-xl border border-white/10 bg-[#17171F] px-3.5 text-sm !text-white placeholder:text-zinc-500 focus:border-white/30 focus:outline-none min-w-0"
             />
 
             <button
               type="submit"
               disabled={isLoading || (!question.trim() && pendingAttachments.length === 0)}
-              className="w-9 h-9 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 flex items-center justify-center shrink-0 transition-colors"
-              title={isEn ? 'Send' : 'Отправить'}
+              className="w-9 h-9 rounded-xl bg-indigo-600 !text-white hover:bg-indigo-500 disabled:opacity-40 flex items-center justify-center shrink-0 transition-colors"
+              title={isEn ? 'Send to Teddy' : 'Отправить Советнику Teddy'}
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1139,4 +1430,3 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     </div>
   );
 };
-
