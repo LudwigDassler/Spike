@@ -167,7 +167,7 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
               >
                 <span className="inline-flex items-center gap-2">
                   <TeddyAvatar size="xs" />
-                  <span>{isEn ? 'Teddy AI Advisor' : 'Советник Teddy (AI)'}</span>
+                  <span>Teddy</span>
                 </span>
                 <ArrowRight className="w-3 h-3 text-zinc-400" />
               </button>

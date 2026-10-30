@@ -1,1431 +1,1407 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   X,
   Send,
-  Loader2,
-  CheckCircle2,
-  BarChart3,
-  Briefcase,
   Plus,
-  Check,
-  Paperclip,
-  ListChecks,
-  ArrowUpRight,
-  Maximize2,
-  Minimize2,
-  Trash2,
-  RefreshCw,
+  CheckCircle2,
+  TrendingUp,
+  ListTodo,
+  Clock,
   ShieldAlert,
-  Calculator,
+  ArrowUpRight,
+  Building2,
+  UserCheck,
+  Briefcase,
+  Target,
+  Activity,
+  DollarSign,
+  Cpu,
 } from 'lucide-react';
 import {
-  AiAssistantMode,
-  AttachmentItem,
   Company,
   CrmLeadRecord,
+  DashboardSection,
   OrganizationNode,
   TaskRecord,
   WorkspaceMessageRecord,
 } from '../types/database';
-import {
-  AiAssistantMetric,
-  AiAssistantSection,
-  buildBuiltInChecklistForTask,
-  runBuiltInAiAssistant,
-} from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
-import {
-  ACCEPTED_ATTACHMENT_TYPES,
-  AttachmentListRenderer,
-  PendingAttachmentsStrip,
-  processFilesToAttachments,
-} from './AttachmentSystem';
 
-export type TeddyPersonaMode = 'strategist' | 'mathematician';
+export type TeddyPersonaMode = 'operations' | 'finance' | 'automation';
+
+export interface TeddyAvatarProps {
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  className?: string;
+}
 
 /**
- * Авторский геометрический SVG-аватар «Teddy AI» (Faceted Noble Bear · Roosevelt × Kaczynski)
- * С янтарно-индиговыми гранями, благородным силуэтом и живым свечением
+ * Clean geometric SVG emblem for Teddy Executive AI Assistant
  */
-export const TeddyAvatar: React.FC<{
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  persona?: TeddyPersonaMode;
-  className?: string;
-}> = ({ size = 'md', persona = 'strategist', className = '' }) => {
-  const dim =
+export const TeddyAvatar: React.FC<TeddyAvatarProps> = ({ size = 'md', className = '' }) => {
+  const dims =
     size === 'xs'
-      ? 'w-4 h-4'
-      : size === 'sm'
       ? 'w-5 h-5'
+      : size === 'sm'
+      ? 'w-7 h-7'
       : size === 'lg'
       ? 'w-11 h-11'
-      : 'w-7 h-7';
-
-  const isMath = persona === 'mathematician';
+      : 'w-9 h-9';
 
   return (
     <div
-      className={`relative inline-flex items-center justify-center select-none shrink-0 ${dim} ${className}`}
-      aria-hidden="true"
+      className={`${dims} rounded-xl bg-gradient-to-br from-indigo-500/20 via-violet-500/15 to-zinc-900 border border-indigo-400/35 flex items-center justify-center shrink-0 shadow-xs ${className}`}
+      title="Teddy · Executive AI Assistant"
     >
-      <span
-        className={`absolute inset-0 rounded-full blur-[6px] opacity-60 transition-colors duration-300 ${
-          isMath ? 'bg-amber-500/40' : 'bg-indigo-500/45'
-        }`}
-      />
       <svg
-        viewBox="0 0 64 64"
+        viewBox="0 0 36 36"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="relative w-full h-full drop-shadow-[0_2px_8px_rgba(99,102,241,0.35)]"
+        className="w-[74%] h-[74%]"
       >
-        <defs>
-          <linearGradient id="teddyCrownGrad" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor={isMath ? '#F59E0B' : '#818CF8'} />
-            <stop offset="52%" stopColor="#6366F1" />
-            <stop offset="100%" stopColor="#F59E0B" />
-          </linearGradient>
-          <linearGradient id="teddyFaceShield" x1="16" y1="14" x2="48" y2="54" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#1E1B4B" />
-            <stop offset="60%" stopColor="#111827" />
-            <stop offset="100%" stopColor="#312E81" />
-          </linearGradient>
-          <linearGradient id="teddyMuzzleGrad" x1="22" y1="32" x2="42" y2="52" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#FBBF24" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#D97706" stopOpacity="0.85" />
-          </linearGradient>
-        </defs>
-
-        {/* Left & Right Faceted Bear Ears */}
-        <polygon
-          points="10,22 6,10 18,8 23,17"
-          fill="url(#teddyFaceShield)"
-          stroke="url(#teddyCrownGrad)"
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        <polygon points="11,18 9,12 16,11 19,16" fill="#F59E0B" fillOpacity="0.45" />
-
-        <polygon
-          points="54,22 58,10 46,8 41,17"
-          fill="url(#teddyFaceShield)"
-          stroke="url(#teddyCrownGrad)"
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        <polygon points="53,18 55,12 48,11 45,16" fill="#818CF8" fillOpacity="0.5" />
-
-        {/* Outer Geometric Cranium & Jaw */}
-        <polygon
-          points="20,12 44,12 55,25 51,45 32,57 13,45 9,25"
-          fill="url(#teddyFaceShield)"
-          stroke="url(#teddyCrownGrad)"
-          strokeWidth="2.2"
-          strokeLinejoin="round"
-        />
-
-        {/* Internal Faceted Brow & Cheek Planes */}
-        <polyline
-          points="20,12 32,24 44,12"
+        {/* Geometric ears */}
+        <circle
+          cx="9.5"
+          cy="10"
+          r="4.2"
+          fill="#18181B"
           stroke="#818CF8"
-          strokeOpacity="0.55"
+          strokeWidth="1.6"
+        />
+        <circle cx="9.5" cy="10" r="1.8" fill="#6366F1" fillOpacity="0.45" />
+        <circle
+          cx="26.5"
+          cy="10"
+          r="4.2"
+          fill="#18181B"
+          stroke="#818CF8"
+          strokeWidth="1.6"
+        />
+        <circle cx="26.5" cy="10" r="1.8" fill="#6366F1" fillOpacity="0.45" />
+
+        {/* Geometric faceted head */}
+        <rect
+          x="7.5"
+          y="9.5"
+          width="21"
+          height="19.5"
+          rx="7.5"
+          fill="#0F0F13"
+          stroke="#E4E4E7"
+          strokeWidth="1.6"
+        />
+
+        {/* Monocle lens on right eye */}
+        <circle
+          cx="22"
+          cy="17.5"
+          r="3.8"
+          fill="#312E81"
+          fillOpacity="0.45"
+          stroke="#A5B4FC"
           strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
         />
-        <polyline
-          points="9,25 22,30 32,24 42,30 55,25"
-          stroke="#F59E0B"
-          strokeOpacity="0.45"
-          strokeWidth="1.3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <polyline
-          points="13,45 23,38 10,26"
-          stroke="#6366F1"
-          strokeOpacity="0.45"
-          strokeWidth="1.2"
-        />
-        <polyline
-          points="51,45 41,38 54,26"
-          stroke="#6366F1"
-          strokeOpacity="0.45"
-          strokeWidth="1.2"
-        />
+        <line x1="25.8" y1="18.5" x2="28.2" y2="23" stroke="#818CF8" strokeWidth="1.2" />
 
-        {/* Roosevelt Pince-Nez / Mathematical Analytical Optics */}
-        <polygon
-          points="17,27 27,26 28,32 19,33"
-          fill={isMath ? '#34D399' : '#FBBF24'}
-          fillOpacity="0.95"
-        />
-        <polygon
-          points="47,27 37,26 36,32 45,33"
-          fill={isMath ? '#34D399' : '#FBBF24'}
-          fillOpacity="0.95"
-        />
-        {/* Pince-Nez Bridge */}
-        <line
-          x1="28"
-          y1="28.5"
-          x2="36"
-          y2="28.5"
-          stroke="#FDE68A"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
+        {/* Eyes */}
+        <circle cx="14" cy="17.5" r="1.6" fill="#F4F4F5" />
+        <circle cx="22" cy="17.5" r="1.5" fill="#A5B4FC" />
 
-        {/* Faceted Amber Muzzle & Nose */}
-        <polygon
-          points="32,31 42,38 38,50 26,50 22,38"
-          fill="url(#teddyMuzzleGrad)"
-          stroke="#FDE68A"
-          strokeWidth="1.3"
-          strokeLinejoin="round"
+        {/* Muzzle */}
+        <rect
+          x="13.5"
+          y="20.5"
+          width="9"
+          height="5.5"
+          rx="2.75"
+          fill="#18181F"
+          stroke="#52525B"
+          strokeWidth="1.1"
         />
-        <polygon points="27,36 37,36 32,42" fill="#09090B" />
-        <line x1="32" y1="42" x2="32" y2="46.5" stroke="#09090B" strokeWidth="1.8" strokeLinecap="round" />
-        <polyline
-          points="28,46.5 32,48 36,46.5"
-          stroke="#09090B"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <path
+          d="M16.6 22.3H19.4L18 24.1L16.6 22.3Z"
+          fill="#818CF8"
         />
       </svg>
     </div>
   );
 };
 
-interface ExecutedAiActionItem {
-  type: 'task_created' | 'deal_created' | 'message_sent';
-  record: Record<string, any>;
-  targetName?: string;
-  summary: string;
-}
-
-interface AiChatEntry {
-  id: string;
-  role: 'user' | 'assistant';
-  mode?: AiAssistantMode;
-  personaMode?: TeddyPersonaMode;
-  headline?: string;
-  metrics?: AiAssistantMetric[];
-  sections?: AiAssistantSection[];
-  executedActions?: ExecutedAiActionItem[];
-  suggestedTaskTitle?: string;
-  attachments?: AttachmentItem[];
-  text: string;
-  timestamp: string;
-}
-
 interface TedCloudAiDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  company: Company | null;
+  company?: Company | null;
+  companyName?: string;
   currentProfile: OrganizationNode | null;
-  nodes: OrganizationNode[];
   tasks: TaskRecord[];
   leads: CrmLeadRecord[];
+  nodes: OrganizationNode[];
   messages: WorkspaceMessageRecord[];
+  canCreateTasks?: boolean;
+  canViewCrm?: boolean;
+  onRefreshWorkspace?: () => void;
   onCreateFollowUpTask?: (suggestedTitle?: string) => void;
   onNavigateToCrm?: () => void;
   onNavigateToTasks?: () => void;
-  onRefreshWorkspace?: () => Promise<void> | void;
+  onCreateSuggestedTask?: (draft: {
+    title: string;
+    description: string;
+    priority: 'High' | 'Medium' | 'Low';
+    department: string;
+    due_date: string;
+  }) => Promise<void>;
+  onSelectSection?: (section: DashboardSection) => void;
+  onSelectTask?: (taskId: string) => void;
+  onSelectLead?: (leadId: string) => void;
+}
+
+export interface TeddyMetricBadge {
+  label: string;
+  value: string;
+  tone: 'neutral' | 'emerald' | 'amber' | 'rose' | 'indigo';
+}
+
+export interface TeddyActionLink {
+  label: string;
+  targetSection?: DashboardSection;
+  taskId?: string;
+  leadId?: string;
+}
+
+interface ChatTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+  persona?: TeddyPersonaMode;
+  highlights?: string[];
+  metrics?: TeddyMetricBadge[];
+  actionLinks?: TeddyActionLink[];
+  suggestedTasks?: Array<{
+    title: string;
+    description: string;
+    priority: 'High' | 'Medium' | 'Low';
+    department: string;
+    due_date: string;
+  }>;
+}
+
+export function buildTeddyExecutiveBrief(params: {
+  prompt: string;
+  persona: TeddyPersonaMode;
+  isEn: boolean;
+  companyName: string;
+  userRole: string;
+  userName: string;
+  tasks: TaskRecord[];
+  leads: CrmLeadRecord[];
+  nodes: OrganizationNode[];
+  messages: WorkspaceMessageRecord[];
+  formatMoney: (n: number) => string;
+}): {
+  headline: string;
+  highlights: string[];
+  metrics: TeddyMetricBadge[];
+  actionLinks: TeddyActionLink[];
+  suggestedTasks: Array<{
+    title: string;
+    description: string;
+    priority: 'High' | 'Medium' | 'Low';
+    department: string;
+    due_date: string;
+  }>;
+} {
+  const {
+    prompt,
+    persona,
+    isEn,
+    companyName,
+    userRole,
+    tasks,
+    leads,
+    nodes,
+    formatMoney,
+  } = params;
+
+  const q = prompt.toLowerCase().trim();
+  const isExecutive =
+    userRole === 'CEO' ||
+    userRole === 'Founder' ||
+    userRole === 'Owner' ||
+    userRole === 'SuperAdmin' ||
+    userRole === 'SysAdmin' ||
+    userRole === 'DepartmentHead' ||
+    userRole.toLowerCase().includes('директор') ||
+    userRole.toLowerCase().includes('руковод');
+
+  const nowDate = new Date().toISOString().slice(0, 10);
+  const next3Days = new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10);
+
+  const openTasks = tasks.filter((t) => t.status !== 'Done');
+  const doneTasks = tasks.filter((t) => t.status === 'Done');
+  const highPriorityOpen = openTasks.filter((t) => t.priority === 'High');
+  const overdueTasks = openTasks.filter((t) => t.due_date && t.due_date < nowDate);
+
+  const activeLeads = leads.filter((l) => l.status !== 'Won' && l.status !== 'Lost');
+  const wonLeads = leads.filter((l) => l.status === 'Won');
+  const pipelineAmount = activeLeads.reduce((s, l) => s + (l.amount || 0), 0);
+  const wonAmount = wonLeads.reduce((s, l) => s + (l.amount || 0), 0);
+  const topActiveLeads = [...activeLeads].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  const primaryLead = topActiveLeads[0];
+
+  const completionRate =
+    tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 100;
+
+  const isFinanceFocus =
+    persona === 'finance' ||
+    q.includes('crm') ||
+    q.includes('сделк') ||
+    q.includes('выруч') ||
+    q.includes('воронк') ||
+    q.includes('деньг') ||
+    q.includes('финанс') ||
+    q.includes('revenue') ||
+    q.includes('pipeline') ||
+    q.includes('deal');
+
+  const isStaffQuery =
+    q.includes('сотрудн') ||
+    q.includes('команд') ||
+    q.includes('штат') ||
+    q.includes('нагрузк') ||
+    q.includes('узк') ||
+    q.includes('bottleneck') ||
+    q.includes('team') ||
+    q.includes('overload');
+
+  const isTaskFocus =
+    persona === 'automation' ||
+    q.includes('просроч') ||
+    q.includes('дедлайн') ||
+    q.includes('риск') ||
+    q.includes('задач') ||
+    q.includes('overdue') ||
+    q.includes('sla') ||
+    q.includes('deadline');
+
+  const metrics: TeddyMetricBadge[] = [
+    {
+      label: isEn ? 'SLA Velocity' : 'Ритм исполнения',
+      value: `${completionRate}% (${doneTasks.length}/${tasks.length})`,
+      tone: completionRate >= 65 ? 'emerald' : completionRate >= 40 ? 'amber' : 'rose',
+    },
+    {
+      label: isEn ? 'Critical / Overdue' : 'Срочные / Просрочка',
+      value: `${highPriorityOpen.length} / ${overdueTasks.length}`,
+      tone: overdueTasks.length > 0 ? 'rose' : highPriorityOpen.length > 0 ? 'amber' : 'emerald',
+    },
+  ];
+
+  if (isExecutive && leads.length > 0) {
+    metrics.push({
+      label: isEn ? 'Active Pipeline' : 'Активная воронка',
+      value: formatMoney(pipelineAmount),
+      tone: 'indigo',
+    });
+    metrics.push({
+      label: isEn ? 'Closed Won' : 'Закрытая выручка',
+      value: formatMoney(wonAmount),
+      tone: 'emerald',
+    });
+  } else {
+    metrics.push({
+      label: isEn ? 'Active Roster' : 'Штат в контуре',
+      value: `${nodes.length}`,
+      tone: 'neutral',
+    });
+  }
+
+  // Workload by assignee
+  const workloadByNode = new Map<string, { name: string; dept: string; open: number; high: number }>();
+  for (const n of nodes) {
+    workloadByNode.set(n.id, {
+      name: n.name || (isEn ? 'Unassigned' : 'Свободный слот'),
+      dept: n.department || (isEn ? 'Operations' : 'Операционный блок'),
+      open: 0,
+      high: 0,
+    });
+  }
+  for (const t of openTasks) {
+    const assigneeKey = t.assigned_to || t.owner_node_id;
+    if (assigneeKey && workloadByNode.has(assigneeKey)) {
+      const entry = workloadByNode.get(assigneeKey)!;
+      entry.open += 1;
+      if (t.priority === 'High') entry.high += 1;
+    }
+  }
+  const busiestStaff = Array.from(workloadByNode.values()).sort(
+    (a, b) => b.high * 2 + b.open - (a.high * 2 + a.open)
+  );
+  const topBusy = busiestStaff[0];
+
+  let headline = '';
+  const highlights: string[] = [];
+  const actionLinks: TeddyActionLink[] = [];
+  const suggestedTasks: Array<{
+    title: string;
+    description: string;
+    priority: 'High' | 'Medium' | 'Low';
+    department: string;
+    due_date: string;
+  }> = [];
+
+  if (isFinanceFocus && isExecutive) {
+    headline = isEn
+      ? `Financial & CRM Pipeline Audit (${companyName}): Active pipeline stands at ${formatMoney(pipelineAmount)} across ${activeLeads.length} open deals, with ${formatMoney(wonAmount)} already closed.`
+      : `Финансовый аудит воронки CRM (${companyName}): В активной проработке ${activeLeads.length} сделок на сумму ${formatMoney(pipelineAmount)}, закрытая выручка составляет ${formatMoney(wonAmount)}.`;
+
+    if (primaryLead) {
+      highlights.push(
+        isEn
+          ? `Highest-leverage deal: "${primaryLead.client_name}" (${formatMoney(primaryLead.amount || 0)}, stage: ${primaryLead.status}). Prioritize direct decision-maker alignment within 24 hours.`
+          : `Приоритетная сделка: «${primaryLead.client_name}» (${formatMoney(primaryLead.amount || 0)}, этап: ${primaryLead.status}). Рекомендуется зафиксировать финальные условия договора и график оплаты.`
+      );
+      actionLinks.push({
+        label: isEn ? `Inspect "${primaryLead.client_name}"` : `Открыть сделку «${primaryLead.client_name}»`,
+        leadId: primaryLead.id,
+      });
+    }
+
+    const negotiationLeads = activeLeads.filter(
+      (l) => l.status === 'Negotiation' || l.status === 'Proposal'
+    );
+    highlights.push(
+      isEn
+        ? `Conversion bottleneck: ${negotiationLeads.length} deals in Proposal/Negotiation (${formatMoney(
+            negotiationLeads.reduce((s, l) => s + (l.amount || 0), 0)
+          )}). Standardize commercial terms to compress sales cycle.`
+        : `Конверсионный резерв: на стадии КП и согласования договора находятся ${negotiationLeads.length} сделок на сумму ${formatMoney(
+            negotiationLeads.reduce((s, l) => s + (l.amount || 0), 0)
+          )}.`
+    );
+
+    actionLinks.push({
+      label: isEn ? 'Open CRM Pipeline' : 'Перейти в воронку CRM',
+      targetSection: 'crm',
+    });
+
+    if (primaryLead) {
+      suggestedTasks.push({
+        title: isEn
+          ? `Close commercial terms with ${primaryLead.client_name}`
+          : `Согласовать финальные условия и счет по сделке «${primaryLead.client_name}»`,
+        description: isEn
+          ? `Deal value: ${formatMoney(primaryLead.amount || 0)}. Confirm contract specification and payment date.`
+          : `Сумма сделки: ${formatMoney(primaryLead.amount || 0)}. Проверить реквизиты, спецификацию и дату поступления оплаты.`,
+        priority: 'High',
+        department: primaryLead.department || (isEn ? 'Sales' : 'Отдел продаж'),
+        due_date: next3Days,
+      });
+    }
+  } else if (isStaffQuery) {
+    headline = isEn
+      ? `Organizational Capacity & Bottleneck Audit (${nodes.length} nodes): ${openTasks.length} active tasks across departments.`
+      : `Анализ загрузки команды и узких мест (${nodes.length} профилей): в работе ${openTasks.length} активных поручений.`;
+
+    if (topBusy && topBusy.open > 0) {
+      highlights.push(
+        isEn
+          ? `Peak load concentration: ${topBusy.name} (${topBusy.dept}) holds ${topBusy.open} open tasks (${topBusy.high} High priority). Rebalance non-critical items to prevent SLA drift.`
+          : `Пиковая концентрация задач: ${topBusy.name} (${topBusy.dept}) ведет ${topBusy.open} активных задач (из них ${topBusy.high} — высокий приоритет). Рекомендуется перераспределить второстепенные поручения.`
+      );
+    } else {
+      highlights.push(
+        isEn
+          ? `Workload across ${nodes.length} staff profiles is evenly balanced with zero critical overload.`
+          : `Нагрузка между ${nodes.length} сотрудниками распределена равномерно, критических перегрузок не зафиксировано.`
+      );
+    }
+
+    const unassignedTasks = openTasks.filter((t) => !t.assigned_to && !t.owner_node_id);
+    if (unassignedTasks.length > 0) {
+      highlights.push(
+        isEn
+          ? `Ownership gap: ${unassignedTasks.length} active task(s) have no assigned owner. Every task requires a single accountable specialist.`
+          : `Зона без ответственного: обнаружено ${unassignedTasks.length} задач без закрепленного исполнителя. Назначьте владельца для каждого поручения.`
+      );
+    }
+
+    actionLinks.push({
+      label: isEn ? 'Open Team & Access' : 'Открыть штат и доступы',
+      targetSection: 'team',
+    });
+
+    suggestedTasks.push({
+      title: isEn
+        ? 'Rebalance high-priority task load across departments'
+        : 'Балансировка очереди срочных задач между отделами',
+      description: isEn
+        ? `Assign owners to ${unassignedTasks.length} unowned tasks and offload peak queues.`
+        : `Закрепить ответственных за свободными поручениями и разгрузить пиковые очереди исполнения.`,
+      priority: 'Medium',
+      department: isEn ? 'Operations' : 'Операционный блок',
+      due_date: next3Days,
+    });
+  } else if (isTaskFocus) {
+    headline = isEn
+      ? `Task Automation & SLA Control: ${overdueTasks.length} overdue and ${highPriorityOpen.length} high-priority tasks require immediate execution.`
+      : `Контроль поручений и дедлайнов: просрочено ${overdueTasks.length} задач, в высоком приоритете находятся ${highPriorityOpen.length} поручений.`;
+
+    if (overdueTasks.length > 0) {
+      const firstOverdue = overdueTasks[0];
+      highlights.push(
+        isEn
+          ? `Primary SLA breach: "${firstOverdue.title}" (due ${firstOverdue.due_date}). Reassign or decompose into 24-hour execution subtasks.`
+          : `Приоритетный срыв срока: «${firstOverdue.title}» (дедлайн ${firstOverdue.due_date}). Требуется закрыть блокер или декомпозировать задачу.`
+      );
+      actionLinks.push({
+        label: isEn ? `Open "${firstOverdue.title}"` : `Открыть «${firstOverdue.title}»`,
+        taskId: firstOverdue.id,
+      });
+    } else if (highPriorityOpen.length > 0) {
+      const firstHigh = highPriorityOpen[0];
+      highlights.push(
+        isEn
+          ? `Zero overdue tasks. Top active priority: "${firstHigh.title}" (${firstHigh.department || 'General'}).`
+          : `Просроченных задач нет. Главный фокус: «${firstHigh.title}» (${firstHigh.department || 'Общий контур'}).`
+      );
+      actionLinks.push({
+        label: isEn ? `Open "${firstHigh.title}"` : `Открыть «${firstHigh.title}»`,
+        taskId: firstHigh.id,
+      });
+    }
+
+    actionLinks.push({
+      label: isEn ? 'Open Task Registry' : 'Открыть реестр задач',
+      targetSection: 'tasks',
+    });
+
+    suggestedTasks.push({
+      title: isEn
+        ? `Resolve ${Math.max(1, overdueTasks.length || highPriorityOpen.length)} priority SLA blockers`
+        : `Закрыть приоритетные блокеры по срочным задачам (${Math.max(1, overdueTasks.length || highPriorityOpen.length)} шт.)`,
+      description: isEn
+        ? 'Verify deliverables, update deadlines, and confirm completion status across active tasks.'
+        : 'Проверить готовность результатов, актуализировать сроки и подтвердить закрытие срочных задач.',
+      priority: 'High',
+      department: isEn ? 'Operations' : 'Операционный блок',
+      due_date: next3Days,
+    });
+  } else {
+    headline = isEn
+      ? `Operations Control Summary (${companyName}): ${completionRate}% task completion (${doneTasks.length}/${tasks.length}), ${highPriorityOpen.length} high-priority items active${
+          isExecutive ? `, and ${formatMoney(pipelineAmount)} in active CRM pipeline.` : '.'
+        }`
+      : `Операционная сводка (${companyName}): выполнено ${completionRate}% задач (${doneTasks.length} из ${tasks.length}), в высоком приоритете ${highPriorityOpen.length} поручений${
+          isExecutive ? `, активная воронка CRM — ${formatMoney(pipelineAmount)}.` : '.'
+        }`;
+
+    if (highPriorityOpen.length > 0) {
+      const topTask = highPriorityOpen[0];
+      highlights.push(
+        isEn
+          ? `Execution Focus #1: "${topTask.title}" (${topTask.department || 'Operations'}, status: ${topTask.status}).`
+          : `Операционный приоритет №1: «${topTask.title}» (${topTask.department || 'Операционный блок'}, статус: ${topTask.status}).`
+      );
+      actionLinks.push({
+        label: isEn ? `Open Task "${topTask.title}"` : `Открыть задачу «${topTask.title}»`,
+        taskId: topTask.id,
+      });
+    }
+
+    if (isExecutive && primaryLead) {
+      highlights.push(
+        isEn
+          ? `Commercial Focus #2: Advance deal "${primaryLead.client_name}" (${formatMoney(primaryLead.amount || 0)}) from stage "${primaryLead.status}".`
+          : `Коммерческий фокус №2: Продвинуть сделку «${primaryLead.client_name}» (${formatMoney(primaryLead.amount || 0)}) со стадии «${primaryLead.status}».`
+      );
+      actionLinks.push({
+        label: isEn ? `Open Deal "${primaryLead.client_name}"` : `Открыть сделку «${primaryLead.client_name}»`,
+        leadId: primaryLead.id,
+      });
+    }
+
+    if (topBusy && topBusy.open > 0) {
+      highlights.push(
+        isEn
+          ? `Resource Allocation #3: ${topBusy.name} carries ${topBusy.open} active tasks (${topBusy.high} urgent).`
+          : `Ресурсный баланс №3: у сотрудника ${topBusy.name} в работе ${topBusy.open} задач (срочных: ${topBusy.high}).`
+      );
+    }
+
+    actionLinks.push({
+      label: isEn ? 'Open Tasks' : 'Реестр задач',
+      targetSection: 'tasks',
+    });
+    if (isExecutive) {
+      actionLinks.push({
+        label: isEn ? 'Open CRM' : 'Воронка CRM',
+        targetSection: 'crm',
+      });
+    }
+
+    suggestedTasks.push({
+      title: isEn
+        ? `Execute daily SLA audit for ${Math.max(1, highPriorityOpen.length)} urgent tasks`
+        : `Контроль сроков по приоритетным поручениям (${Math.max(1, highPriorityOpen.length)} шт.)`,
+      description: isEn
+        ? 'Verify intermediate milestones, confirm owner readiness, and close completed items.'
+        : 'Проверить промежуточные этапы, подтвердить готовность ответственных и закрыть выполненные пункты.',
+      priority: 'High',
+      department: isEn ? 'Operations' : 'Операционный блок',
+      due_date: next3Days,
+    });
+
+    if (isExecutive && primaryLead) {
+      suggestedTasks.push({
+        title: isEn
+          ? `Advance contract stage with ${primaryLead.client_name}`
+          : `Согласовать договор и спецификацию с «${primaryLead.client_name}»`,
+        description: isEn
+          ? `Deal value: ${formatMoney(primaryLead.amount || 0)}. Confirm invoice and signing date.`
+          : `Сумма контракта: ${formatMoney(primaryLead.amount || 0)}. Зафиксировать дату подписания и выставления счета.`,
+        priority: 'Medium',
+        department: primaryLead.department || (isEn ? 'Sales' : 'Отдел продаж'),
+        due_date: next3Days,
+      });
+    }
+  }
+
+  return {
+    headline,
+    highlights,
+    metrics,
+    actionLinks,
+    suggestedTasks,
+  };
 }
 
 export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   isOpen,
   onClose,
   company,
+  companyName: companyNameProp,
   currentProfile,
-  nodes,
   tasks,
   leads,
+  nodes,
   messages,
+  canCreateTasks = true,
+  canViewCrm = true,
+  onRefreshWorkspace,
+  onCreateFollowUpTask,
   onNavigateToCrm,
   onNavigateToTasks,
-  onRefreshWorkspace,
+  onCreateSuggestedTask,
+  onSelectSection,
+  onSelectTask,
+  onSelectLead,
 }) => {
-  const { language, currency, formatMoney, formatRole } = useLocale();
+  const { language, theme, formatMoney, formatRole } = useLocale();
   const isEn = language === 'en';
-  const [entries, setEntries] = useState<AiChatEntry[]>([]);
-  const [question, setQuestion] = useState('');
-  const [personaMode, setPersonaMode] = useState<TeddyPersonaMode>('strategist');
-  const [pendingAttachments, setPendingAttachments] = useState<AttachmentItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFullWorkspaceSize, setIsFullWorkspaceSize] = useState(false);
-  const [creatingTaskEntryId, setCreatingTaskEntryId] = useState<string | null>(null);
-  const [createdTaskIds, setCreatedTaskIds] = useState<Record<string, boolean>>({});
-  const [decomposingEntryId, setDecomposingEntryId] = useState<string | null>(null);
-  const [decomposedEntryIds, setDecomposedEntryIds] = useState<Record<string, boolean>>({});
-  const [rebalancingNodeId, setRebalancingNodeId] = useState<string | null>(null);
-  const [rebalancedNodeIds, setRebalancedNodeIds] = useState<Record<string, boolean>>({});
+  const isLight = theme === 'light';
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const scrollEndRef = useRef<HTMLDivElement | null>(null);
+  const resolvedCompanyName =
+    companyNameProp || company?.name || (isEn ? 'TedCloud Enterprise' : 'TedCloud');
 
-  useEffect(() => {
-    scrollEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [entries.length, isLoading]);
+  const [persona, setPersona] = useState<TeddyPersonaMode>('operations');
+  const [promptInput, setPromptInput] = useState('');
+  const [addedTitles, setAddedTitles] = useState<string[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
+  const userRole = currentProfile?.role_type || 'Member';
+  const userName = currentProfile?.name || (isEn ? 'Executive' : 'Руководитель');
+
+  const initialBrief = useMemo(
+    () =>
+      buildTeddyExecutiveBrief({
+        prompt:
+          persona === 'finance'
+            ? 'crm pipeline revenue'
+            : persona === 'automation'
+            ? 'overdue tasks sla automation'
+            : 'executive brief',
+        persona,
+        isEn,
+        companyName: resolvedCompanyName,
+        userRole,
+        userName,
+        tasks,
+        leads: canViewCrm ? leads : [],
+        nodes,
+        messages,
+        formatMoney,
+      }),
+    [
+      persona,
+      isEn,
+      resolvedCompanyName,
+      userRole,
+      userName,
+      tasks,
+      leads,
+      canViewCrm,
+      nodes,
+      messages,
+      formatMoney,
+    ]
+  );
+
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
+
+  const effectiveHistory: ChatTurn[] = useMemo(() => {
+    const welcomeTurn: ChatTurn = {
+      id: 'teddy-welcome',
+      role: 'assistant',
+      persona,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      text: initialBrief.headline,
+      highlights: initialBrief.highlights,
+      metrics: initialBrief.metrics,
+      actionLinks: initialBrief.actionLinks,
+      suggestedTasks: initialBrief.suggestedTasks,
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+    return [welcomeTurn, ...chatHistory];
+  }, [initialBrief, chatHistory, persona]);
+
+  useEffect(() => {
+    if (scrollContainerRef.current && chatHistory.length > 0) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [chatHistory.length, isThinking]);
+
+  const formatPriorityLabel = (priority: 'High' | 'Medium' | 'Low') => {
+    if (isEn) return priority;
+    if (priority === 'High') return 'Высокий';
+    if (priority === 'Low') return 'Низкий';
+    return 'Средний';
+  };
 
   if (!isOpen) return null;
 
-  const safeNodes = Array.isArray(nodes) ? nodes : [];
-  const safeTasks = Array.isArray(tasks) ? tasks : [];
-  const safeLeads = Array.isArray(leads) ? leads : [];
-  const safeMessages = Array.isArray(messages) ? messages : [];
+  const handleAddRecommendedTask = async (st: {
+    title: string;
+    description: string;
+    priority: 'High' | 'Medium' | 'Low';
+    department: string;
+    due_date: string;
+  }) => {
+    setAddedTitles((prev) => (prev.includes(st.title) ? prev : [...prev, st.title]));
 
-  const companyId = company?.id || currentProfile?.company_id || '';
-  const companyName = company?.name || 'TedCloud';
-
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const { attachments } = await processFilesToAttachments(files, language);
-    e.target.value = '';
-    if (attachments.length > 0) {
-      setPendingAttachments((prev) => [...prev, ...attachments]);
+    if (onCreateSuggestedTask) {
+      await onCreateSuggestedTask(st);
+      return;
     }
-  };
-
-  const triggerAiAction = async (
-    mode: AiAssistantMode,
-    userPromptLabel: string,
-    customPrompt?: string,
-    attachedFiles?: AttachmentItem[]
-  ) => {
-    if (isLoading) return;
-    const nowTime = new Date().toLocaleTimeString(isEn ? 'en-US' : 'ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    const userMsg: AiChatEntry = {
-      id: `u_${Date.now()}`,
-      role: 'user',
-      text: userPromptLabel,
-      attachments: attachedFiles && attachedFiles.length > 0 ? attachedFiles : undefined,
-      timestamp: nowTime,
-    };
-
-    setEntries((prev) => [...prev, userMsg]);
-    setIsLoading(true);
-
-    const attachmentContextNote =
-      attachedFiles && attachedFiles.length > 0
-        ? ` [Attached files: ${attachedFiles.map((f) => f.name).join(', ')}]`
-        : '';
-
-    const effectivePrompt = `${customPrompt ?? userPromptLabel}${attachmentContextNote}`;
-
-    const localBaseline = runBuiltInAiAssistant({
-      mode,
-      personaMode,
-      lang: language,
-      currency,
-      prompt: effectivePrompt,
-      companyName,
-      currentUser: currentProfile,
-      nodes: safeNodes,
-      tasks: safeTasks,
-      leads: safeLeads,
-      messages: safeMessages,
-    });
-
-    const suggestedTaskTitle = isEn
-      ? `Execute directive: ${userPromptLabel.slice(0, 48)}`
-      : `Директива Teddy: ${userPromptLabel.slice(0, 48)}`;
 
     try {
-      const response = await fetch('/api/db', {
+      await fetch('/api/db', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'ai_assistant',
-          mode,
-          personaMode,
-          lang: language,
-          currency,
-          prompt: effectivePrompt,
-          company_id: companyId,
-          companyName,
-          profile_id: currentProfile?.id || null,
-        }),
-      });
-
-      const payload = await response.json();
-      if (response.ok && payload?.reply) {
-        const executedActions: ExecutedAiActionItem[] = Array.isArray(payload.executedActions)
-          ? payload.executedActions
-          : [];
-
-        if (executedActions.length > 0 && onRefreshWorkspace) {
-          void onRefreshWorkspace();
-        }
-
-        setEntries((prev) => [
-          ...prev,
-          {
-            id: `a_${Date.now()}`,
-            role: 'assistant',
-            mode,
-            personaMode,
-            headline: payload.headline || localBaseline.headline,
-            metrics: localBaseline.metrics,
-            sections:
-              Array.isArray(payload.sections) && payload.sections.length > 0
-                ? payload.sections
-                : localBaseline.sections,
-            executedActions: executedActions.length > 0 ? executedActions : undefined,
-            suggestedTaskTitle,
-            text: payload.reply,
-            timestamp: new Date().toLocaleTimeString(isEn ? 'en-US' : 'ru-RU', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-          },
-        ]);
-        return;
-      }
-      throw new Error(payload?.error || 'Fallback');
-    } catch {
-      setEntries((prev) => [
-        ...prev,
-        {
-          id: `a_${Date.now()}`,
-          role: 'assistant',
-          mode,
-          personaMode,
-          headline: localBaseline.headline,
-          metrics: localBaseline.metrics,
-          sections: localBaseline.sections,
-          suggestedTaskTitle,
-          text: localBaseline.reply,
-          timestamp: new Date().toLocaleTimeString(isEn ? 'en-US' : 'ru-RU', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDirectCreateSuggestedTask = async (
-    entryKey: string,
-    titleToCreate: string,
-    descriptionText: string
-  ) => {
-    if (creatingTaskEntryId || createdTaskIds[entryKey]) return;
-    setCreatingTaskEntryId(entryKey);
-    try {
-      const { checklist, summary } = buildBuiltInChecklistForTask(
-        titleToCreate,
-        descriptionText,
-        language
-      );
-      const response = await fetch('/api/db', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
           table: 'tasks',
           payload: {
-            company_id: companyId,
-            title: titleToCreate,
-            description: descriptionText.slice(0, 600),
-            type: 'Task',
-            priority: 'High',
+            company_id: currentProfile?.company_id || company?.id || 'default',
+            title: st.title,
+            description: st.description,
+            priority: st.priority,
             status: 'Todo',
-            department: currentProfile?.department || null,
-            assigned_to: currentProfile?.id || safeNodes[0]?.id || null,
-            owner_node_id: currentProfile?.id || safeNodes[0]?.id || null,
-            created_by: currentProfile?.id || null,
-            checklist,
-            ai_summary: summary,
+            department: st.department || currentProfile?.department || null,
+            due_date: st.due_date,
+            owner_node_id: currentProfile?.id || null,
+            assigned_to: currentProfile?.id || null,
           },
         }),
       });
-      if (response.ok) {
-        setCreatedTaskIds((prev) => ({ ...prev, [entryKey]: true }));
-        if (onRefreshWorkspace) {
-          await onRefreshWorkspace();
-        }
+      if (onRefreshWorkspace) {
+        onRefreshWorkspace();
       }
-    } finally {
-      setCreatingTaskEntryId(null);
+    } catch {
+      if (onCreateFollowUpTask) {
+        onCreateFollowUpTask(st.title);
+      }
     }
   };
 
-  const handleRebalanceEmployeeLoad = async (sourceNodeId: string) => {
-    if (rebalancingNodeId || rebalancedNodeIds[sourceNodeId]) return;
-    const openTasksForNode = safeTasks.filter(
-      (t) =>
-        t.status !== 'Done' &&
-        (t.assigned_to === sourceNodeId || t.owner_node_id === sourceNodeId)
-    );
-    if (openTasksForNode.length === 0) return;
+  const handleAsk = async (customPrompt?: string) => {
+    const query = (customPrompt ?? promptInput).trim();
+    if (!query || isThinking) return;
 
-    const otherNodes = safeNodes.filter((n) => n.id !== sourceNodeId);
-    if (otherNodes.length === 0) return;
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const userTurn: ChatTurn = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      text: query,
+      timestamp: nowTime,
+    };
 
-    const sortedByLoad = [...otherNodes].sort((a, b) => {
-      const aCount = safeTasks.filter(
-        (t) => t.status !== 'Done' && (t.assigned_to === a.id || t.owner_node_id === a.id)
-      ).length;
-      const bCount = safeTasks.filter(
-        (t) => t.status !== 'Done' && (t.assigned_to === b.id || t.owner_node_id === b.id)
-      ).length;
-      return aCount - bCount;
+    const localBrief = buildTeddyExecutiveBrief({
+      prompt: query,
+      persona,
+      isEn,
+      companyName: resolvedCompanyName,
+      userRole,
+      userName,
+      tasks,
+      leads: canViewCrm ? leads : [],
+      nodes,
+      messages,
+      formatMoney,
     });
 
-    const targetColleague = sortedByLoad[0];
-    const taskToMove = openTasksForNode[0];
+    setChatHistory((prev) => [...prev, userTurn]);
+    if (!customPrompt) setPromptInput('');
+    setIsThinking(true);
 
-    setRebalancingNodeId(sourceNodeId);
     try {
       const response = await fetch('/api/db', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify({
-          table: 'tasks',
-          id: taskToMove.id,
-          updates: {
-            assigned_to: targetColleague.id,
-            owner_node_id: targetColleague.id,
-            department: targetColleague.department || taskToMove.department,
-          },
+          action: 'ai_assistant',
+          mode: 'custom',
+          personaMode: persona,
+          lang: isEn ? 'en' : 'ru',
+          companyId: currentProfile?.company_id || company?.id || 'default',
+          companyName: resolvedCompanyName,
+          prompt: query,
+          currentUser: currentProfile,
+          nodes,
+          tasks,
+          leads: canViewCrm ? leads : [],
+          messages,
         }),
       });
+
+      let aiSummaryText = localBrief.headline;
+      let aiHighlights = localBrief.highlights;
+      let aiTasks = localBrief.suggestedTasks;
+
       if (response.ok) {
-        setRebalancedNodeIds((prev) => ({ ...prev, [sourceNodeId]: true }));
-        if (onRefreshWorkspace) {
-          await onRefreshWorkspace();
+        const data = await response.json();
+        if (data?.reply && typeof data.reply === 'string' && data.reply.trim().length > 10) {
+          aiSummaryText = data.reply.trim();
+        } else if (
+          data?.summary &&
+          typeof data.summary === 'string' &&
+          data.summary.trim().length > 10
+        ) {
+          aiSummaryText = data.summary.trim();
+        }
+        if (Array.isArray(data?.highlights) && data.highlights.length > 0) {
+          aiHighlights = data.highlights;
+        }
+        if (Array.isArray(data?.suggestedTasks) && data.suggestedTasks.length > 0) {
+          aiTasks = data.suggestedTasks;
         }
       }
-    } finally {
-      setRebalancingNodeId(null);
-    }
-  };
 
-  const handleDirectDecomposeActiveTasks = async (entryId: string) => {
-    if (decomposingEntryId || decomposedEntryIds[entryId]) return;
-    setDecomposingEntryId(entryId);
-    try {
-      const openTasks = safeTasks.filter((t) => t.status !== 'Done').slice(0, 5);
-      for (const tk of openTasks) {
-        if (!Array.isArray(tk.checklist) || tk.checklist.length === 0) {
-          const { checklist, summary } = buildBuiltInChecklistForTask(
-            tk.title,
-            tk.description,
-            language
-          );
-          await fetch('/api/db', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              table: 'tasks',
-              id: tk.id,
-              updates: {
-                checklist,
-                ai_summary: summary,
-              },
-            }),
-          });
-        }
-      }
-      setDecomposedEntryIds((prev) => ({ ...prev, [entryId]: true }));
-      if (onRefreshWorkspace) {
-        await onRefreshWorkspace();
-      }
-    } finally {
-      setDecomposingEntryId(null);
-    }
-  };
-
-  const handleSubmitQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const q = question.trim();
-    if ((!q && pendingAttachments.length === 0) || isLoading) return;
-    const filesToSend = [...pendingAttachments];
-    const label =
-      q ||
-      (isEn
-        ? `Analyze attached file: ${filesToSend.map((f) => f.name).join(', ')}`
-        : `Анализ документа: ${filesToSend.map((f) => f.name).join(', ')}`);
-    setQuestion('');
-    setPendingAttachments([]);
-    await triggerAiAction('custom', label, label, filesToSend);
-  };
-
-  // Compute live employee workload for interactive chart
-  const openWorkspaceTasks = safeTasks.filter((t) => t.status !== 'Done');
-  const onlineShiftsCount = safeNodes.filter(
-    (n) => n.shift_status === 'online' || n.shift_status === 'break'
-  ).length;
-  const activeShiftsDisplay = onlineShiftsCount > 0 ? onlineShiftsCount : safeNodes.length;
-
-  const employeeWorkloadRows = safeNodes
-    .map((n) => {
-      const count = openWorkspaceTasks.filter(
-        (t) => t.assigned_to === n.id || t.owner_node_id === n.id
-      ).length;
-      const highCount = openWorkspaceTasks.filter(
-        (t) => (t.assigned_to === n.id || t.owner_node_id === n.id) && t.priority === 'High'
-      ).length;
-      return {
-        id: n.id,
-        name: n.name,
-        role: formatRole(n.role_type || ''),
-        count,
-        highCount,
+      const assistantTurn: ChatTurn = {
+        id: `ai-${Date.now() + 1}`,
+        role: 'assistant',
+        persona,
+        text: aiSummaryText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        highlights: aiHighlights,
+        metrics: localBrief.metrics,
+        actionLinks: localBrief.actionLinks,
+        suggestedTasks: aiTasks,
       };
-    })
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
-  const maxWorkloadCount = Math.max(1, ...employeeWorkloadRows.map((r) => r.count), 4);
 
-  const activeDealsPreview = safeLeads
-    .filter((l) => (l.status || l.stage) !== 'Lost')
-    .slice(0, 4);
+      setChatHistory((prev) => [...prev, assistantTurn]);
+    } catch {
+      const assistantTurn: ChatTurn = {
+        id: `ai-${Date.now() + 1}`,
+        role: 'assistant',
+        persona,
+        text: localBrief.headline,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        highlights: localBrief.highlights,
+        metrics: localBrief.metrics,
+        actionLinks: localBrief.actionLinks,
+        suggestedTasks: localBrief.suggestedTasks,
+      };
+      setChatHistory((prev) => [...prev, assistantTurn]);
+    } finally {
+      setIsThinking(false);
+    }
+  };
+
+  const quickChips = [
+    {
+      label: isEn ? '3 Key Decisions Today' : '3 главных решения дня',
+      prompt: isEn
+        ? 'Give me the 3 highest-leverage executive decisions for today based on tasks and CRM.'
+        : 'Дай 3 главных управленческих решения на сегодня по задачам и сделкам.',
+      icon: Target,
+    },
+    ...(canViewCrm
+      ? [
+          {
+            label: isEn ? 'CRM Pipeline & Revenue' : 'Аудит воронки CRM и выручки',
+            prompt: isEn
+              ? 'Analyze active CRM deals, revenue pipeline, and key bottlenecks.'
+              : 'Проанализируй активные сделки CRM, потенциал выручки и узкие места.',
+            icon: TrendingUp,
+          },
+        ]
+      : []),
+    {
+      label: isEn ? 'Overdue & SLA Risks' : 'Просрочки и риски дедлайнов',
+      prompt: isEn
+        ? 'Identify overdue tasks and SLA bottlenecks across departments.'
+        : 'Какие задачи просрочены или находятся под риском срыва дедлайна?',
+      icon: ShieldAlert,
+    },
+    {
+      label: isEn ? 'Team Workload Balance' : 'Разбор загрузки команды',
+      prompt: isEn
+        ? 'Analyze team workload distribution and identify overloaded specialists.'
+        : 'Проведи разбор загрузки сотрудников и найди узкие места в штате.',
+      icon: UserCheck,
+    },
+  ];
+
+  const analysisModes: Array<{
+    id: TeddyPersonaMode;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
+    {
+      id: 'operations',
+      label: isEn ? 'Operations Control' : 'Операционный контроль',
+      icon: Activity,
+    },
+    {
+      id: 'finance',
+      label: isEn ? 'Financial Analytics' : 'Финансовая аналитика',
+      icon: DollarSign,
+    },
+    {
+      id: 'automation',
+      label: isEn ? 'Task Automation' : 'Автоматизация задач',
+      icon: Cpu,
+    },
+  ];
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3 sm:p-6 font-sans"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 font-sans transition-colors ${
+        isLight ? 'bg-slate-900/35 backdrop-blur-md' : 'bg-black/65 backdrop-blur-md'
+      }`}
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className={`tc-teddy-modal w-full ${
-          isFullWorkspaceSize
-            ? 'max-w-6xl h-[88dvh]'
-            : 'max-w-3xl h-[84dvh] max-h-[820px]'
-        } rounded-2xl border border-white/10 bg-[#0D0D11] !text-white flex flex-col justify-between overflow-hidden shadow-[0_25px_90px_-15px_rgba(99,102,241,0.35)] transition-all duration-200`}
+        className={`relative w-full max-w-4xl h-[92dvh] sm:h-[85dvh] rounded-3xl flex flex-col overflow-hidden backdrop-blur-3xl transition-all ${
+          isLight
+            ? 'bg-white/80 border border-slate-200/80 text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.9)]'
+            : 'bg-zinc-900/65 border border-white/[0.09] text-zinc-100 shadow-[0_24px_80px_rgba(0,0,0,0.65),inset_0_1px_0_rgba(255,255,255,0.1)]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Spotlight Header with Teddy Avatar + Thinking Focus Switcher */}
-        <div className="px-5 py-3.5 border-b border-white/[0.08] bg-[#111116] flex flex-col gap-3 shrink-0">
+        {/* Ambient Blur Spheres behind frosted glass */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
+          <div
+            className={`absolute -top-24 -left-20 w-80 h-80 rounded-full blur-3xl ${
+              isLight ? 'bg-indigo-400/15' : 'bg-indigo-500/15'
+            }`}
+          />
+          <div
+            className={`absolute top-1/3 -right-24 w-72 h-72 rounded-full blur-3xl ${
+              isLight ? 'bg-sky-400/15' : 'bg-violet-500/10'
+            }`}
+          />
+        </div>
+
+        {/* =================================================================
+            1. FIXED HEADER (shrink-0): Clean Branding + 1-Line Segmented Control + Quick Scenarios
+        ================================================================== */}
+        <div
+          className={`relative z-10 shrink-0 px-5 sm:px-6 pt-4 pb-3.5 border-b ${
+            isLight
+              ? 'border-slate-200/80 bg-white/60'
+              : 'border-white/[0.07] bg-zinc-950/30'
+          }`}
+        >
+          {/* Top Row: Teddy Identity + Close */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 via-indigo-950/40 to-amber-500/20 border border-indigo-400/30 flex items-center justify-center shrink-0">
-                <TeddyAvatar size="md" persona={personaMode} />
-              </div>
+              <TeddyAvatar size="md" />
               <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-sm font-bold !text-white tracking-tight truncate">
-                    {isEn ? 'Teddy AI · Executive Advisor' : 'Советник Teddy (Teddy AI)'}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h2
+                    className={`text-base font-bold tracking-tight ${
+                      isLight ? 'text-slate-900' : 'text-white'
+                    }`}
+                  >
+                    Teddy
                   </h2>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
-                    {personaMode === 'strategist'
-                      ? isEn
-                        ? 'Roosevelt Doctrine'
-                        : 'Доктрина Рузвельта'
-                      : isEn
-                      ? 'Systems Mathematician'
-                      : 'Системный Математик'}
+                  <span
+                    className={`text-xs font-medium ${
+                      isLight ? 'text-slate-500' : 'text-zinc-400'
+                    }`}
+                  >
+                    {isEn ? 'Executive AI Assistant' : 'Корпоративный ИИ-ассистент'}
                   </span>
                 </div>
-                <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                  {companyName} · {openWorkspaceTasks.length}{' '}
-                  {isEn ? 'open tasks' : 'поручений в работе'} · {safeLeads.length}{' '}
-                  {isEn ? 'deals' : 'сделок CRM'} · {activeShiftsDisplay}{' '}
-                  {isEn ? 'staff on shift' : 'сотр. на смене'}
+                <p
+                  className={`text-[11px] truncate flex items-center gap-1.5 mt-0.5 ${
+                    isLight ? 'text-slate-500' : 'text-zinc-400'
+                  }`}
+                >
+                  <Building2 className="w-3 h-3 text-indigo-400 shrink-0" />
+                  <span className="truncate">{resolvedCompanyName}</span>
+                  <span>·</span>
+                  <span>
+                    {userName} ({formatRole(userRole)})
+                  </span>
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {entries.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setEntries([])}
-                  title={isEn ? 'Clear conversation' : 'Очистить историю диалога с Teddy'}
-                  className="p-2 rounded-xl text-zinc-400 hover:!text-white hover:bg-white/[0.06] transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setIsFullWorkspaceSize((prev) => !prev)}
-                title={
-                  isFullWorkspaceSize
-                    ? isEn
-                      ? 'Restore standard Spotlight size'
-                      : 'Стандартный размер окна'
-                    : isEn
-                    ? 'Expand to full workspace'
-                    : 'Развернуть на весь рабочий экран'
-                }
-                className="p-2 rounded-xl text-zinc-400 hover:!text-white hover:bg-white/[0.06] transition-colors"
-              >
-                {isFullWorkspaceSize ? (
-                  <Minimize2 className="w-4 h-4" />
-                ) : (
-                  <Maximize2 className="w-4 h-4" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={isEn ? 'Close Teddy AI' : 'Закрыть Советника Teddy'}
-                className="p-2 rounded-xl text-zinc-400 hover:!text-white hover:bg-white/[0.06] transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={isEn ? 'Close Teddy' : 'Закрыть Teddy'}
+              className={`p-2 rounded-xl border transition-colors shrink-0 cursor-pointer ${
+                isLight
+                  ? 'border-slate-200/80 bg-white/80 text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                  : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          {/* Переключатель фокуса мышления Teddy: Стратег (Доктрина Рузвельта) vs Системный Математик (Анти-Бюрократия) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setPersonaMode('strategist')}
-              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
-                personaMode === 'strategist'
-                  ? 'border-indigo-500/60 bg-indigo-500/15 !text-white shadow-[0_0_25px_-8px_rgba(99,102,241,0.5)]'
-                  : 'border-white/[0.07] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05] hover:!text-white'
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <ShieldAlert
-                  className={`w-4 h-4 shrink-0 ${
-                    personaMode === 'strategist' ? 'text-indigo-400' : 'text-zinc-500'
+          {/* Compact 1-Line Segmented Control for Analysis Modes */}
+          <div
+            className={`mt-3 grid grid-cols-3 gap-1 p-1 rounded-xl border ${
+              isLight
+                ? 'bg-slate-100/90 border-slate-200/80'
+                : 'bg-black/30 border-white/[0.07]'
+            }`}
+          >
+            {analysisModes.map((mode) => {
+              const Icon = mode.icon;
+              const active = persona === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setPersona(mode.id)}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer truncate ${
+                    active
+                      ? isLight
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-200/70'
+                        : 'bg-white/[0.12] text-white shadow-xs border border-white/[0.12]'
+                      : isLight
+                      ? 'text-slate-600 hover:text-slate-900'
+                      : 'text-zinc-400 hover:text-zinc-200'
                   }`}
-                />
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold !text-white truncate">
-                    {isEn ? 'Strategist (Roosevelt Doctrine)' : 'Стратег (Доктрина Рузвельта)'}
-                  </div>
-                  <div className="text-[10px] text-zinc-400 truncate">
-                    {isEn
-                      ? 'Iron SLA discipline, CRM deal closing & delegation'
-                      : 'Железный контроль сроков, дожим сделок CRM и делегирование'}
-                  </div>
-                </div>
-              </div>
-              {personaMode === 'strategist' && (
-                <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
-              )}
-            </button>
+                >
+                  <Icon
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      active ? 'text-indigo-400' : isLight ? 'text-slate-400' : 'text-zinc-500'
+                    }`}
+                  />
+                  <span className="truncate">{mode.label}</span>
+                </button>
+              );
+            })}
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setPersonaMode('mathematician')}
-              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
-                personaMode === 'mathematician'
-                  ? 'border-amber-500/60 bg-amber-500/15 !text-white shadow-[0_0_25px_-8px_rgba(245,158,11,0.45)]'
-                  : 'border-white/[0.07] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05] hover:!text-white'
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <Calculator
-                  className={`w-4 h-4 shrink-0 ${
-                    personaMode === 'mathematician' ? 'text-amber-400' : 'text-zinc-500'
+          {/* Quick Scenario Buttons */}
+          <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            {quickChips.map((chip) => {
+              const Icon = chip.icon;
+              return (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={() => void handleAsk(chip.prompt)}
+                  disabled={isThinking}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 cursor-pointer ${
+                    isLight
+                      ? 'border-slate-200/90 bg-white/80 hover:bg-indigo-50/70 hover:border-indigo-300 text-slate-700'
+                      : 'border-white/[0.08] bg-white/[0.04] hover:bg-indigo-500/15 hover:border-indigo-400/40 text-zinc-200'
                   }`}
-                />
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold !text-white truncate">
-                    {isEn
-                      ? 'Systems Mathematician (Anti-Bureaucracy)'
-                      : 'Системный Математик (Анти-Бюрократия)'}
-                  </div>
-                  <div className="text-[10px] text-zinc-400 truncate">
-                    {isEn
-                      ? 'Bottleneck math, exposing fake busywork & unit economics'
-                      : 'Поиск узких мест, вскрытие имитации деятельности и юнит-экономика'}
-                  </div>
-                </div>
-              </div>
-              {personaMode === 'mathematician' && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-              )}
-            </button>
+                >
+                  <Icon className="w-3 h-3 text-indigo-400 shrink-0" />
+                  <span>{chip.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* 4-Column Grid of Quick Scenarios */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3.5 border-b border-white/[0.07] bg-[#0F0F14] shrink-0">
-          <button
-            type="button"
-            disabled={isLoading}
-            onClick={() =>
-              void triggerAiAction('daily_brief', isEn ? 'Daily Brief' : 'Сводка дня')
-            }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
-          >
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-indigo-400" />
-            <span className="truncate">{isEn ? 'Daily Brief' : 'Сводка дня'}</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isLoading}
-            onClick={() =>
-              void triggerAiAction(
-                'workload_analysis',
-                isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'
-              )
-            }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
-          >
-            <BarChart3 className="w-4 h-4 shrink-0 text-sky-400" />
-            <span className="truncate">{isEn ? 'Bottleneck Analysis' : 'Анализ узких мест'}</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isLoading}
-            onClick={() =>
-              void triggerAiAction(
-                'workload_analysis',
-                isEn ? 'CRM Pipeline Audit' : 'Аудит сделок CRM',
-                isEn
-                  ? 'Audit CRM pipeline and deal conversion across the organization'
-                  : 'Аудит сделок CRM и конверсии воронки компании'
-              )
-            }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
-          >
-            <Briefcase className="w-4 h-4 shrink-0 text-amber-400" />
-            <span className="truncate">{isEn ? 'CRM Pipeline Audit' : 'Аудит сделок CRM'}</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isLoading}
-            onClick={() =>
-              void triggerAiAction(
-                'decompose_task',
-                isEn ? 'Task Plan' : 'План задач',
-                safeTasks[0]?.title ||
-                  (isEn ? 'Q4 Operational Execution Plan' : 'Операционный план квартала')
-              )
-            }
-            className="flex items-center gap-2.5 h-9 px-3 rounded-xl text-xs font-medium bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-left truncate text-zinc-100 transition-colors cursor-pointer"
-          >
-            <ListChecks className="w-4 h-4 shrink-0 text-emerald-400" />
-            <span className="truncate">{isEn ? 'Task Plan' : 'План задач'}</span>
-          </button>
-        </div>
-
-        {/* Conversational Stream */}
-        <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-3.5">
-          {entries.length === 0 && (
-            <div className="rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-[#141522] via-[#12131C] to-[#17141F] p-4 space-y-3.5 text-zinc-200 shadow-lg">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <TeddyAvatar size="sm" persona={personaMode} />
-                  <div>
-                    <div className="text-xs font-bold !text-white flex items-center gap-2">
-                      <span>
-                        {isEn
-                          ? 'Teddy AI · Chief Executive Advisor & Mathematician'
-                          : 'Советник Teddy · Главный стратег и системный математик'}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-amber-300/90 font-medium">
-                      {personaMode === 'strategist'
-                        ? isEn
-                          ? '“Speak softly and carry a big stick” — T. Roosevelt'
-                          : '«Говори мягко, но держи в руках большую дубинку» — Т. Рузвельт'
-                        : isEn
-                        ? '“Zero tolerance for bureaucratic entropy” — Systems Math'
-                        : '«Математическая точность против корпоративной бюрократии»'}
-                    </div>
-                  </div>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold shrink-0">
-                  {isEn ? 'Direct DB Execution' : 'Прямое управление БД'}
-                </span>
-              </div>
-
-              <p className="text-xs text-zinc-200 leading-relaxed">
-                {isEn ? (
-                  <>
-                    Greetings. I have audited the operational contour of{' '}
-                    <strong className="!text-white">“{companyName}”</strong>: there are{' '}
-                    <strong className="text-indigo-300">{openWorkspaceTasks.length}</strong> active
-                    assignments and <strong className="text-emerald-300">{safeLeads.length}</strong>{' '}
-                    CRM deals in flight (<strong className="text-amber-300">{activeShiftsDisplay}</strong>{' '}
-                    staff members in contour). Industrial society loves breeding chaos and endless
-                    meetings, whereas you and I prefer iron discipline and exact mathematical
-                    calculation. Which employee shall we steer on course today, or which deal shall
-                    we close?
-                  </>
-                ) : (
-                  <>
-                    Приветствую. Я проанализировал контур вашей организации{' '}
-                    <strong className="!text-white">«{companyName}»</strong>: в работе{' '}
-                    <strong className="text-indigo-300">{openWorkspaceTasks.length}</strong>{' '}
-                    поручений и <strong className="text-emerald-300">{safeLeads.length}</strong>{' '}
-                    сделок (на смене <strong className="text-amber-300">{activeShiftsDisplay}</strong>{' '}
-                    сотр.). Индустриальное общество обожает плодить хаос и совещания, а мы с вами
-                    любим железную дисциплину и точный математический расчет. Кого из сотрудников
-                    сегодня направим в нужное русло или какую сделку дожмем?
-                  </>
-                )}
-              </p>
-
-              {/* Quick Natural Command Chips */}
-              <div className="pt-1 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => {
-                    const targetColleague =
-                      safeNodes.find((n) => n.id !== currentProfile?.id)?.name ||
-                      currentProfile?.name ||
-                      'команды';
-                    const cmd = isEn
-                      ? `Create task Prepare Q4 financial audit for ${targetColleague}`
-                      : `Создай задачу Подготовить финансовый отчет для ${targetColleague}`;
-                    void triggerAiAction('custom', cmd, cmd);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-[11px] font-semibold text-indigo-200 transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>
-                    {isEn
-                      ? 'Create task via Teddy'
-                      : '«Создай задачу подготовить отчет...»'}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => {
-                    const cmd = isEn
-                      ? 'Create deal Enterprise Cloud License for 1500000'
-                      : 'Создай сделку Северсталь Логистика на 1.5 млн';
-                    void triggerAiAction('custom', cmd, cmd);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[11px] font-semibold text-emerald-200 transition-colors cursor-pointer"
-                >
-                  <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>
-                    {isEn
-                      ? 'Create CRM deal via Teddy'
-                      : '«Создай сделку Северсталь на 1.5 млн»'}
-                  </span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {entries.map((entry) => {
-            const suggestedCards = [
-              {
-                key: `${entry.id}_s1`,
-                title:
-                  entry.suggestedTaskTitle ||
-                  (isEn
-                    ? 'Audit Q4 Commercial Pipeline & Contracts'
-                    : 'Провести ревизию договоров и воронки CRM'),
-                dept: currentProfile?.department || (isEn ? 'Sales & Legal' : 'Отдел продаж'),
-                priority: 'High' as const,
-              },
-              {
-                key: `${entry.id}_s2`,
-                title: isEn
-                  ? 'Synchronize SLA deadlines across active tasks'
-                  : 'Актуализировать контрольные сроки (SLA) по задачам',
-                dept: currentProfile?.department || (isEn ? 'Operations' : 'Операционный блок'),
-                priority: 'Medium' as const,
-              },
-            ];
-
-            return (
+        {/* =================================================================
+            2. SCROLLABLE DIALOG AREA (flex-1 overflow-y-auto pt-4 pb-6 px-6 space-y-4)
+        ================================================================== */}
+        <div
+          ref={scrollContainerRef}
+          className="relative z-10 flex-1 overflow-y-auto pt-4 pb-6 px-5 sm:px-6 space-y-4"
+        >
+          {effectiveHistory.map((turn) => (
+            <div
+              key={turn.id}
+              className={`flex flex-col ${turn.role === 'user' ? 'items-end' : 'items-start'}`}
+            >
               <div
-                key={entry.id}
-                className={`flex flex-col ${
-                  entry.role === 'user' ? 'items-end' : 'items-start'
+                className={`max-w-[95%] sm:max-w-[90%] rounded-2xl p-4 sm:p-5 space-y-3.5 transition-all ${
+                  turn.role === 'user'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : isLight
+                    ? 'bg-white/90 border border-slate-200/80 text-slate-800 shadow-sm'
+                    : 'bg-white/[0.04] border border-white/[0.08] text-zinc-100 shadow-xs'
                 }`}
               >
-                {entry.role === 'user' ? (
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600/90 px-3.5 py-2.5 !text-white space-y-1 shadow-sm">
-                    <div className="flex items-center justify-between gap-3 text-[10px] text-indigo-100/80">
-                      <span className="font-semibold !text-white">
-                        {currentProfile?.name || (isEn ? 'You' : 'Вы')}
-                      </span>
-                      <span className="tabular-nums">{entry.timestamp}</span>
-                    </div>
-                    <div className="text-xs leading-relaxed !text-white">{entry.text}</div>
-                    {entry.attachments && entry.attachments.length > 0 && (
-                      <AttachmentListRenderer
-                        attachments={entry.attachments}
-                        lang={language}
-                        compact
-                      />
+                {/* Turn Header */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    {turn.role === 'assistant' ? (
+                      <>
+                        <TeddyAvatar size="xs" />
+                        <span
+                          className={`text-xs font-bold ${
+                            isLight ? 'text-slate-900' : 'text-white'
+                          }`}
+                        >
+                          Teddy
+                        </span>
+                        <span
+                          className={`text-[10px] font-medium px-2 py-0.5 rounded-md border ${
+                            isLight
+                              ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                              : 'bg-indigo-500/10 border-indigo-500/25 text-indigo-300'
+                          }`}
+                        >
+                          {turn.persona === 'finance'
+                            ? isEn
+                              ? 'Financial Analytics'
+                              : 'Финансовая аналитика'
+                            : turn.persona === 'automation'
+                            ? isEn
+                              ? 'Task Automation'
+                              : 'Автоматизация задач'
+                            : isEn
+                            ? 'Operations Control'
+                            : 'Операционный контроль'}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs font-semibold text-indigo-100">{userName}</span>
                     )}
                   </div>
-                ) : (
-                  <div className="w-full rounded-2xl rounded-tl-sm border border-white/[0.08] bg-[#131319] p-4 space-y-3.5 text-zinc-100 shadow-lg">
-                    {/* Assistant Header */}
-                    <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <TeddyAvatar
-                          size="xs"
-                          persona={entry.personaMode || personaMode}
-                        />
-                        <span className="text-xs font-semibold !text-white truncate">
-                          {entry.headline || 'Советник Teddy (Teddy AI)'}
-                        </span>
+                  <span
+                    className={`text-[10px] tabular-nums ${
+                      turn.role === 'user'
+                        ? 'text-indigo-200'
+                        : isLight
+                        ? 'text-slate-400'
+                        : 'text-zinc-500'
+                    }`}
+                  >
+                    {turn.timestamp}
+                  </span>
+                </div>
+
+                {/* Live Metric Badges */}
+                {turn.metrics && turn.metrics.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {turn.metrics.map((m, idx) => (
+                      <div
+                        key={`${turn.id}-m-${idx}`}
+                        className={`rounded-xl px-3 py-2 border ${
+                          m.tone === 'emerald'
+                            ? isLight
+                              ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
+                              : 'bg-emerald-500/[0.07] border-emerald-500/25 text-emerald-300'
+                            : m.tone === 'rose'
+                            ? isLight
+                              ? 'bg-rose-50/90 border-rose-200 text-rose-800'
+                              : 'bg-rose-500/[0.07] border-rose-500/25 text-rose-300'
+                            : m.tone === 'amber'
+                            ? isLight
+                              ? 'bg-amber-50/90 border-amber-200 text-amber-800'
+                              : 'bg-amber-500/[0.07] border-amber-500/25 text-amber-300'
+                            : m.tone === 'indigo'
+                            ? isLight
+                              ? 'bg-indigo-50/90 border-indigo-200 text-indigo-800'
+                              : 'bg-indigo-500/[0.07] border-indigo-500/25 text-indigo-300'
+                            : isLight
+                            ? 'bg-slate-50 border-slate-200 text-slate-800'
+                            : 'bg-white/[0.03] border-white/[0.07] text-zinc-200'
+                        }`}
+                      >
+                        <div className="text-[10px] uppercase tracking-wider opacity-75 truncate">
+                          {m.label}
+                        </div>
+                        <div className="text-xs font-bold tabular-nums mt-0.5 truncate">
+                          {m.value}
+                        </div>
                       </div>
-                      <span className="text-[10px] text-zinc-500 tabular-nums shrink-0">
-                        {entry.timestamp}
+                    ))}
+                  </div>
+                )}
+
+                {/* Main Executive Headline */}
+                <p
+                  className={`text-xs sm:text-sm leading-relaxed font-medium whitespace-pre-wrap ${
+                    turn.role === 'user'
+                      ? 'text-white'
+                      : isLight
+                      ? 'text-slate-800'
+                      : 'text-zinc-100'
+                  }`}
+                >
+                  {turn.text}
+                </p>
+
+                {/* Structured Bullet Highlights */}
+                {turn.highlights && turn.highlights.length > 0 && (
+                  <div
+                    className={`space-y-2 pt-1 border-t ${
+                      isLight ? 'border-slate-200/70' : 'border-white/[0.06]'
+                    }`}
+                  >
+                    {turn.highlights.map((h, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-start gap-2.5 text-xs leading-relaxed ${
+                          isLight ? 'text-slate-600' : 'text-zinc-300'
+                        }`}
+                      >
+                        <span className="w-4 h-4 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                          {idx + 1}
+                        </span>
+                        <span>{h}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Direct Deep-Links to Tasks, Deals & Modules */}
+                {turn.actionLinks && turn.actionLinks.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    {turn.actionLinks.map((link, idx) => (
+                      <button
+                        key={`${turn.id}-link-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          if (link.taskId && onSelectTask) {
+                            onClose();
+                            onSelectTask(link.taskId);
+                          } else if (link.leadId && onSelectLead) {
+                            onClose();
+                            onSelectLead(link.leadId);
+                          } else if (link.targetSection && onSelectSection) {
+                            onClose();
+                            onSelectSection(link.targetSection);
+                          } else if (link.targetSection === 'crm' && onNavigateToCrm) {
+                            onClose();
+                            onNavigateToCrm();
+                          } else if (link.targetSection === 'tasks' && onNavigateToTasks) {
+                            onClose();
+                            onNavigateToTasks();
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer ${
+                          isLight
+                            ? 'border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 text-slate-700'
+                            : 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-zinc-200 hover:text-white'
+                        }`}
+                      >
+                        {link.leadId ? (
+                          <Briefcase className="w-3 h-3 text-amber-400" />
+                        ) : link.taskId ? (
+                          <ListTodo className="w-3 h-3 text-indigo-400" />
+                        ) : (
+                          <ArrowUpRight className="w-3 h-3 text-emerald-400" />
+                        )}
+                        <span className="truncate max-w-[240px]">{link.label}</span>
+                        <ArrowUpRight className="w-3 h-3 opacity-60" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 1-Click Actionable Task Creation Cards */}
+                {canCreateTasks && turn.suggestedTasks && turn.suggestedTasks.length > 0 && (
+                  <div
+                    className={`pt-2.5 border-t space-y-2 ${
+                      isLight ? 'border-slate-200/70' : 'border-white/[0.07]'
+                    }`}
+                  >
+                    <div
+                      className={`text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5 ${
+                        isLight ? 'text-indigo-600' : 'text-indigo-300'
+                      }`}
+                    >
+                      <ListTodo className="w-3 h-3" />
+                      <span>
+                        {isEn
+                          ? 'Recommended Actions (1-Click to Task Registry)'
+                          : 'Рекомендованные поручения (в реестр за 1 клик)'}
                       </span>
                     </div>
-
-                    {/* Interactive Executed DB Action Cards */}
-                    {entry.executedActions && entry.executedActions.length > 0 && (
-                      <div className="space-y-2">
-                        {entry.executedActions.map((act, aIdx) => (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {turn.suggestedTasks.map((st, idx) => {
+                        const isAdded = addedTitles.includes(st.title);
+                        return (
                           <div
-                            key={aIdx}
-                            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1.5"
+                            key={`${turn.id}-task-${idx}`}
+                            className={`rounded-xl border p-3 flex flex-col justify-between gap-2.5 ${
+                              isLight
+                                ? 'border-slate-200/90 bg-slate-50/80'
+                                : 'border-white/[0.08] bg-black/25'
+                            }`}
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                <span>
-                                  {act.type === 'task_created'
-                                    ? isEn
-                                      ? 'Task Created in DB'
-                                      : 'Задача записана в БД'
-                                    : act.type === 'deal_created'
-                                    ? isEn
-                                      ? 'CRM Deal Created in DB'
-                                      : 'Сделка записана в CRM'
-                                    : isEn
-                                    ? 'Message Sent'
-                                    : 'Сообщение доставлено'}
-                                </span>
-                              </span>
-
-                              {act.type === 'task_created' && onNavigateToTasks && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onNavigateToTasks();
-                                    onClose();
-                                  }}
-                                  className="inline-flex items-center gap-1 text-[10px] font-semibold !text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
-                                >
-                                  <span>{isEn ? 'Open Tasks' : 'В задачи'}</span>
-                                  <ArrowUpRight className="w-3 h-3" />
-                                </button>
-                              )}
-
-                              {act.type === 'deal_created' && onNavigateToCrm && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onNavigateToCrm();
-                                    onClose();
-                                  }}
-                                  className="inline-flex items-center gap-1 text-[10px] font-semibold !text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition-colors"
-                                >
-                                  <span>{isEn ? 'Open CRM' : 'В воронку'}</span>
-                                  <ArrowUpRight className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="text-xs font-medium !text-white">
-                              {act.record?.title ||
-                                act.record?.client_name ||
-                                act.summary}
-                            </div>
-
-                            {act.type === 'deal_created' && act.record?.amount !== undefined && (
-                              <div className="text-xs text-emerald-300 font-semibold tabular-nums">
-                                {formatMoney(Number(act.record.amount) || 0)}
-                              </div>
-                            )}
-
-                            {act.targetName && (
-                              <div className="text-[11px] text-zinc-300">
-                                {isEn ? 'Assignee / Recipient:' : 'Исполнитель / Адресат:'}{' '}
-                                <span className="font-medium !text-white">{act.targetName}</span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Mini-Grid of Key Metrics */}
-                    {entry.metrics && entry.metrics.length > 0 && (
-                      <div className="grid grid-cols-3 gap-2">
-                        {entry.metrics.map((m, idx) => (
-                          <div
-                            key={idx}
-                            className="rounded-xl border border-white/[0.07] bg-[#181820] px-3 py-2.5 space-y-0.5 min-w-0"
-                          >
-                            <div className="text-[10px] font-medium text-zinc-400 truncate">
-                              {m.label}
-                            </div>
-                            <div className="text-xs sm:text-sm font-semibold !text-white tabular-nums truncate">
-                              {m.value}
-                            </div>
-                            {m.sublabel && (
-                              <div className="text-[10px] text-zinc-500 truncate">
-                                {m.sublabel}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* WIDGET 1: Mini Workload Distribution Chart + Rebalance Action */}
-                    {(entry.mode === 'workload_analysis' || entry.mode === 'daily_brief') &&
-                      employeeWorkloadRows.length > 0 && (
-                        <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold !text-white flex items-center gap-1.5">
-                              <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
-                              {isEn
-                                ? 'Staff Workload Distribution'
-                                : 'Матрица загрузки сотрудников'}
-                            </span>
-                            <span className="text-[10px] text-zinc-400">
-                              {isEn ? 'Active tasks per specialist' : 'Активные задачи по штату'}
-                            </span>
-                          </div>
-                          <div className="space-y-2">
-                            {employeeWorkloadRows.map((row) => {
-                              const pct = Math.min(
-                                100,
-                                Math.max(8, Math.round((row.count / maxWorkloadCount) * 100))
-                              );
-                              const isOverloaded = row.count >= 3 && safeNodes.length > 1;
-                              return (
-                                <div key={row.id} className="space-y-1">
-                                  <div className="flex items-center justify-between gap-2 text-xs">
-                                    <div className="min-w-0 truncate">
-                                      <span className="font-medium !text-white">{row.name}</span>
-                                      <span className="text-[10px] text-zinc-400 ml-1.5">
-                                        · {row.role}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="text-[11px] font-semibold tabular-nums text-zinc-200">
-                                        {row.count} {isEn ? 'tasks' : 'зад.'}
-                                      </span>
-                                      {isOverloaded && (
-                                        <button
-                                          type="button"
-                                          disabled={
-                                            rebalancingNodeId === row.id ||
-                                            Boolean(rebalancedNodeIds[row.id])
-                                          }
-                                          onClick={() => void handleRebalanceEmployeeLoad(row.id)}
-                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
-                                            rebalancedNodeIds[row.id]
-                                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                              : 'bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30'
-                                          }`}
-                                        >
-                                          {rebalancingNodeId === row.id ? (
-                                            <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                          ) : rebalancedNodeIds[row.id] ? (
-                                            <Check className="w-2.5 h-2.5" />
-                                          ) : (
-                                            <RefreshCw className="w-2.5 h-2.5" />
-                                          )}
-                                          <span>
-                                            {rebalancedNodeIds[row.id]
-                                              ? isEn
-                                                ? 'Rebalanced'
-                                                : 'Перераспределено'
-                                              : isEn
-                                              ? 'Rebalance'
-                                              : 'Перераспределить'}
-                                          </span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                                    <div
-                                      className={`h-full rounded-full transition-all duration-300 ${
-                                        row.count >= 3
-                                          ? 'bg-amber-400'
-                                          : row.count >= 1
-                                          ? 'bg-indigo-500'
-                                          : 'bg-emerald-400'
-                                      }`}
-                                      style={{ width: `${pct}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                    {/* WIDGET 2: Express CRM Deal Audit Cards */}
-                    {(entry.mode === 'workload_analysis' || entry.mode === 'daily_brief') &&
-                      activeDealsPreview.length > 0 && (
-                        <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold !text-white flex items-center gap-1.5">
-                              <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
-                              {isEn ? 'Express CRM Deal Audit' : 'Экспресс-аудит сделок CRM'}
-                            </span>
-                            {onNavigateToCrm && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onNavigateToCrm();
-                                  onClose();
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-300 hover:text-indigo-200"
-                              >
-                                <span>{isEn ? 'Open Pipeline' : 'Открыть воронку'}</span>
-                                <ArrowUpRight className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {activeDealsPreview.map((deal) => (
-                              <div
-                                key={deal.id}
-                                onClick={() => {
-                                  if (onNavigateToCrm) {
-                                    onNavigateToCrm();
-                                    onClose();
-                                  }
-                                }}
-                                className="rounded-lg border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] p-2.5 flex items-center justify-between gap-2 cursor-pointer transition-colors"
-                              >
-                                <div className="min-w-0">
-                                  <div className="text-xs font-semibold !text-white truncate">
-                                    {deal.client_name || deal.title}
-                                  </div>
-                                  <div className="text-[10px] text-zinc-400 truncate">
-                                    {deal.status || deal.stage || 'New'}
-                                  </div>
-                                </div>
-                                <div className="text-xs font-semibold text-emerald-400 tabular-nums shrink-0">
-                                  {formatMoney(Number(deal.amount ?? deal.deal_value ?? 0))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                    {/* Structured Sections */}
-                    {entry.sections && entry.sections.length > 0 ? (
-                      <div className="space-y-2.5">
-                        {entry.sections.map((sec, sIdx) => (
-                          <div
-                            key={sIdx}
-                            className="rounded-xl border border-white/[0.06] bg-[#16161D] p-3 space-y-1.5"
-                          >
-                            <h4 className="text-xs font-semibold !text-white tracking-tight">
-                              {sec.title}
-                            </h4>
-                            <ul className="space-y-1">
-                              {sec.items.map((item, iIdx) => (
-                                <li
-                                  key={iIdx}
-                                  className="text-xs text-zinc-300 leading-relaxed flex items-start gap-2"
-                                >
-                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/80 mt-1.5 shrink-0" />
-                                  <span>{item}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
-                        {entry.text}
-                      </div>
-                    )}
-
-                    {/* WIDGET 3: Suggested AI Task Cards (+ В работу) */}
-                    {(!entry.executedActions || entry.executedActions.length === 0) && (
-                      <div className="rounded-xl border border-white/[0.07] bg-[#171822] p-3.5 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold !text-white flex items-center gap-1.5">
-                            <ListChecks className="w-3.5 h-3.5 text-indigo-400" />
-                            {isEn ? 'Teddy’s Daily Directives' : 'Директивы Teddy на сегодня'}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={
-                              decomposingEntryId === entry.id ||
-                              Boolean(decomposedEntryIds[entry.id])
-                            }
-                            onClick={() => void handleDirectDecomposeActiveTasks(entry.id)}
-                            className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200 transition-colors"
-                          >
-                            {decomposedEntryIds[entry.id]
-                              ? isEn
-                                ? '✓ Checklists Ready'
-                                : '✓ Чек-листы сформированы'
-                              : isEn
-                              ? 'Decompose Active Tasks'
-                              : 'Декомпозировать активные задачи'}
-                          </button>
-                        </div>
-
-                        <div className="space-y-2">
-                          {suggestedCards.map((sc) => {
-                            const isCreated = Boolean(createdTaskIds[sc.key]);
-                            const isCreating = creatingTaskEntryId === sc.key;
-                            return (
-                              <div
-                                key={sc.key}
-                                className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 flex items-center justify-between gap-3"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-xs font-medium !text-white truncate">
-                                    {sc.title}
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-zinc-400">
-                                    <span className="text-amber-300 font-semibold">
-                                      {sc.priority}
-                                    </span>
-                                    <span>·</span>
-                                    <span className="truncate">{formatRole(sc.dept)}</span>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  disabled={isCreating || isCreated}
-                                  onClick={() =>
-                                    void handleDirectCreateSuggestedTask(
-                                      sc.key,
-                                      sc.title,
-                                      entry.text
-                                    )
-                                  }
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold shrink-0 transition-colors ${
-                                    isCreated
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                      : 'bg-indigo-600 hover:bg-indigo-500 !text-white'
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                                    st.priority === 'High'
+                                      ? isLight
+                                        ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                        : 'bg-red-500/10 border-red-500/30 text-red-300'
+                                      : isLight
+                                      ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                      : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
                                   }`}
                                 >
-                                  {isCreating ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : isCreated ? (
-                                    <Check className="w-3 h-3" />
-                                  ) : (
-                                    <Plus className="w-3 h-3" />
-                                  )}
-                                  <span>
-                                    {isCreated
-                                      ? isEn
-                                        ? 'Added'
-                                        : 'В работе'
-                                      : isEn
-                                      ? '+ To Work'
-                                      : '+ В работу'}
-                                  </span>
-                                </button>
+                                  {formatPriorityLabel(st.priority)}
+                                </span>
+                                <span
+                                  className={`text-[10px] truncate ${
+                                    isLight ? 'text-slate-500' : 'text-zinc-400'
+                                  }`}
+                                >
+                                  {formatRole(st.department)}
+                                </span>
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                              <div
+                                className={`text-xs font-semibold leading-snug ${
+                                  isLight ? 'text-slate-900' : 'text-white'
+                                }`}
+                              >
+                                {st.title}
+                              </div>
+                              <div
+                                className={`text-[11px] line-clamp-2 ${
+                                  isLight ? 'text-slate-600' : 'text-zinc-400'
+                                }`}
+                              >
+                                {st.description}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 pt-1">
+                              <span
+                                className={`inline-flex items-center gap-1 text-[10px] tabular-nums ${
+                                  isLight ? 'text-slate-500' : 'text-zinc-500'
+                                }`}
+                              >
+                                <Clock className="w-3 h-3" />
+                                {st.due_date}
+                              </span>
+
+                              <button
+                                type="button"
+                                disabled={isAdded}
+                                onClick={() => void handleAddRecommendedTask(st)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors shrink-0 cursor-pointer ${
+                                  isAdded
+                                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400'
+                                    : isLight
+                                    ? 'bg-slate-900 hover:bg-slate-800 text-white'
+                                    : 'bg-white text-black hover:bg-zinc-200'
+                                }`}
+                              >
+                                {isAdded ? (
+                                  <>
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>{isEn ? 'Created' : 'В работе'}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="w-3 h-3" />
+                                    <span>{isEn ? 'To Work' : 'В работу'}</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
-            );
-          })}
+            </div>
+          ))}
 
-          {isLoading && (
-            <div className="flex items-center gap-2.5 text-xs text-zinc-200 bg-[#14141B] border border-white/[0.08] rounded-xl px-3.5 py-2.5 w-fit">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-              <span>
+          {isThinking && (
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl border border-indigo-500/25 bg-indigo-500/[0.07] w-fit text-xs text-indigo-300">
+              <TeddyAvatar size="xs" />
+              <span className="animate-pulse">
                 {isEn
-                  ? 'Teddy AI is calculating directive...'
-                  : 'Советник Teddy выполняет математический расчет и запись...'}
+                  ? 'Teddy is analyzing live company metrics...'
+                  : 'Teddy анализирует показатели вашей компании...'}
               </span>
             </div>
           )}
-          <div ref={scrollEndRef} />
         </div>
 
-        {/* Bottom Composer with Paperclip + Input + Send */}
-        <div className="shrink-0 sticky bottom-0 bg-[#111116] border-t border-white/[0.08]">
-          <PendingAttachmentsStrip
-            attachments={pendingAttachments}
-            onRemove={(id) =>
-              setPendingAttachments((prev) => prev.filter((item) => item.id !== id))
-            }
-          />
-          <form
-            onSubmit={handleSubmitQuestion}
-            className="flex items-center gap-2 p-3"
+        {/* =================================================================
+            3. BOTTOM COMPOSER CAPSULE (shrink-0 p-4 border-t)
+        ================================================================== */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleAsk();
+          }}
+          className={`relative z-10 shrink-0 p-4 border-t ${
+            isLight
+              ? 'border-slate-200/80 bg-white/70'
+              : 'border-white/[0.07] bg-zinc-950/40'
+          }`}
+        >
+          <div
+            className={`flex items-center gap-2 rounded-2xl border px-3.5 py-2 transition-colors ${
+              isLight
+                ? 'bg-slate-100/80 border-slate-200/90 focus-within:border-indigo-400 focus-within:bg-white'
+                : 'bg-white/[0.05] border-white/[0.08] focus-within:border-indigo-500/50 focus-within:bg-white/[0.07]'
+            }`}
           >
             <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept={ACCEPTED_ATTACHMENT_TYPES}
-              onChange={handleFilesSelected}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-9 h-9 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:!text-white flex items-center justify-center shrink-0 transition"
-              title={isEn ? 'Attach file or screenshot' : 'Прикрепить файл или скриншот'}
-            >
-              <Paperclip className="w-4 h-4" />
-            </button>
-
-            <input
               type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
+              value={promptInput}
+              onChange={(e) => setPromptInput(e.target.value)}
               placeholder={
                 isEn
-                  ? 'Ask Teddy or command: "Create task...", "Create deal...", "Message..."'
-                  : 'Поручение для Teddy: «Создай задачу...», «Создай сделку...» или вопрос...'
+                  ? 'Ask Teddy about tasks, CRM deals, revenue, or team workload...'
+                  : 'Спросите Teddy о задачах, сделках CRM, выручке или загрузке отдела...'
               }
-              className="flex-1 h-10 rounded-xl border border-white/10 bg-[#17171F] px-3.5 text-sm !text-white placeholder:text-zinc-500 focus:border-white/30 focus:outline-none min-w-0"
+              className={`tc-composer-input flex-1 !bg-transparent border-0 text-xs sm:text-sm focus:outline-none ${
+                isLight
+                  ? '!text-slate-900 placeholder-slate-400'
+                  : '!text-zinc-100 placeholder-zinc-500'
+              }`}
             />
-
             <button
               type="submit"
-              disabled={isLoading || (!question.trim() && pendingAttachments.length === 0)}
-              className="w-9 h-9 rounded-xl bg-indigo-600 !text-white hover:bg-indigo-500 disabled:opacity-40 flex items-center justify-center shrink-0 transition-colors"
-              title={isEn ? 'Send to Teddy' : 'Отправить Советнику Teddy'}
+              disabled={!promptInput.trim() || isThinking}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors disabled:opacity-40 shrink-0 shadow-xs cursor-pointer"
             >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
+              <Send className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isEn ? 'Ask Teddy' : 'Спросить'}</span>
             </button>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   );

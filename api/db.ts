@@ -222,7 +222,7 @@ function runBuiltInAiAssistant(input: {
   leads: any[];
   messages: any[];
   lang?: 'ru' | 'en';
-  personaMode?: 'strategist' | 'mathematician';
+  personaMode?: 'operations' | 'finance' | 'automation' | 'strategist' | 'mathematician';
 }): {
   mode: AiAssistantMode;
   headline?: string;
@@ -245,11 +245,12 @@ function runBuiltInAiAssistant(input: {
     leads = [],
     messages = [],
     lang = 'ru',
-    personaMode = 'strategist',
+    personaMode = 'operations',
   } = input;
 
   const isEn = lang === 'en';
-  const isMath = personaMode === 'mathematician';
+  const isFinance = personaMode === 'finance' || personaMode === 'mathematician';
+  const isAutomation = personaMode === 'automation';
   const openTasks = tasks.filter((t) => t.status !== 'Done');
   const highPriorityTasks = openTasks.filter((t) => t.priority === 'High');
   const doneTasks = tasks.filter((t) => t.status === 'Done');
@@ -447,18 +448,22 @@ function runBuiltInAiAssistant(input: {
       },
     ];
 
-    const teddyHeaderNote = isMath
+    const teddyHeaderNote = isFinance
       ? isEn
-        ? `[Systems Mathematician · Anti-Bureaucracy] Industrial society loves endless status meetings; we rely on cold math. Conversion efficiency is ${conversionRate}%, with ${openTasks.length} active nodes in the queue.`
-        : `[Системный Математик · Анти-Бюрократия] Индустриальное общество обожает плодить совещания, а мы опираемся на строгий математический расчет: в очереди ${openTasks.length} поручений, КПД конверсии воронки — ${conversionRate}%.`
+        ? `Financial Analytics: Active pipeline stands at ${formatServerMoney(activePipelineSum)} with a ${conversionRate}% win conversion rate across ${activeLeads.length} active deals.`
+        : `Финансовая аналитика: объем активной воронки составляет ${formatServerMoney(activePipelineSum)}, конверсия в контракт — ${conversionRate}% (${activeLeads.length} сделок в работе).`
+      : isAutomation
+      ? isEn
+        ? `Task Automation: ${openTasks.length} open tasks are tracked in the queue and ready for automated checklist decomposition.`
+        : `Автоматизация задач: в очереди ${openTasks.length} поручений, доступных для автоматической декомпозиции и распределения по исполнителям.`
       : isEn
-      ? `[Strategist · Roosevelt Doctrine] Speak softly and carry a big stick: ${highPriorityTasks.length} high-priority directives require iron execution discipline today.`
-      : `[Стратег · Доктрина Рузвельта] Говорим мягко, но держим железную дисциплину: под личным контролем ${highPriorityTasks.length} срочных поручений и ${activeLeads.length} сделок в работе.`;
+      ? `Operations Control: ${highPriorityTasks.length} high-priority assignments and ${activeLeads.length} deals are under active SLA monitoring today.`
+      : `Операционный контроль: под контролем ${highPriorityTasks.length} срочных поручений и ${activeLeads.length} сделок в работе.`;
 
     const lines: string[] = [
       isEn
-        ? `Teddy AI · Executive Briefing — ${userName} (${userRole}), ${companyName}`
-        : `Советник Teddy · Сводка дня — ${userName} (${userRole}), ${companyName}`,
+        ? `Teddy · Executive Briefing — ${userName} (${userRole}), ${companyName}`
+        : `Teddy · Операционная сводка дня — ${userName} (${userRole}), ${companyName}`,
       teddyHeaderNote,
       '',
       isEn ? 'Operational Task Scope:' : 'Операционный контур задач:',
@@ -474,8 +479,8 @@ function runBuiltInAiAssistant(input: {
     return {
       mode: 'daily_brief',
       headline: isEn
-        ? `Teddy AI · Daily Brief — ${userName} (${userRole})`
-        : `Советник Teddy · Сводка дня — ${userName} (${userRole})`,
+        ? `Teddy · Daily Brief — ${userName} (${userRole})`
+        : `Teddy · Сводка дня — ${userName} (${userRole})`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),
@@ -582,16 +587,16 @@ function runBuiltInAiAssistant(input: {
       },
       {
         title: isEn
-          ? 'Teddy AI Strategic & Mathematical Directives'
-          : 'Директивы Советника Teddy (Дисциплина и Математика)',
+          ? 'Teddy Optimization Recommendations'
+          : 'Рекомендации Teddy по оптимизации процессов',
         items: recommendationItems,
       },
     ];
 
     const lines: string[] = [
       isEn
-        ? `Teddy AI · Workload & Bottleneck Audit — ${companyName}`
-        : `Советник Teddy · Аудит узких мест и воронки CRM — ${companyName}`,
+        ? `Teddy · Workload & Bottleneck Audit — ${companyName}`
+        : `Teddy · Аудит нагрузки и воронки CRM — ${companyName}`,
       '',
       isEn ? 'Staff Workload Balance:' : 'Баланс нагрузки по штату:',
       ...staffItems.map((i) => `• ${i}`),
@@ -599,15 +604,15 @@ function runBuiltInAiAssistant(input: {
       isEn ? 'CRM Commercial Pipeline Audit:' : 'Аудит коммерческой воронки CRM:',
       ...crmAuditItems.map((i) => `• ${i}`),
       '',
-      isEn ? 'Teddy AI Directives:' : 'Директивы Советника Teddy:',
+      isEn ? 'Teddy Recommendations:' : 'Рекомендации Teddy:',
       ...recommendationItems.map((i) => `• ${i}`),
     ];
 
     return {
       mode: 'workload_analysis',
       headline: isEn
-        ? `Teddy AI · Workload & CRM Audit — ${companyName}`
-        : `Советник Teddy · Аудит нагрузки и воронки CRM — ${companyName}`,
+        ? `Teddy · Workload & CRM Audit — ${companyName}`
+        : `Teddy · Аудит нагрузки и воронки CRM — ${companyName}`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),
@@ -4331,9 +4336,11 @@ export default async function handler(req: any, res: any) {
                   : `Ответь на запрос сотрудника: «${promptText}» живо, по делу и на основе реальных данных компании без КАПСЛОКА.`;
 
               const personaInstruction =
-                personaMode === 'mathematician'
-                  ? 'Режим мышления: «Системный Математик (Анти-Бюрократия)» в духе математической точности Теда Качинского — вскрывай узкие места, высмеивай пустую корпоративную бюрократию и совещания ради совещаний, опирайся строго на математику конверсии и нагрузки.'
-                  : 'Режим мышления: «Стратег (Доктрина Рузвельта)» в духе президента Теодора Рузвельта — железная исполнительская дисциплина («Говори мягко, но держи в руках большую дубинку»), дожим сделок CRM до оплаты и персональная ответственность каждого сотрудника.';
+                personaMode === 'finance' || personaMode === 'mathematician'
+                  ? 'Активный фокус: «Финансовая аналитика» — опирайся на выручку, конверсию воронки CRM, рентабельность и финансовую дисциплину.'
+                  : personaMode === 'automation'
+                  ? 'Активный фокус: «Автоматизация задач» — декомпозируй цели на четкие шаги чек-листов, распределяй исполнителей и оптимизируй процессы.'
+                  : 'Активный фокус: «Операционный контроль» — контролируй сроки исполнения поручений (SLA), баланс нагрузки по отделам и доведение сделок до результата.';
 
               const geminiRes = await fetch(geminiEndpoint, {
                 method: 'POST',
@@ -4346,8 +4353,7 @@ export default async function handler(req: any, res: any) {
                     {
                       parts: [
                         {
-                          text: `Ты — «Teddy AI» (Советник Teddy), харизматичный главный советник руководителя и системный математик платформы TedCloud.
-Твой характер сочетает стратегический масштаб Теодора Рузвельта и бритвенно-острый математический ум Теда Качинского (презрение к корпоративной бюрократии и имитации бурной деятельности).
+                          text: `Ты — «Teddy», корпоративный ИИ-ассистент руководителя на платформе TedCloud (уровень Linear / Stripe).
 ${personaInstruction}
 Контекст компании (JSON): ${contextDigest}
 Базовая аналитическая выжимка:

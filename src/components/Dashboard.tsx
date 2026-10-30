@@ -1408,8 +1408,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const finalText =
       msgBody ||
       (isEn
-        ? `📎 Attached: ${commAttachments.map((a) => a.name).join(', ')}`
-        : `📎 Вложение: ${commAttachments.map((a) => a.name).join(', ')}`);
+        ? `Attached: ${commAttachments.map((a) => a.name).join(', ')}`
+        : `Вложение: ${commAttachments.map((a) => a.name).join(', ')}`);
 
     const pendingReply = replyingToMessage;
     const pendingFiles = [...commAttachments];
@@ -3230,7 +3230,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             dotClass: 'bg-amber-400',
                             badgeClass: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
                             nextStatus: 'Review' as TaskStatus,
-                            nextLabel: isEn ? 'To Review →' : 'На проверку →',
+                            nextLabel: isEn ? 'To Review' : 'На проверку',
                           },
                           {
                             status: 'Review' as TaskStatus,
@@ -3238,7 +3238,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             dotClass: 'bg-purple-400',
                             badgeClass: 'border-purple-500/25 bg-purple-500/10 text-purple-300',
                             nextStatus: 'Done' as TaskStatus,
-                            nextLabel: isEn ? 'Complete ✓' : 'Завершить ✓',
+                            nextLabel: isEn ? 'Complete' : 'Завершить',
                           },
                           {
                             status: 'Done' as TaskStatus,
@@ -4821,15 +4821,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       isOutgoing ? 'right-0' : 'left-0'
                                     } hidden group-hover:flex focus-within:flex items-center gap-0.5 px-1.5 py-0.5 rounded-full w-max whitespace-nowrap shadow-xl backdrop-blur-md bg-zinc-900/95 text-white border border-white/15 transition-all duration-150`}
                                   >
-                                    {(['👍', '🔥', '❤️', '✅'] as const).map((emoji) => (
+                                    {(['OK', '+1', 'ACK', 'SLA'] as const).map((reactionTag) => (
                                       <button
-                                        key={emoji}
+                                        key={reactionTag}
                                         type="button"
-                                        onClick={() => void handleToggleMessageReaction(msg, emoji)}
-                                        className="w-6 h-6 rounded-full inline-flex items-center justify-center text-xs hover:bg-white/15 transition-transform hover:scale-110 shrink-0"
-                                        title={emoji}
+                                        onClick={() =>
+                                          void handleToggleMessageReaction(msg, reactionTag)
+                                        }
+                                        className="px-1.5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-bold hover:bg-white/15 transition-colors shrink-0 text-zinc-200"
+                                        title={reactionTag}
                                       >
-                                        {emoji}
+                                        {reactionTag}
                                       </button>
                                     ))}
 
@@ -5102,35 +5104,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {/* Современная капсула ввода (Composer) с Emoji Picker, Paperclip, прозрачным Input, Urgent и круглой кнопкой Send */}
                 <div className="relative shrink-0 sticky bottom-0 p-3 border-t border-white/[0.07] bg-[#111115]">
                   {showEmojiPicker && (
-                    <div className="absolute bottom-16 left-4 z-30 p-2 rounded-2xl bg-[#18181F] border border-white/10 shadow-2xl grid grid-cols-8 gap-1">
+                    <div className="absolute bottom-16 left-4 z-30 p-2 rounded-2xl bg-[#18181F] border border-white/10 shadow-2xl flex flex-wrap gap-1.5 max-w-xs">
                       {[
-                        '👍',
-                        '🔥',
-                        '❤️',
-                        '😂',
-                        '🤝',
-                        '✅',
-                        '⚡',
-                        '🚀',
-                        '👏',
-                        '👀',
-                        '🤔',
-                        '🎯',
-                        '💼',
-                        '📊',
-                        '🎉',
-                        '🙏',
-                      ].map((emoji) => (
+                        isEn ? 'Accepted in work' : 'Принято в работу',
+                        isEn ? 'Approved' : 'Согласовано',
+                        isEn ? 'Completed' : 'Выполнено',
+                        isEn ? 'On Review' : 'На проверке',
+                        isEn ? 'Urgent SLA' : 'Срочно по SLA',
+                        isEn ? 'Send contract' : 'Отправьте договор',
+                      ].map((quickPhrase) => (
                         <button
-                          key={emoji}
+                          key={quickPhrase}
                           type="button"
                           onClick={() => {
-                            setCommText((prev) => `${prev}${emoji}`);
+                            setCommText((prev) =>
+                              prev ? `${prev} ${quickPhrase}` : quickPhrase
+                            );
                             setShowEmojiPicker(false);
                           }}
-                          className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-base transition-transform hover:scale-110"
+                          className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-indigo-500/20 border border-white/10 text-[11px] font-medium text-zinc-200 transition-colors"
                         >
-                          {emoji}
+                          {quickPhrase}
                         </button>
                       ))}
                     </div>

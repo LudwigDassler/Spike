@@ -155,13 +155,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onOpenAiCopilot}
-            aria-label={isEn ? 'Teddy AI Advisor' : 'Советник Teddy'}
+            aria-label="Teddy"
             className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-indigo-500/30 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors whitespace-nowrap shadow-xs shrink-0"
           >
             <TeddyAvatar size="xs" />
-            <span className="hidden md:inline">
-              {isEn ? 'Teddy AI' : 'Советник Teddy'}
-            </span>
+            <span className="hidden md:inline">Teddy</span>
           </button>
         )}
 

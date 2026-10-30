@@ -1098,7 +1098,7 @@ export const LegalDocumentGeneratorModal: React.FC<LegalDocumentGeneratorModalPr
           </button>
         </div>
 
-        {/* Printable Document Sheet (Strict White A4 Paper in ANY theme) */}
+        {/* Printable Document Sheet */}
         <div className="p-6 max-h-[70dvh] overflow-y-auto bg-zinc-900/60">
           <div
             id="tc-printable-legal-doc-sheet"
@@ -3278,8 +3278,8 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
     if (!emp?.id) return;
     setRemindedIds((prev) => (prev.includes(emp.id) ? prev : [...prev, emp.id]));
     const reminderText = isEn
-      ? `🔒 Security Reminder for ${emp.name}: Please set your personal password and link your Telegram ID for 2FA protection in Profile settings.`
-      : `🔒 Напоминание безопасности для ${emp.name}: Пожалуйста, установите личный пароль и привяжите Telegram ID для двухфакторной защиты (2FA) в разделе «Мой профиль».`;
+      ? `Security Reminder for ${emp.name}: Please set your personal password and link your Telegram ID for 2FA protection in Profile settings.`
+      : `Напоминание безопасности для ${emp.name}: Пожалуйста, установите личный пароль и привяжите Telegram ID для двухфакторной защиты (2FA) в разделе «Мой профиль».`;
 
     if (onSendMessage) {
       try {
@@ -3535,8 +3535,9 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs font-semibold text-emerald-300">
-                {isEn ? '✓ Zero Cross-Tenant Leaks' : '✓ Утечек между компаниями: 0'}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs font-semibold text-emerald-300">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{isEn ? 'Zero Cross-Tenant Leaks' : 'Утечек между компаниями: 0'}</span>
               </span>
             </div>
           </div>
@@ -3606,8 +3607,8 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
               {vulnerableStaff.length === 0 ? (
                 <p className="text-xs text-emerald-300">
                   {isEn
-                    ? '✓ All employees have personal passwords and Telegram 2FA configured.'
-                    : '✓ У всех сотрудников компании установлены пароли и привязан Telegram 2FA.'}
+                    ? 'All employees have personal passwords and Telegram 2FA configured.'
+                    : 'У всех сотрудников компании установлены пароли и привязан Telegram 2FA.'}
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -3655,8 +3656,8 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
                           >
                             {isReminded
                               ? isEn
-                                ? '✓ Sent'
-                                : '✓ Отправлено'
+                                ? 'Sent'
+                                : 'Отправлено'
                               : isEn
                               ? 'Send Reminder'
                               : 'Отправить напоминание'}

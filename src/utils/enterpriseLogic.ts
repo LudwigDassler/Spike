@@ -251,9 +251,11 @@ export interface AiAssistantSection {
   items: string[];
 }
 
+export type TeddyAnalysisFocus = 'operations' | 'finance' | 'automation' | 'strategist' | 'mathematician';
+
 export interface AiAssistantInput {
   mode: AiAssistantMode;
-  personaMode?: 'strategist' | 'mathematician';
+  personaMode?: TeddyAnalysisFocus;
   lang?: 'ru' | 'en';
   prompt?: string;
   taskTitle?: string;
@@ -323,7 +325,7 @@ export function formatCompanyCurrency(
 export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutput {
   const {
     mode,
-    personaMode = 'strategist',
+    personaMode = 'operations',
     lang = 'ru',
     prompt = '',
     taskTitle = '',
@@ -338,7 +340,8 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
   } = input;
 
   const isEn = lang === 'en';
-  const isMath = personaMode === 'mathematician';
+  const isFinanceFocus = personaMode === 'finance' || personaMode === 'mathematician';
+  const isAutomationFocus = personaMode === 'automation';
   const fmtMoney = (val: number | string | null | undefined) =>
     formatCompanyCurrency(val, currency, lang);
 
@@ -559,13 +562,15 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       { title: 'Коммерческий контур CRM', items: crmItems },
     ];
 
-    const teddyNote = isMath
-      ? `[Системный Математик · Анти-Бюрократия] Индустриальное общество любит плодить совещания, а мы опираемся на строгий математический расчет: в работе ${openTasks.length} поручений, КПД конверсии воронки — ${conversionRate}%.`
-      : `[Стратег · Доктрина Рузвельта] Говорим мягко, но держим железную дисциплину: под контролем ${highPriorityTasks.length} срочных поручений и ${activeLeads.length} сделок.`;
+    const focusSummary = isFinanceFocus
+      ? `Финансовая аналитика: активная воронка составляет ${fmtMoney(activePipelineSum)}, конверсия в оплату — ${conversionRate}%.`
+      : isAutomationFocus
+      ? `Автоматизация задач: ${openTasks.length} поручений в работе готовы к автоматической декомпозиции на чек-листы.`
+      : `Операционный контроль: под контролем ${highPriorityTasks.length} приоритетных поручений и ${activeLeads.length} активных сделок.`;
 
     const lines: string[] = [
-      `Советник Teddy · Сводка дня — ${userName} (${userRole}), ${companyName}`,
-      teddyNote,
+      `Teddy · Операционная сводка дня — ${userName} (${userRole}), ${companyName}`,
+      focusSummary,
       '',
       'Операционный контур задач:',
       ...taskItems.map((i) => `• ${i}`),
@@ -579,7 +584,7 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
 
     return {
       mode: 'daily_brief',
-      headline: `Советник Teddy · Сводка дня — ${userName} (${userRole})`,
+      headline: `Teddy · Сводка дня — ${userName} (${userRole})`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),
@@ -732,13 +737,13 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
         items: crmAuditItems,
       },
       {
-        title: 'Директивы Советника Teddy (Дисциплина и Математика)',
+        title: 'Рекомендации Teddy по оптимизации процессов',
         items: recommendationItems,
       },
     ];
 
     const lines: string[] = [
-      `Советник Teddy · Анализ загрузки команды и воронки CRM — ${companyName}`,
+      `Teddy · Анализ загрузки команды и воронки CRM — ${companyName}`,
       '',
       'Баланс нагрузки по штату:',
       ...staffItems.map((i) => `• ${i}`),
@@ -746,13 +751,13 @@ export function runBuiltInAiAssistant(input: AiAssistantInput): AiAssistantOutpu
       'Аудит коммерческой воронки CRM:',
       ...crmAuditItems.map((i) => `• ${i}`),
       '',
-      'Директивы Советника Teddy:',
+      'Рекомендации Teddy:',
       ...recommendationItems.map((i) => `• ${i}`),
     ];
 
     return {
       mode: 'workload_analysis',
-      headline: `Советник Teddy · Аудит нагрузки и воронки CRM — ${companyName}`,
+      headline: `Teddy · Аудит нагрузки и воронки CRM — ${companyName}`,
       metrics: baseMetrics,
       sections,
       reply: lines.join('\n'),
@@ -919,10 +924,10 @@ export interface PricingPlanConfig {
 export const PRICING_PLANS: Record<SubscriptionPlanTier, PricingPlanConfig> = {
   Trial: {
     id: 'Trial',
-    nameRu: 'Starter / Trial',
-    nameEn: 'Starter / Trial',
-    titleRu: 'Starter / Trial',
-    titleEn: 'Starter / Trial',
+    nameRu: 'Starter',
+    nameEn: 'Starter',
+    titleRu: 'Starter',
+    titleEn: 'Starter',
     badgeRu: 'До 5 сотрудников',
     badgeEn: 'Up to 5 employees',
     maxEmployeesLabelRu: 'До 5 сотрудников',
