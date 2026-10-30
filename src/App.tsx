@@ -122,8 +122,15 @@ function AppContent() {
   // Global crash protection for unhandled promise rejections (Block 4)
   useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      console.warn('[TedCloud CrashGuard] Handled background rejection:', event.reason);
+      const reasonMsg = String(event?.reason?.message || event?.reason || '');
       event.preventDefault();
+      if (
+        reasonMsg.includes('WebSocket closed without opened') ||
+        reasonMsg.includes('AbortError') ||
+        reasonMsg.includes('The user aborted a request')
+      ) {
+        return;
+      }
     };
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
     return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
