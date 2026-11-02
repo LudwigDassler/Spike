@@ -118,6 +118,9 @@ function AppContent() {
 
   const isFetchingRef = useRef<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const recentMessagePatchesRef = useRef<
+    Map<string, { updates: Record<string, any>; timestamp: number }>
+  >(new Map());
 
   // Global crash protection for unhandled promise rejections (Block 4)
   useEffect(() => {
@@ -212,6 +215,13 @@ function AppContent() {
       setTasks(Array.isArray(payload.tasks) ? payload.tasks : []);
       setLeads(Array.isArray(payload.leads) ? payload.leads : []);
       setMessages((prev) => {
+        const now = Date.now();
+        for (const [k, v] of recentMessagePatchesRef.current.entries()) {
+          if (now - v.timestamp > 8000) {
+            recentMessagePatchesRef.current.delete(k);
+          }
+        }
+
         const serverList: WorkspaceMessageRecord[] = Array.isArray(payload.messages)
           ? payload.messages
           : [];
@@ -238,10 +248,12 @@ function AppContent() {
           });
           if (isNearDuplicate) continue;
           if (mid) seenIds.add(mid);
-          dedupedServer.push(m);
+          const recentPatch = mid ? recentMessagePatchesRef.current.get(mid) : undefined;
+          dedupedServer.push(recentPatch ? { ...m, ...recentPatch.updates } : m);
         }
 
-        const remainingOptimistic = (Array.isArray(prev) ? prev : []).filter((opt) => {
+        const prevArr = Array.isArray(prev) ? prev : [];
+        const remainingOptimistic = prevArr.filter((opt) => {
           if (!String(opt.id || '').startsWith('optimistic_')) return false;
           const optSender = String(opt.sender_id || '');
           const optText = String(opt.message_text || opt.text || '').trim();
@@ -260,9 +272,32 @@ function AppContent() {
           return !matchedInServer;
         });
 
-        return remainingOptimistic.length > 0
-          ? [...remainingOptimistic, ...dedupedServer]
-          : dedupedServer;
+        const nextList =
+          remainingOptimistic.length > 0
+            ? [...remainingOptimistic, ...dedupedServer]
+            : dedupedServer;
+
+        if (silent && prevArr.length === nextList.length) {
+          let identical = true;
+          for (let i = 0; i < prevArr.length; i++) {
+            const a = prevArr[i];
+            const b = nextList[i];
+            if (
+              a.id !== b.id ||
+              (a.message_text || a.text || '') !== (b.message_text || b.text || '') ||
+              JSON.stringify(a.reactions || {}) !== JSON.stringify(b.reactions || {}) ||
+              JSON.stringify(a.acknowledged_by || []) !== JSON.stringify(b.acknowledged_by || [])
+            ) {
+              identical = false;
+              break;
+            }
+          }
+          if (identical) {
+            return prevArr;
+          }
+        }
+
+        return nextList;
       });
       setInvoices(Array.isArray(payload.invoices) ? payload.invoices : []);
       setWorkShifts(Array.isArray(payload.workShifts) ? payload.workShifts : []);
@@ -416,6 +451,10 @@ function AppContent() {
           )
         );
       } else if (table === 'workspace_messages') {
+        recentMessagePatchesRef.current.set(String(id), {
+          updates,
+          timestamp: Date.now(),
+        });
         setMessages((prev) =>
           (Array.isArray(prev) ? prev : []).map((item) =>
             item.id === id ? { ...item, ...updates } : item
@@ -474,12 +513,14 @@ function AppContent() {
         } else if (table === 'workspace_messages' && result.data) {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((item) =>
-              item.id === id ? result.data : item
+              item.id === id ? { ...result.data, ...updates } : item
             )
           );
         }
 
-        void loadWorkspaceData(false, true);
+        if (table !== 'workspace_messages') {
+          void loadWorkspaceData(false, true);
+        }
 
         return {
           ok: true,
@@ -488,7 +529,9 @@ function AppContent() {
       } catch (err: any) {
         console.error(`[App] PATCH ${table} error:`, err);
         setErrorMessage(formatError(err));
-        void loadWorkspaceData(false, true);
+        if (table !== 'workspace_messages') {
+          void loadWorkspaceData(false, true);
+        }
         return { ok: false };
       }
     },

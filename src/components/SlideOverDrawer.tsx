@@ -376,17 +376,16 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
     const taskRec = record as TaskRecord;
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-6 font-sans"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md font-sans transition-opacity duration-200"
         role="dialog"
         aria-modal="true"
         onClick={onClose}
       >
         <div
-          className="max-w-4xl w-full rounded-2xl border border-white/10 bg-[#12151e] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+          className="max-w-3xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#14161C] shadow-2xl flex flex-col no-scrollbar transition-all duration-200"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Top Modal Header */}
-          <div className="px-6 py-4 border-b border-white/[0.07] flex items-center justify-between bg-[#141824] shrink-0">
+          <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between bg-[#181B22] sticky top-0 z-10 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0">
                 <CheckSquare className="w-4 h-4 text-indigo-400" />
@@ -408,11 +407,8 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
             </button>
           </div>
 
-          {/* 2-Column Body: Left Main Column (65%) + Right Properties Sidebar (35%) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-            {/* LEFT MAIN COLUMN (65% width / 8 cols) */}
-            <div className="lg:col-span-8 p-6 space-y-6 lg:overflow-y-auto no-scrollbar">
-              {/* 1. Large Editable Task Title */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 min-h-0">
+            <div className="lg:col-span-8 p-6 space-y-5">
               <div>
                 {canEditTasks ? (
                   <div className="space-y-1">
@@ -434,7 +430,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                           e.currentTarget.blur();
                         }
                       }}
-                      className="w-full rounded-xl border border-white/10 bg-[#181c28] px-3.5 py-2.5 text-base font-semibold text-white focus:border-indigo-500 focus:outline-none transition-colors"
+                      className="w-full rounded-xl border border-white/10 bg-[#1A1D24] px-3.5 py-2.5 text-base font-semibold text-white focus:border-indigo-500 focus:outline-none transition-colors"
                     />
                   </div>
                 ) : (
@@ -442,7 +438,6 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 )}
               </div>
 
-              {/* 2. Description / Working Notes */}
               <form onSubmit={handleSaveNotes} className="space-y-2.5">
                 <label className="flex items-center gap-2 text-xs font-semibold text-white">
                   <FileText className="w-3.5 h-3.5 text-indigo-400" />
@@ -454,7 +449,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   onChange={(e) => setNotes(e.target.value)}
                   disabled={!canEditTasks}
                   placeholder={t('drawer.notesPlaceholder')}
-                  className="w-full rounded-xl border border-white/10 bg-[#181c28] p-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none leading-relaxed disabled:opacity-60"
+                  className="w-full rounded-xl border border-white/10 bg-[#1A1D24] p-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none leading-relaxed disabled:opacity-60"
                 />
                 {canEditTasks && (
                   <div className="flex justify-end">
@@ -474,8 +469,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 )}
               </form>
 
-              {/* 3. Interactive Subtask Checklist & AI Decomposition */}
-              <div className="rounded-xl border border-white/[0.08] bg-[#181c28] p-4 space-y-3.5">
+              <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] p-4 space-y-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -528,7 +522,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 )}
 
                 {aiSummary && (
-                  <div className="rounded-lg border border-white/10 bg-[#12151e] px-3 py-2 text-[11px] text-zinc-200 leading-relaxed">
+                  <div className="rounded-lg border border-white/10 bg-[#14161C] px-3 py-2 text-[11px] text-zinc-200 leading-relaxed">
                     <strong className="text-indigo-400">TedCloud Intelligence:</strong> {aiSummary}
                   </div>
                 )}
@@ -544,7 +538,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                     {checklist.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-start justify-between gap-2.5 rounded-lg border border-white/[0.07] bg-[#12151e] px-3 py-2 text-xs"
+                        className="flex items-start justify-between gap-2.5 rounded-lg border border-white/[0.07] bg-[#14161C] px-3 py-2 text-xs"
                       >
                         <button
                           type="button"
@@ -595,7 +589,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                           ? 'Add checklist step manually...'
                           : 'Добавить шаг чек-листа вручную...'
                       }
-                      className="flex-1 rounded-lg border border-white/10 bg-[#12151e] px-2.5 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
+                      className="flex-1 rounded-lg border border-white/10 bg-[#14161C] px-2.5 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
                     />
                     <button
                       type="submit"
@@ -609,8 +603,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 )}
               </div>
 
-              {/* 4. Attached Files Block */}
-              <div className="rounded-xl border border-white/[0.08] bg-[#181c28] p-4 space-y-2.5">
+              <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] p-4 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Paperclip className="w-3.5 h-3.5 text-sky-400" />
@@ -631,7 +624,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => taskAttachmentInputRef.current?.click()}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/10 bg-[#12151e] hover:bg-white/[0.08] text-[11px] font-medium text-zinc-200 transition cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/10 bg-[#14161C] hover:bg-white/[0.08] text-[11px] font-medium text-zinc-200 transition cursor-pointer"
                       >
                         <Plus className="w-3 h-3" />
                         <span>{isEn ? 'Attach file' : 'Прикрепить'}</span>
@@ -655,8 +648,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 )}
               </div>
 
-              {/* 5. Live Task Comment Stream */}
-              <div className="rounded-xl border border-white/[0.08] bg-[#181c28] p-4 space-y-3">
+              <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-semibold text-white">
                     <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
@@ -689,7 +681,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       return (
                         <div
                           key={msg.id}
-                          className="rounded-lg border border-white/[0.07] bg-[#12151e] p-3 space-y-1 text-xs"
+                          className="rounded-lg border border-white/[0.07] bg-[#14161C] p-3 space-y-1 text-xs"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold text-white truncate">
@@ -742,7 +734,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => commentFileInputRef.current?.click()}
-                        className="w-9 h-9 rounded-xl bg-[#12151e] hover:bg-white/[0.08] border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition cursor-pointer"
+                        className="w-9 h-9 rounded-xl bg-[#14161C] hover:bg-white/[0.08] border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition cursor-pointer"
                         title={isEn ? 'Attach file' : 'Прикрепить файл'}
                       >
                         <Paperclip className="w-4 h-4" />
@@ -752,7 +744,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         value={commentText}
                         onChange={(e) => setCommentText(e.target.value)}
                         placeholder={t('drawer.threadPlaceholder')}
-                        className="flex-1 h-10 rounded-xl border border-white/10 bg-[#12151e] px-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
+                        className="flex-1 h-10 rounded-xl border border-white/10 bg-[#14161C] px-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
                       />
                       <button
                         type="submit"
@@ -775,14 +767,12 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               </div>
             </div>
 
-            {/* RIGHT PROPERTIES SIDEBAR (35% width / 4 cols) */}
-            <div className="lg:col-span-4 bg-slate-50/80 dark:bg-zinc-900/60 border-t lg:border-t-0 lg:border-l border-slate-200/80 dark:border-white/[0.07] p-5 space-y-4 lg:overflow-y-auto no-scrollbar flex flex-col justify-between">
+            <div className="lg:col-span-4 bg-[#181B22] border-t lg:border-t-0 lg:border-l border-white/[0.07] p-5 space-y-4 flex flex-col justify-between">
               <div className="space-y-4">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-[#8E8E93]">
                   {isEn ? 'Task Properties' : 'Свойства поручения'}
                 </div>
 
-                {/* Status (Kanban Stage) */}
                 <div className="space-y-1.5">
                   <label className="block text-xs text-[#8E8E93]">{t('drawer.status')}</label>
                   <select
@@ -793,7 +783,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         status: e.target.value as TaskStatus,
                       })
                     }
-                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs font-medium text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-xl border border-white/10 bg-[#14161C] px-3 py-2 text-xs font-medium text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="Todo">{t('status.Todo')}</option>
                     <option value="In Progress">{t('status.In Progress')}</option>
@@ -802,7 +792,6 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   </select>
                 </div>
 
-                {/* Priority */}
                 <div className="space-y-1.5">
                   <label className="block text-xs text-[#8E8E93]">{t('drawer.priority')}</label>
                   <select
@@ -813,7 +802,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         priority: e.target.value as TaskPriority,
                       })
                     }
-                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs font-medium text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-xl border border-white/10 bg-[#14161C] px-3 py-2 text-xs font-medium text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="Low">{t('priority.Low')}</option>
                     <option value="Medium">{t('priority.Medium')}</option>
@@ -821,10 +810,9 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   </select>
                 </div>
 
-                {/* Assignee with Avatar */}
                 <div className="space-y-1.5">
                   <label className="block text-xs text-[#8E8E93]">{t('drawer.assignee')}</label>
-                  { assigneeNode && (
+                  {assigneeNode && (
                     <div className="flex items-center gap-2 pb-1">
                       <UserAvatar
                         name={assigneeNode.name}
@@ -849,7 +837,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                           assigned_to: e.target.value || null,
                         })
                       }
-                      className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-xl border border-white/10 bg-[#14161C] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
                     >
                       <option value="">{t('tasks.unassigned')}</option>
                       {safeNodes.map((n) => (
@@ -867,7 +855,6 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   )}
                 </div>
 
-                {/* Department */}
                 <div className="space-y-1.5">
                   <label className="block text-xs text-[#8E8E93]">{t('drawer.department')}</label>
                   {canAssignTasks ? (
@@ -878,7 +865,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                           department: e.target.value || null,
                         })
                       }
-                      className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-xl border border-white/10 bg-[#14161C] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
                     >
                       <option value="">{t('dept.noneOption')}</option>
                       {safeDepartments.map((d) => (
@@ -894,7 +881,6 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   )}
                 </div>
 
-                {/* Due Date (SLA) */}
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs text-[#8E8E93]">
                     <Clock className="w-3.5 h-3.5 text-[#71717A]" />
@@ -909,11 +895,10 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         due_date: e.target.value || null,
                       })
                     }
-                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white tabular-nums disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-xl border border-white/10 bg-[#14161C] px-3 py-2 text-xs text-white tabular-nums disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
 
-                {/* Linked CRM Deal */}
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs text-[#8E8E93]">
                     <Briefcase className="w-3.5 h-3.5 text-[#71717A]" />
@@ -927,7 +912,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         lead_id: e.target.value || null,
                       })
                     }
-                    className="w-full rounded-xl border border-white/10 bg-[#12151e] px-3 py-2 text-xs text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-xl border border-white/10 bg-[#14161C] px-3 py-2 text-xs text-white disabled:opacity-50 focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="">
                       {isEn ? '— No linked deal —' : '— Без привязки к сделке —'}
@@ -940,7 +925,6 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   </select>
                 </div>
 
-                {/* Author & Created Timestamp */}
                 <div className="pt-3 border-t border-white/[0.07] space-y-2 text-xs">
                   <div className="flex items-center justify-between text-[#8E8E93]">
                     <span>{t('drawer.author')}</span>
@@ -959,13 +943,12 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Bottom Actions: Delete Task + Close */}
               <div className="pt-4 border-t border-white/[0.07] space-y-2">
                 {canEditTasks && onDeleteTask && (
                   <button
                     type="button"
                     onClick={() => {
-                      void onDeleteTask(taskRec.id);
+                      void onDeleteTask(taskRec.id, taskRec.title);
                       onClose();
                     }}
                     className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
@@ -977,7 +960,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-full px-4 py-2 rounded-xl border border-white/10 bg-[#12151e] hover:bg-white/[0.06] text-xs font-medium text-white transition-colors cursor-pointer"
+                  className="w-full px-4 py-2 rounded-xl border border-white/10 bg-[#14161C] hover:bg-white/[0.06] text-xs font-medium text-white transition-colors cursor-pointer"
                 >
                   {t('drawer.close')}
                 </button>
@@ -989,119 +972,104 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
     );
   }
 
+  const dealRec = record as CrmLeadRecord;
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md font-sans transition-opacity duration-200"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-[#111113] border-l border-[#262626] h-full flex flex-col justify-between shadow-2xl overflow-y-auto no-scrollbar"
+        className="max-w-3xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#14161C] shadow-2xl flex flex-col justify-between no-scrollbar transition-all duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          {/* Drawer Header */}
-          <div className="px-5 sm:px-6 py-4 border-b border-[#222225] flex items-center justify-between sticky top-0 bg-[#111113] z-10">
-            <div className="flex items-center gap-2.5">
-              {isTask ? (
-                <CheckSquare className="w-4 h-4 text-[#A1A1AA]" />
-              ) : (
-                <Briefcase className="w-4 h-4 text-[#A1A1AA]" />
-              )}
-              <span className="text-xs font-semibold text-[#D4D4D8] tracking-tight">
-                {isTask ? t('drawer.taskHeader') : t('drawer.dealHeader')}
+          <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between sticky top-0 bg-[#181B22] z-10">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <Briefcase className="w-4 h-4 text-emerald-400" />
+              </div>
+              <span className="text-xs font-semibold text-white tracking-tight truncate">
+                {t('drawer.dealHeader')}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-white/[0.06] text-[10px] font-semibold text-[#8E8E93] tabular-nums">
+                #{String(dealRec.id || '').slice(0, 6).toUpperCase()}
               </span>
             </div>
             <button
               type="button"
               onClick={onClose}
               aria-label={t('drawer.close')}
-              className="p-1.5 rounded-lg text-[#8E8E93] hover:text-white hover:bg-[#1C1C1F] transition-colors"
+              className="p-1.5 rounded-lg text-[#8E8E93] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="p-5 sm:p-6 space-y-6">
-            {/* Title (Editable for Tasks) */}
+          <div className="p-6 space-y-5">
             <div>
-              {isTask && canEditTasks ? (
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#71717A]">
-                    {isEn ? 'Task Title (click to edit)' : 'Название поручения (редактируемое)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={taskTitleDraft}
-                    onChange={(e) => setTaskTitleDraft(e.target.value)}
-                    onBlur={() => {
-                      const clean = taskTitleDraft.trim();
-                      if (clean && clean !== (record as TaskRecord).title) {
-                        void onPatchRecord('tasks', record.id, { title: clean });
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.blur();
-                      }
-                    }}
-                    className="w-full rounded-lg border border-[#2C2C30] bg-[#161618] px-3 py-2 text-sm font-semibold text-white focus:border-indigo-500 focus:outline-none transition-colors"
-                  />
-                </div>
-              ) : (
-                <h2 className="text-base font-semibold text-white leading-snug">
-                  {isTask
-                    ? (record as TaskRecord).title
-                    : (record as CrmLeadRecord).client_name ||
-                      (record as CrmLeadRecord).full_name ||
-                      (record as CrmLeadRecord).title}
-                </h2>
-              )}
-              {!isTask && (record as CrmLeadRecord).title && (
-                <p className="text-xs text-[#8E8E93] mt-1">{(record as CrmLeadRecord).title}</p>
+              <h2 className="text-lg font-bold text-white leading-snug">
+                {dealRec.client_name || dealRec.full_name || dealRec.title}
+              </h2>
+              {dealRec.title && (
+                <p className="text-xs text-[#8E8E93] mt-1">{dealRec.title}</p>
               )}
             </div>
 
-            {/* Key Properties Grid */}
-            <div className="rounded-lg border border-[#222225] bg-[#161618] divide-y divide-[#222225] text-xs">
+            <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] divide-y divide-white/[0.06] text-xs">
               <div className="px-4 py-3 flex items-center justify-between gap-4">
-                <span className="text-[#8E8E93] flex items-center gap-2">
-                  <Calendar className="w-3.5 h-3.5 text-[#71717A]" />
-                  {t('drawer.createdAt')}
+                <span className="text-[#8E8E93]">{t('drawer.dealAmount')}</span>
+                <span className="text-white font-semibold tabular-nums">
+                  {formatMoney(Number(dealRec.amount ?? dealRec.deal_value ?? 0))}
                 </span>
-                <span className="text-white tabular-nums">{createdAtFormatted}</span>
               </div>
 
               <div className="px-4 py-3 flex items-center justify-between gap-4">
-                <span className="text-[#8E8E93] flex items-center gap-2">
-                  <User className="w-3.5 h-3.5 text-[#71717A]" />
-                  {t('drawer.author')}
+                <span className="text-[#8E8E93] flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-[#71717A]" />
+                  {t('drawer.dealContact')}
                 </span>
-                <span className="text-white font-medium truncate">
-                  {authorNode
-                    ? `${authorNode.name} (${formatRole(authorNode.role_type)})`
-                    : isEn
-                    ? 'TedCloud System'
-                    : 'Система TedCloud'}
+                <span className="text-white">
+                  {dealRec.contact || dealRec.phone || '—'}
                 </span>
               </div>
 
-              {/* Department selector for both Task and Deal */}
+              <div className="px-4 py-3 flex items-center justify-between gap-4">
+                <span className="text-[#8E8E93]">{t('drawer.status')}</span>
+                <select
+                  disabled={!canEditCrm}
+                  value={
+                    (dealRec.status || dealRec.stage || 'New') as CrmLeadStatus
+                  }
+                  onChange={(e) =>
+                    void onPatchRecord('crm_leads', dealRec.id, {
+                      status: e.target.value as CrmLeadStatus,
+                    })
+                  }
+                  className="rounded-lg border border-white/10 bg-[#14161C] px-3 py-1.5 text-xs text-white disabled:opacity-50 focus:outline-none"
+                >
+                  <option value="New">{t('stage.New')}</option>
+                  <option value="Negotiation">{t('stage.Negotiation')}</option>
+                  <option value="Won">{t('stage.Won')}</option>
+                  <option value="Lost">{t('stage.Lost')}</option>
+                </select>
+              </div>
+
               <div className="px-4 py-3 flex items-center justify-between gap-4">
                 <span className="text-[#8E8E93] flex items-center gap-2">
                   <Building2 className="w-3.5 h-3.5 text-[#71717A]" />
                   {t('drawer.department')}
                 </span>
-                {(isTask && canAssignTasks) || (!isTask && canEditCrm) ? (
+                {canEditCrm ? (
                   <select
-                    value={record.department || ''}
+                    value={dealRec.department || ''}
                     onChange={(e) =>
-                      void onPatchRecord(table, record.id, {
+                      void onPatchRecord('crm_leads', dealRec.id, {
                         department: e.target.value || null,
                       })
                     }
-                    className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white focus:outline-none max-w-[200px]"
+                    className="rounded-lg border border-white/10 bg-[#14161C] px-3 py-1.5 text-xs text-white focus:outline-none max-w-[220px]"
                   >
                     <option value="">{t('dept.noneOption')}</option>
                     {safeDepartments.map((d) => (
@@ -1112,23 +1080,22 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   </select>
                 ) : (
                   <span className="text-white font-medium">
-                    {record.department ? formatRole(record.department) : t('dept.noneOption')}
+                    {dealRec.department ? formatRole(dealRec.department) : t('dept.noneOption')}
                   </span>
                 )}
               </div>
 
-              {/* Assignee / Responsible Manager */}
               <div className="px-4 py-3 flex items-center justify-between gap-4">
                 <span className="text-[#8E8E93]">{t('drawer.assignee')}</span>
-                {(isTask && canAssignTasks) || (!isTask && canEditCrm) ? (
+                {canEditCrm ? (
                   <select
                     value={currentAssigneeId || ''}
                     onChange={(e) =>
-                      void onPatchRecord(table, record.id, {
+                      void onPatchRecord('crm_leads', dealRec.id, {
                         assigned_to: e.target.value || null,
                       })
                     }
-                    className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white focus:outline-none max-w-[200px]"
+                    className="rounded-lg border border-white/10 bg-[#14161C] px-3 py-1.5 text-xs text-white focus:outline-none max-w-[220px]"
                   >
                     <option value="">{t('tasks.unassigned')}</option>
                     {safeNodes.map((n) => (
@@ -1146,378 +1113,91 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 )}
               </div>
 
-              {isTask ? (
-                <>
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <span className="text-[#8E8E93]">{t('drawer.status')}</span>
-                    <select
-                      disabled={!canEditTasks}
-                      value={(record as TaskRecord).status || 'Todo'}
-                      onChange={(e) =>
-                        void onPatchRecord('tasks', record.id, {
-                          status: e.target.value as TaskStatus,
-                        })
-                      }
-                      className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white disabled:opacity-50 focus:outline-none"
-                    >
-                      <option value="Todo">{t('status.Todo')}</option>
-                      <option value="In Progress">{t('status.In Progress')}</option>
-                      <option value="Review">{t('status.Review')}</option>
-                      <option value="Done">{t('status.Done')}</option>
-                    </select>
-                  </div>
-
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <span className="text-[#8E8E93]">{t('drawer.priority')}</span>
-                    <select
-                      disabled={!canEditTasks}
-                      value={(record as TaskRecord).priority || 'Medium'}
-                      onChange={(e) =>
-                        void onPatchRecord('tasks', record.id, {
-                          priority: e.target.value as TaskPriority,
-                        })
-                      }
-                      className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white disabled:opacity-50 focus:outline-none"
-                    >
-                      <option value="Low">{t('priority.Low')}</option>
-                      <option value="Medium">{t('priority.Medium')}</option>
-                      <option value="High">{t('priority.High')}</option>
-                    </select>
-                  </div>
-
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <span className="text-[#8E8E93] flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-[#71717A]" />
-                      <span>{isEn ? 'Target Due Date (SLA)' : 'Срок исполнения (SLA)'}</span>
-                    </span>
-                    <input
-                      type="date"
-                      disabled={!canEditTasks}
-                      value={(record as TaskRecord).due_date || ''}
-                      onChange={(e) =>
-                        void onPatchRecord('tasks', record.id, {
-                          due_date: e.target.value || null,
-                        })
-                      }
-                      className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white tabular-nums disabled:opacity-50 focus:outline-none"
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <span className="text-[#8E8E93]">{t('drawer.dealAmount')}</span>
-                    <span className="text-white font-semibold tabular-nums">
-                      {formatMoney(
-                        Number(
-                          (record as CrmLeadRecord).amount ??
-                            (record as CrmLeadRecord).deal_value ??
-                            0
-                        )
-                      )}
-                    </span>
-                  </div>
-
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <span className="text-[#8E8E93] flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-[#71717A]" />
-                      {t('drawer.dealContact')}
-                    </span>
-                    <span className="text-white">
-                      {(record as CrmLeadRecord).contact || (record as CrmLeadRecord).phone || '—'}
-                    </span>
-                  </div>
-
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <span className="text-[#8E8E93]">{t('drawer.status')}</span>
-                    <select
-                      disabled={!canEditCrm}
-                      value={
-                        ((record as CrmLeadRecord).status ||
-                          (record as CrmLeadRecord).stage ||
-                          'New') as CrmLeadStatus
-                      }
-                      onChange={(e) =>
-                        void onPatchRecord('crm_leads', record.id, {
-                          status: e.target.value as CrmLeadStatus,
-                        })
-                      }
-                      className="rounded-md border border-[#2C2C30] bg-[#111113] px-2.5 py-1 text-xs text-white disabled:opacity-50 focus:outline-none"
-                    >
-                      <option value="New">{t('stage.New')}</option>
-                      <option value="Negotiation">{t('stage.Negotiation')}</option>
-                      <option value="Won">{t('stage.Won')}</option>
-                      <option value="Lost">{t('stage.Lost')}</option>
-                    </select>
-                  </div>
-                </>
-              )}
+              <div className="px-4 py-3 flex items-center justify-between gap-4">
+                <span className="text-[#8E8E93] flex items-center gap-2">
+                  <Calendar className="w-3.5 h-3.5 text-[#71717A]" />
+                  {t('drawer.createdAt')}
+                </span>
+                <span className="text-white tabular-nums">{createdAtFormatted}</span>
+              </div>
             </div>
 
-            {/* ИИ-декомпозиция и интерактивный чек-лист подзадач (tasks.checklist) */}
-            {isTask && (
-              <div className="rounded-xl border border-[#24242C] bg-[#15151A] p-4 space-y-3.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <CheckSquare className="w-4 h-4 text-emerald-400" />
-                    <span className="text-xs font-semibold text-white">
-                      {isEn ? 'Subtask Checklist' : 'Чек-лист подзадач'} ({doneCount}/{totalCount})
-                    </span>
-                  </div>
-
-                  {canEditTasks && (
-                    <button
-                      type="button"
-                      disabled={isDecomposing}
-                      onClick={() => void handleAiDecomposeTask()}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-200 transition-colors"
-                    >
-                      {isDecomposing ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Cpu className="w-3 h-3 text-indigo-400" />
-                      )}
-                      <span>
-                        {isEn
-                          ? 'Break into steps with TedCloud Intelligence'
-                          : 'Разбить на шаги с TedCloud Intelligence'}
-                      </span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Progress Bar */}
-                {totalCount > 0 && (
-                  <div className="space-y-1">
-                    <div className="h-1.5 w-full rounded-full bg-[#22222A] overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-400 transition-all duration-300"
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[10px] text-[#8E8E93] tabular-nums">
-                      <span>
-                        {isEn ? `Completed: ${progressPercent}%` : `Выполнено: ${progressPercent}%`}
-                      </span>
-                      <span>
-                        {isEn ? `${doneCount} of ${totalCount}` : `${doneCount} из ${totalCount}`}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {aiSummary && (
-                  <div className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-[11px] text-zinc-200 leading-relaxed">
-                    <strong className="text-indigo-300">TedCloud Intelligence:</strong> {aiSummary}
-                  </div>
-                )}
-
-                {/* Checklist Items */}
-                {checklist.length === 0 ? (
-                  <p className="text-xs text-[#71717A]">
-                    {isEn
-                      ? 'No subtasks generated yet. Click "AI Decompose" for an automated execution plan.'
-                      : 'Подзадачи еще не сформированы. Нажмите «Декомпозировать» для автоматической генерации плана работ.'}
-                  </p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {checklist.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-start justify-between gap-2.5 rounded-lg border border-[#22222A] bg-[#111115] px-3 py-2 text-xs"
-                      >
-                        <button
-                          type="button"
-                          disabled={!canEditTasks}
-                          onClick={() => void handleToggleChecklistItem(item.id)}
-                          className="flex items-start gap-2.5 text-left flex-1 min-w-0"
-                        >
-                          <span
-                            className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                              item.done
-                                ? 'bg-emerald-500 border-emerald-500 text-black'
-                                : 'border-[#3F3F46] hover:border-white'
-                            }`}
-                          >
-                            {item.done && <Check className="w-3 h-3 stroke-[3]" />}
-                          </span>
-                          <span
-                            className={`leading-snug break-words ${
-                              item.done ? 'line-through text-[#71717A]' : 'text-zinc-100'
-                            }`}
-                          >
-                            {item.title}
-                          </span>
-                        </button>
-
-                        {canEditTasks && (
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteChecklistItem(item.id)}
-                            className="text-[#52525B] hover:text-red-400 transition-colors p-0.5 shrink-0"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {canEditTasks && (
-                  <form onSubmit={handleAddChecklistItem} className="flex items-center gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={newSubtaskTitle}
-                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                      placeholder={
-                        isEn
-                          ? 'Add checklist step manually...'
-                          : 'Добавить шаг чек-листа вручную...'
-                      }
-                      className="flex-1 rounded-lg border border-[#26262E] bg-[#111115] px-2.5 py-1.5 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!newSubtaskTitle.trim()}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#22222A] hover:bg-white hover:text-black disabled:opacity-40 text-xs font-medium text-white transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Step' : 'Шаг'}</span>
-                    </button>
-                  </form>
-                )}
-              </div>
-            )}
-
-            {/* Юридические реквизиты контрагента в карточке сделки */}
-            {!isTask && (
-              <div className="rounded-lg border border-[#222225] bg-[#151518] p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-white">
-                    {t('drawer.dealRequisites')}
-                  </span>
-                  <div className="inline-flex rounded-md border border-[#2C2C30] bg-[#111113] p-0.5">
-                    <button
-                      type="button"
-                      disabled={!canEditCrm}
-                      onClick={() => setJurisdiction('RU')}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium ${
-                        jurisdiction === 'RU'
-                          ? 'bg-white text-black font-semibold'
-                          : 'text-[#8E8E93] hover:text-white'
-                      }`}
-                    >
-                      {isEn ? 'RU / CIS' : 'РФ / СНГ'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canEditCrm}
-                      onClick={() => setJurisdiction('GLOBAL')}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium ${
-                        jurisdiction === 'GLOBAL'
-                          ? 'bg-white text-black font-semibold'
-                          : 'text-[#8E8E93] hover:text-white'
-                      }`}
-                    >
-                      Global
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] text-[#8E8E93] mb-1">
-                      {jurisdiction === 'RU' ? t('modal.taxIdRu') : t('modal.taxIdGlobal')}
-                    </label>
-                    <input
-                      type="text"
-                      disabled={!canEditCrm}
-                      value={taxId}
-                      onChange={(e) => setTaxId(e.target.value)}
-                      placeholder="—"
-                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-[#8E8E93] mb-1">
-                      {jurisdiction === 'RU' ? t('modal.regNumRu') : t('modal.regNumGlobal')}
-                    </label>
-                    <input
-                      type="text"
-                      disabled={!canEditCrm}
-                      value={regNumber}
-                      onChange={(e) => setRegNumber(e.target.value)}
-                      placeholder="—"
-                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-[#8E8E93] mb-1">
-                      {t('modal.contractNumberLabel')}
-                    </label>
-                    <input
-                      type="text"
-                      disabled={!canEditCrm}
-                      value={contractNumber}
-                      onChange={(e) => setContractNumber(e.target.value)}
-                      placeholder="—"
-                      className="w-full rounded-md border border-[#262626] bg-[#111113] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
-                    />
-                  </div>
+            <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-white">
+                  {t('drawer.dealRequisites')}
+                </span>
+                <div className="inline-flex rounded-lg border border-white/10 bg-[#14161C] p-0.5">
+                  <button
+                    type="button"
+                    disabled={!canEditCrm}
+                    onClick={() => setJurisdiction('RU')}
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                      jurisdiction === 'RU'
+                        ? 'bg-white text-black font-semibold'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    {isEn ? 'RU / CIS' : 'РФ / СНГ'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEditCrm}
+                    onClick={() => setJurisdiction('GLOBAL')}
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                      jurisdiction === 'GLOBAL'
+                        ? 'bg-white text-black font-semibold'
+                        : 'text-[#8E8E93] hover:text-white'
+                    }`}
+                  >
+                    Global
+                  </button>
                 </div>
               </div>
-            )}
 
-            {/* Вложения к задаче */}
-            {isTask && (
-              <div className="rounded-xl border border-white/10 bg-[#15151A] p-4 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Paperclip className="w-3.5 h-3.5 text-sky-400" />
-                    <span className="text-xs font-semibold text-white">
-                      {isEn ? 'Attachments' : 'Вложения и документы'} ({taskAttachments.length})
-                    </span>
-                  </div>
-                  {canEditTasks && (
-                    <>
-                      <input
-                        ref={taskAttachmentInputRef}
-                        type="file"
-                        multiple
-                        accept={ACCEPTED_ATTACHMENT_TYPES}
-                        onChange={handleUploadTaskAttachments}
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => taskAttachmentInputRef.current?.click()}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>{isEn ? 'Attach file' : 'Прикрепить'}</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {taskAttachments.length === 0 ? (
-                  <p className="text-xs text-[#71717A]">
-                    {isEn
-                      ? 'No files attached to this task yet.'
-                      : 'К поручению еще не прикреплены файлы или фото.'}
-                  </p>
-                ) : (
-                  <AttachmentListRenderer
-                    attachments={taskAttachments}
-                    lang={language}
-                    onRemove={canEditTasks ? handleRemoveTaskAttachment : undefined}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[11px] text-[#8E8E93] mb-1">
+                    {jurisdiction === 'RU' ? t('modal.taxIdRu') : t('modal.taxIdGlobal')}
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!canEditCrm}
+                    value={taxId}
+                    onChange={(e) => setTaxId(e.target.value)}
+                    placeholder="—"
+                    className="w-full rounded-lg border border-white/10 bg-[#14161C] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
                   />
-                )}
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[#8E8E93] mb-1">
+                    {jurisdiction === 'RU' ? t('modal.regNumRu') : t('modal.regNumGlobal')}
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!canEditCrm}
+                    value={regNumber}
+                    onChange={(e) => setRegNumber(e.target.value)}
+                    placeholder="—"
+                    className="w-full rounded-lg border border-white/10 bg-[#14161C] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[#8E8E93] mb-1">
+                    {t('modal.contractNumberLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!canEditCrm}
+                    value={contractNumber}
+                    onChange={(e) => setContractNumber(e.target.value)}
+                    placeholder="—"
+                    className="w-full rounded-lg border border-white/10 bg-[#14161C] px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none disabled:opacity-60"
+                  />
+                </div>
               </div>
-            )}
+            </div>
 
-            {/* Working Description / Notes Form */}
             <form onSubmit={handleSaveNotes} className="space-y-2.5">
               <label className="flex items-center gap-2 text-xs font-medium text-[#D4D4D8]">
                 <FileText className="w-3.5 h-3.5 text-[#A1A1AA]" />
@@ -1527,16 +1207,16 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                disabled={isTask ? !canEditTasks : !canEditCrm}
+                disabled={!canEditCrm}
                 placeholder={t('drawer.notesPlaceholder')}
-                className="w-full rounded-lg border border-[#262626] bg-[#161618] p-3 text-xs text-white placeholder-[#52525B] focus:border-[#52525B] focus:outline-none leading-relaxed disabled:opacity-60"
+                className="w-full rounded-xl border border-white/10 bg-[#1A1D24] p-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none leading-relaxed disabled:opacity-60"
               />
-              {((isTask && canEditTasks) || (!isTask && canEditCrm)) && (
+              {canEditCrm && (
                 <div className="flex justify-end">
                   <button
                     type="submit"
                     disabled={isSaving}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
+                    className="tc-btn-primary inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 text-xs font-semibold transition-colors whitespace-nowrap"
                   >
                     {isSaving ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1549,8 +1229,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               )}
             </form>
 
-            {/* Поток комментариев (Инфополе) внутри задачи и сделки */}
-            <div className="rounded-lg border border-[#222225] bg-[#141417] p-4 space-y-3">
+            <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-semibold text-white">
                   <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
@@ -1583,7 +1262,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                     return (
                       <div
                         key={msg.id}
-                        className="rounded-lg border border-[#242428] bg-[#19191D] p-3 space-y-1 text-xs"
+                        className="rounded-lg border border-white/[0.07] bg-[#14161C] p-3 space-y-1 text-xs"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold text-white truncate">
@@ -1636,7 +1315,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                     <button
                       type="button"
                       onClick={() => commentFileInputRef.current?.click()}
-                      className="w-9 h-9 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition"
+                      className="w-9 h-9 rounded-xl bg-[#14161C] hover:bg-white/[0.08] border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition"
                       title={isEn ? 'Attach file' : 'Прикрепить файл'}
                     >
                       <Paperclip className="w-4 h-4" />
@@ -1646,7 +1325,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       value={commentText}
                       onChange={(e) => setCommentText(e.target.value)}
                       placeholder={t('drawer.threadPlaceholder')}
-                      className="flex-1 h-10 rounded-xl border border-white/10 bg-[#111113] px-3 text-xs text-white placeholder-[#52525B] focus:border-zinc-500 focus:outline-none"
+                      className="flex-1 h-10 rounded-xl border border-white/10 bg-[#14161C] px-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
                     />
                     <button
                       type="submit"
@@ -1654,7 +1333,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         isSendingComment ||
                         (!commentText.trim() && commentAttachments.length === 0)
                       }
-                      className="w-9 h-9 rounded-xl bg-white text-black hover:bg-[#E4E4E7] disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors"
+                      className="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors"
                       title={t('drawer.threadSendBtn')}
                     >
                       {isSendingComment ? (
@@ -1668,13 +1347,12 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               )}
             </div>
 
-            {/* Status History Log */}
-            <div className="rounded-lg border border-[#222225] bg-[#141416] p-4 space-y-3">
+            <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] p-4 space-y-3">
               <div className="flex items-center gap-2 text-xs font-semibold text-[#D4D4D8]">
                 <History className="w-3.5 h-3.5 text-[#A1A1AA]" />
                 <span>{t('drawer.historyTitle')}</span>
               </div>
-              <div className="space-y-2.5 text-xs text-[#8E8E93] border-l border-[#2C2C30] pl-3 ml-1.5">
+              <div className="space-y-2.5 text-xs text-[#8E8E93] border-l border-white/10 pl-3 ml-1.5">
                 <div>
                   <div className="text-white font-medium">{t('drawer.historyCreated')}</div>
                   <div className="text-[11px] tabular-nums text-[#71717A]">
@@ -1685,15 +1363,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                   <div className="text-white font-medium">
                     {t('drawer.historyCurrent')}{' '}
                     <span className="text-emerald-400">
-                      {isTask
-                        ? t(`status.${(record as TaskRecord).status || 'Todo'}`)
-                        : t(
-                            `stage.${
-                              (record as CrmLeadRecord).status ||
-                              (record as CrmLeadRecord).stage ||
-                              'New'
-                            }`
-                          )}
+                      {t(`stage.${dealRec.status || dealRec.stage || 'New'}`)}
                     </span>
                   </div>
                 </div>
@@ -1702,11 +1372,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-[#222225] bg-[#111113] flex justify-end">
+        <div className="px-6 py-4 border-t border-white/[0.08] bg-[#181B22] flex justify-end sticky bottom-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg border border-[#2C2C30] bg-[#18181B] hover:bg-[#222226] text-xs font-medium text-white transition-colors whitespace-nowrap"
+            className="px-4 py-2 rounded-xl border border-white/10 bg-[#14161C] hover:bg-white/[0.06] text-xs font-medium text-white transition-colors whitespace-nowrap"
           >
             {t('drawer.close')}
           </button>

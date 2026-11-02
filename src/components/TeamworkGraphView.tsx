@@ -23,6 +23,7 @@ interface TeamworkGraphViewProps {
   canViewCrm: boolean;
   onSelectTask?: (taskId: string) => void;
   onSelectLead?: (leadId: string) => void;
+  onSelectEmployee?: (node: OrganizationNode) => void;
 }
 
 export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
@@ -34,6 +35,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
   canViewCrm,
   onSelectTask,
   onSelectLead,
+  onSelectEmployee,
 }) => {
   const { formatMoney, t, language, formatRole } = useLocale();
   const isEn = language === 'en';
@@ -43,7 +45,6 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
     ? leads.filter((l) => (l.status || l.stage) !== 'Lost')
     : [];
 
-  // Group employees by department
   const effectiveDepts = Array.from(
     new Set([
       ...departments,
@@ -60,8 +61,7 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
   }
 
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-[#111114] shadow-2xl p-4 sm:p-6 space-y-6">
-      {/* Header & Legend */}
+    <div className="rounded-2xl border border-white/[0.08] bg-[#14161C] shadow-2xl p-4 sm:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.07] pb-4">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
@@ -81,7 +81,6 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
           </div>
         </div>
 
-        {/* Workload Legend */}
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#A1A1AA]">
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -98,9 +97,8 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
         </div>
       </div>
 
-      {/* Level 1: Organization Root Node */}
       <div className="flex flex-col items-center">
-        <div className="rounded-xl border border-emerald-500/40 bg-[#15151A] px-5 py-3 shadow-lg flex items-center gap-3">
+        <div className="rounded-xl border border-emerald-500/40 bg-[#181B22] px-5 py-3 shadow-lg flex items-center gap-3">
           <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <div>
             <div className="text-xs font-semibold text-white uppercase tracking-wider">
@@ -117,7 +115,6 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
         <div className="w-px h-6 bg-[#2A2A32]" />
       </div>
 
-      {/* Level 2 & 3 & 4: Departments -> Employees -> Linked Tasks & Deals */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {effectiveDepts.map((deptName) => {
           const deptEmployees = nodes.filter((n) => {
@@ -138,9 +135,8 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
           return (
             <div
               key={deptName}
-              className="rounded-xl border border-white/[0.07] bg-[#141418] p-4 space-y-4"
+              className="rounded-xl border border-white/[0.07] bg-[#181B22] p-4 space-y-4"
             >
-              {/* Department Header Node */}
               <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 shrink-0" />
@@ -153,7 +149,6 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                 </span>
               </div>
 
-              {/* Employees inside Department */}
               {deptEmployees.length === 0 ? (
                 <div className="text-xs text-[#71717A] py-2">
                   {isEn
@@ -181,9 +176,16 @@ export const TeamworkGraphView: React.FC<TeamworkGraphViewProps> = ({
                     return (
                       <div
                         key={emp.id}
-                        className="rounded-lg border border-white/[0.07] bg-[#18181E] p-3.5 space-y-3"
+                        className="rounded-lg border border-white/[0.07] bg-[#14161C] p-3.5 space-y-3"
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div
+                          onClick={() => onSelectEmployee && onSelectEmployee(emp)}
+                          className={`flex items-center justify-between gap-2 ${
+                            onSelectEmployee
+                              ? 'cursor-pointer hover:opacity-90 transition-opacity'
+                              : ''
+                          }`}
+                        >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <UserAvatar
                               name={emp.name}

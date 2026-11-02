@@ -221,14 +221,17 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans overflow-y-auto no-scrollbar"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md font-sans transition-opacity duration-200"
       role="dialog"
       aria-modal="true"
       aria-labelledby="perm-matrix-title"
+      onClick={onClose}
     >
-      <div className="w-[calc(100vw-24px)] max-w-xl rounded-2xl border border-white/10 bg-[#121214] shadow-2xl overflow-hidden my-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08]">
+      <div
+        className="max-w-3xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#14161C] shadow-2xl no-scrollbar transition-all duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[#181B22] sticky top-0 z-10">
           <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={name || node.name} avatarUrl={node.avatar_url} size="md" />
             <div className="min-w-0">
@@ -263,8 +266,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
           </div>
         </div>
 
-        {/* 3 Switchable Tabs */}
-        <div className="px-5 pt-3 border-b border-white/[0.08] bg-[#16161A] flex items-center gap-1 overflow-x-auto no-scrollbar">
+        <div className="px-6 pt-3 border-b border-white/[0.08] bg-[#181B22] flex items-center gap-1 overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setActiveTab('profile')}

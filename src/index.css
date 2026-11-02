@@ -4,13 +4,13 @@
   :root,
   .theme-dark {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --bg-page: #0b0d13;
-    --bg-surface: #12151e;
-    --bg-elevated: #181c28;
-    --bg-input: #141824;
+    --bg-page: #0e1015;
+    --bg-surface: #14161c;
+    --bg-elevated: #1a1d24;
+    --bg-input: #181b22;
     --border-subtle: rgba(255, 255, 255, 0.07);
-    --border-strong: rgba(255, 255, 255, 0.15);
-    --text-primary: #ffffff;
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --text-primary: #f4f4f5;
     --text-secondary: #a1a1aa;
     --text-muted: #71717a;
     color-scheme: dark;
@@ -18,15 +18,15 @@
 
   .theme-light {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --bg-page: #f1f4f9;
-    --bg-surface: #ffffff;
-    --bg-elevated: #f8fafc;
-    --bg-input: #f8fafc;
-    --border-subtle: #e2e8f0;
-    --border-strong: #cbd5e1;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #64748b;
+    --bg-page: #f3f2ee;
+    --bg-surface: #faf9f5;
+    --bg-elevated: #edece6;
+    --bg-input: #f5f4f0;
+    --border-subtle: #e2dfd7;
+    --border-strong: #cfcac0;
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --text-muted: #71717a;
     color-scheme: light;
   }
 
@@ -34,23 +34,13 @@
     font-family: var(--font-sans);
     color: var(--text-primary);
     background-color: var(--bg-page);
-    background-image: radial-gradient(
-      1100px circle at 50% -220px,
-      rgba(99, 102, 241, 0.12),
-      transparent
-    );
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
   }
 
   body.theme-light {
-    background-color: #f1f4f9;
-    background-image: radial-gradient(
-      1200px circle at 50% -200px,
-      rgba(99, 102, 241, 0.08),
-      transparent
-    );
+    background-color: #f3f2ee;
   }
 
   *,
@@ -64,7 +54,6 @@
   }
 }
 
-/* Global focus reset — eliminate browser blue focus rings */
 *:focus {
   outline: none !important;
 }
@@ -73,7 +62,6 @@
   outline: none !important;
 }
 
-/* Hide scrollbars in modals, command bar, and horizontal pill bars */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -94,7 +82,7 @@
 }
 
 .theme-light ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #c7c3b8;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -102,7 +90,7 @@
 }
 
 .theme-light ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #a8a29e;
 }
 
 ::-webkit-scrollbar-track {
@@ -113,11 +101,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ============================================================================
-   LIGHT MODE ("SOFT PLATINUM & ROYAL INDIGO" — LINEAR / ARC / RAYCAST)
-   ============================================================================ */
-
-/* Page & Root Backgrounds */
 html.theme-light,
 body.theme-light,
 .theme-light.bg-\[\#070709\],
@@ -126,29 +109,25 @@ body.theme-light,
 .theme-light .bg-\[\#09090B\],
 .theme-light.bg-\[\#0b0d13\],
 .theme-light .bg-\[\#0b0d13\],
+.theme-light.bg-\[\#0E1015\],
+.theme-light .bg-\[\#0E1015\],
 .theme-light .bg-zinc-950 {
-  background-color: #f1f4f9 !important;
-  background-image: radial-gradient(
-    1200px circle at 50% -200px,
-    rgba(99, 102, 241, 0.08),
-    transparent
-  ) !important;
-  color: #0f172a !important;
-}
-
-/* Warm pearl sidebar in Light Mode */
-.theme-light aside {
-  background-color: #f8fafc !important;
+  background-color: #f3f2ee !important;
   background-image: none !important;
-  border-color: #e2e8f0 !important;
+  color: #18181b !important;
 }
 
-/* Active Sidebar Menu Item in Light Mode: Soft Indigo (No coal-black fills) */
+.theme-light aside {
+  background-color: #edece6 !important;
+  background-image: none !important;
+  border-color: #e2dfd7 !important;
+}
+
 .theme-light .tc-nav-active-light {
   background-color: rgba(79, 70, 229, 0.09) !important;
   color: #4338ca !important;
-  border: 1px solid rgba(99, 102, 241, 0.2) !important;
-  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.06) !important;
+  border: 1px solid rgba(99, 102, 241, 0.22) !important;
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.05) !important;
 }
 
 .theme-light .tc-nav-active-light span {
@@ -171,18 +150,18 @@ body.theme-light,
 .theme-light .bg-\[\#0c0c10\],
 .theme-light .bg-\[\#101014\],
 .theme-light .bg-\[\#141419\],
-.theme-light .bg-\[\#12151e\] {
-  background-color: #ffffff !important;
-  border-color: #e2e8f0 !important;
+.theme-light .bg-\[\#12151e\],
+.theme-light .bg-\[\#14161C\] {
+  background-color: #f3f2ee !important;
+  border-color: #e2dfd7 !important;
 }
 
-/* Primary Buttons in Light Mode: Noble Royal Indigo */
 .theme-light .tc-btn-primary {
   background-image: none !important;
   background-color: #4f46e5 !important;
   color: #ffffff !important;
   border-color: #4f46e5 !important;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.22) !important;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2) !important;
 }
 
 .theme-light .tc-btn-primary:hover {
@@ -191,18 +170,17 @@ body.theme-light,
 }
 
 .theme-light .tc-btn-secondary {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
-  border-color: #cbd5e1 !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  background-color: #faf9f5 !important;
+  color: #18181b !important;
+  border-color: #d6d3cd !important;
+  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04) !important;
 }
 
 .theme-light .tc-btn-secondary:hover {
-  background-color: #f1f5f9 !important;
-  border-color: #94a3b8 !important;
+  background-color: #edece6 !important;
+  border-color: #b8b3a8 !important;
 }
 
-/* Header & Surface Blocks */
 .theme-light .bg-\[\#09090B\]\/90,
 .theme-light .bg-\[\#0B0B0E\],
 .theme-light .bg-\[\#0D0D0F\],
@@ -211,10 +189,9 @@ body.theme-light,
 .theme-light .bg-\[\#0E0E11\],
 .theme-light .bg-\[\#0F0F14\],
 .theme-light .bg-\[\#12151e\]\/95 {
-  background-color: #ffffff !important;
+  background-color: #faf9f5 !important;
 }
 
-/* Cards, Modals & Drawers */
 .theme-light .bg-\[\#101014\],
 .theme-light .bg-\[\#111113\],
 .theme-light .bg-\[\#111114\],
@@ -230,15 +207,15 @@ body.theme-light,
 .theme-light .bg-\[\#131318\],
 .theme-light .bg-\[\#131319\],
 .theme-light .bg-\[\#12151e\],
+.theme-light .bg-\[\#14161C\],
 .theme-light .bg-zinc-900,
 .theme-light .bg-zinc-900\/50,
 .theme-light .bg-zinc-900\/60,
 .theme-light .bg-zinc-900\/90 {
-  background-color: #ffffff !important;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 8px 24px -4px rgba(15, 23, 42, 0.05) !important;
+  background-color: #faf9f5 !important;
+  box-shadow: 0 1px 3px rgba(24, 24, 27, 0.04), 0 8px 24px -4px rgba(24, 24, 27, 0.04) !important;
 }
 
-/* Secondary / Nested Card Surfaces */
 .theme-light .bg-\[\#141414\],
 .theme-light .bg-\[\#141416\],
 .theme-light .bg-\[\#141417\],
@@ -266,6 +243,8 @@ body.theme-light,
 .theme-light .bg-\[\#181820\],
 .theme-light .bg-\[\#181c28\],
 .theme-light .bg-\[\#141824\],
+.theme-light .bg-\[\#181B22\],
+.theme-light .bg-\[\#1A1D24\],
 .theme-light .bg-\[\#19191D\],
 .theme-light .bg-\[\#1A1A1C\],
 .theme-light .bg-\[\#1B1B20\],
@@ -288,16 +267,15 @@ body.theme-light,
 .theme-light .bg-white\/\[0\.05\],
 .theme-light .bg-white\/\[0\.06\],
 .theme-light .bg-white\/10 {
-  background-color: #f1f4f9 !important;
+  background-color: #f3f2ee !important;
 }
 
-/* Inputs, Selects, Textareas in Light Mode */
 .theme-light input:not([type="checkbox"]):not([type="radio"]):not(.tc-composer-input),
 .theme-light select,
 .theme-light textarea {
-  background-color: #f8fafc !important;
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
+  background-color: #f5f4f0 !important;
+  border-color: #d6d3cd !important;
+  color: #18181b !important;
 }
 
 .theme-light input.tc-composer-input,
@@ -305,7 +283,7 @@ body.theme-light,
   background-color: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
-  color: #0f172a !important;
+  color: #18181b !important;
 }
 
 .theme-light input.tc-composer-input:focus,

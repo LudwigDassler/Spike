@@ -314,6 +314,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const quickDealInputRef = React.useRef<HTMLInputElement | null>(null);
   const quickEmployeeInputRef = React.useRef<HTMLInputElement | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
+  const lastScrolledThreadKeyRef = React.useRef<string>('');
+  const lastScrolledMsgCountRef = React.useRef<number>(0);
+  const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [optimisticReactionsMap, setOptimisticReactionsMap] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
 
   // Task & CRM View Modes + Approvals & Document Vault + B2B Enterprise states
   const [taskViewMode, setTaskViewMode] = useState<'list' | 'board' | 'timeline'>('board');
@@ -586,12 +592,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return safeLeads;
   }, [safeLeads, perms.crm_view]);
 
-  // Strict Message Privacy: Direct messages are visible ONLY to sender and recipient
   const visibleMessages = useMemo(() => {
-    return safeMessages.filter((msg) => canUserSeeWorkspaceMessage(msg, currentProfile));
-  }, [safeMessages, currentProfile]);
+    return safeMessages
+      .filter((msg) => canUserSeeWorkspaceMessage(msg, currentProfile))
+      .map((msg) => {
+        const localReactions = optimisticReactionsMap[String(msg.id)];
+        return localReactions ? { ...msg, reactions: localReactions } : msg;
+      });
+  }, [safeMessages, currentProfile, optimisticReactionsMap]);
 
-  // Active thread messages in the Split-View Messenger (strictly chronological ascending by calendar date and timestamp: oldest at top, newest at bottom)
   const activeThreadMessages = useMemo(() => {
     const list = filterMessagesForActiveThread(visibleMessages, activeCommThread, currentProfile);
     const getSafeTime = (m: any): number => {
@@ -615,14 +624,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
     });
   }, [visibleMessages, activeCommThread, currentProfile]);
 
-  // Auto-scroll to bottom when opening a dialog or receiving/sending a message
   useEffect(() => {
     if (activeSection !== 'communications' || commViewMode !== 'messenger') return;
+    const threadKey = `${activeCommThread.type}:${activeCommThread.id}`;
+    const currentCount = activeThreadMessages.length;
+    const isThreadSwitch = lastScrolledThreadKeyRef.current !== threadKey;
+    const isNewMessageAdded = currentCount > lastScrolledMsgCountRef.current;
+
+    lastScrolledThreadKeyRef.current = threadKey;
+    lastScrolledMsgCountRef.current = currentCount;
+
+    if (!isThreadSwitch && !isNewMessageAdded) return;
+
     const timer = setTimeout(() => {
       try {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        messagesEndRef.current?.scrollIntoView({
+          behavior: isThreadSwitch ? 'auto' : 'smooth',
+          block: 'end',
+        });
       } catch {}
-    }, 60);
+    }, 30);
     return () => clearTimeout(timer);
   }, [
     activeSection,
@@ -648,10 +669,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
   );
 
   const showToast = (msg: string) => {
-    setToastBanner(msg);
-    setTimeout(() => {
-      setToastBanner((prev) => (prev === msg ? null : prev));
-    }, 2500);
+    const normalized =
+      !isEn && msg === 'Organization subscription plan updated.'
+        ? 'Тарифный план организации обновлен.'
+        : msg;
+    setToastBanner(normalized);
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = setTimeout(() => {
+      setToastBanner(null);
+    }, 3000);
   };
 
   // Department Constructor handlers (БЛОК 2 — изолировано по companyId)
@@ -1371,13 +1399,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleToggleMessageReaction = async (
+  const handleToggleMessageReaction = (
     msg: WorkspaceMessageRecord,
     emoji: string
   ) => {
+    const msgId = String(msg.id);
     const actorId = String(currentProfile?.id || 'root');
-    const currentReactions =
-      msg.reactions && typeof msg.reactions === 'object' ? { ...msg.reactions } : {};
+    const baseReactions =
+      optimisticReactionsMap[msgId] ||
+      (msg.reactions && typeof msg.reactions === 'object' ? msg.reactions : {});
+    const currentReactions: Record<string, string[]> = { ...baseReactions };
     const existingList = Array.isArray(currentReactions[emoji])
       ? [...currentReactions[emoji]]
       : [];
@@ -1392,15 +1423,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
       delete currentReactions[emoji];
     }
 
-    await onPatchRecord('workspace_messages', msg.id, {
+    setOptimisticReactionsMap((prev) => ({
+      ...prev,
+      [msgId]: currentReactions,
+    }));
+
+    void onPatchRecord('workspace_messages', msg.id, {
       reactions: currentReactions,
     });
   };
 
-  // Send Corporate Message from Split-View Messenger (Инфополе и Связь)
   const submitCurrentCommMessage = async () => {
     const msgBody = commText.trim();
-    if ((!msgBody && commAttachments.length === 0) || !onSendMessage || isSendingComm) return;
+    if ((!msgBody && commAttachments.length === 0) || !onSendMessage) return;
 
     const finalText =
       msgBody ||
@@ -1412,62 +1447,53 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const pendingFiles = [...commAttachments];
     const pendingUrgent = commUrgent;
 
-    // Instant UI reset (0ms latency feel)
     setCommText('');
     setCommAttachments([]);
     setCommUrgent(false);
     setReplyingToMessage(null);
     setShowEmojiPicker(false);
 
-    setIsSendingComm(true);
-    try {
-      let targetType: 'direct' | 'department' | 'broadcast' = 'broadcast';
-      let targetId = 'general';
-      let targetLabel = 'Циркуляр по компании';
-      let recipientId: string | null = null;
-      let targetDepartment: string | null = null;
+    let targetType: 'direct' | 'department' | 'broadcast' = 'broadcast';
+    let targetId = 'general';
+    let targetLabel = 'Циркуляр по компании';
+    let recipientId: string | null = null;
+    let targetDepartment: string | null = null;
 
-      if (activeCommThread.type === 'direct') {
-        const recipientNode = safeNodes.find(
-          (n) => String(n.id) === String(activeCommThread.id)
-        );
-        targetType = 'direct';
-        targetId = String(recipientNode?.id || activeCommThread.id);
-        targetLabel = recipientNode?.name || activeCommThread.label;
-        recipientId = targetId;
-      } else if (activeCommThread.type === 'department') {
-        targetType = 'department';
-        targetId = activeCommThread.id;
-        targetLabel = activeCommThread.label;
-        targetDepartment = activeCommThread.id;
-      }
-
-      const payload: Record<string, any> = {
-        company_id: companyId,
-        sender_id: currentProfile?.id ? String(currentProfile.id) : null,
-        sender_name: currentProfile?.name || 'Сотрудник TedCloud',
-        sender_role: currentProfile?.role_type || '',
-        target_type: targetType,
-        target_id: targetId,
-        target_label: targetLabel,
-        scope_type: targetType,
-        recipient_id: recipientId,
-        target_department: targetDepartment,
-        message_text: finalText,
-        text: finalText,
-        is_urgent: pendingUrgent,
-        is_read: false,
-        attachments: pendingFiles,
-        reply_to: pendingReply || null,
-      };
-
-      const res = await onSendMessage(payload);
-      if (res.ok) {
-        showToast(t('comm.sentToast'));
-      }
-    } finally {
-      setIsSendingComm(false);
+    if (activeCommThread.type === 'direct') {
+      const recipientNode = safeNodes.find(
+        (n) => String(n.id) === String(activeCommThread.id)
+      );
+      targetType = 'direct';
+      targetId = String(recipientNode?.id || activeCommThread.id);
+      targetLabel = recipientNode?.name || activeCommThread.label;
+      recipientId = targetId;
+    } else if (activeCommThread.type === 'department') {
+      targetType = 'department';
+      targetId = activeCommThread.id;
+      targetLabel = activeCommThread.label;
+      targetDepartment = activeCommThread.id;
     }
+
+    const payload: Record<string, any> = {
+      company_id: companyId,
+      sender_id: currentProfile?.id ? String(currentProfile.id) : null,
+      sender_name: currentProfile?.name || 'Сотрудник TedCloud',
+      sender_role: currentProfile?.role_type || '',
+      target_type: targetType,
+      target_id: targetId,
+      target_label: targetLabel,
+      scope_type: targetType,
+      recipient_id: recipientId,
+      target_department: targetDepartment,
+      message_text: finalText,
+      text: finalText,
+      is_urgent: pendingUrgent,
+      is_read: false,
+      attachments: pendingFiles,
+      reply_to: pendingReply || null,
+    };
+
+    void onSendMessage(payload);
   };
 
   const handleSendCorporateMessage = async (e: React.FormEvent) => {
@@ -1971,8 +1997,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     <div
       className={`flex h-dvh w-full max-w-full overflow-hidden font-sans antialiased ${
         theme === 'light'
-          ? 'theme-light bg-slate-100/80 text-[#0f172a]'
-          : 'theme-dark bg-[#070709] text-[#EDEDED]'
+          ? 'theme-light bg-[#F3F2EE] text-[#18181B]'
+          : 'theme-dark bg-[#0E1015] text-[#EDEDED]'
       }`}
     >
       <Sidebar
@@ -1988,8 +2014,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onRequestSignOut={onResetSession ? requestSignOut : undefined}
       />
 
-      {/* БЛОК 2: Архитектура «Вложенного холста» (Inset Canvas) + Ambient Glow */}
-      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto flex flex-col lg:m-2.5 lg:rounded-2xl bg-[#0c0c10] border border-white/[0.07] shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-64 before:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(99,102,241,0.09),transparent)]">
+      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto flex flex-col lg:m-2.5 lg:rounded-2xl bg-[#14161C] border border-white/[0.07] shadow-[0_0_50px_-12px_rgba(0,0,0,0.65)] relative">
         <TopBar
           companyId={companyId}
           companyName={companyName}
@@ -2038,17 +2063,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
         />
 
         {toastBanner && (
-          <div className="fixed bottom-5 right-5 z-50 max-w-sm flex items-center gap-3 rounded-xl border border-white/15 bg-zinc-900/95 px-4 py-2.5 text-xs text-white shadow-2xl backdrop-blur-md">
-            <div className="flex items-center gap-2 min-w-0">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="truncate font-medium">{toastBanner}</span>
-            </div>
-            <button
-              onClick={() => setToastBanner(null)}
-              className="text-zinc-400 hover:text-white text-[11px] font-semibold shrink-0 ml-1"
-            >
-              OK
-            </button>
+          <div
+            role="status"
+            aria-live="polite"
+            className={`fixed top-4 right-4 z-50 max-w-sm flex items-center gap-2.5 rounded-xl border px-4 py-3 text-xs font-medium transition-all duration-200 ${
+              theme === 'light'
+                ? 'bg-[#FAF9F5] border-[#D6D3CD] text-[#18181B] shadow-[0_10px_30px_-5px_rgba(24,24,27,0.14)]'
+                : 'bg-[#14161C] border-white/12 text-zinc-100 shadow-2xl'
+            }`}
+          >
+            {/(ошибк|error|fail|не удал)/i.test(toastBanner) ? (
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            )}
+            <span className="leading-snug">{toastBanner}</span>
           </div>
         )}
 
@@ -2226,6 +2255,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   canViewCrm={perms.crm_view}
                   onSelectTask={(taskId) => setDrawerSelection({ kind: 'task', id: taskId })}
                   onSelectLead={(leadId) => setDrawerSelection({ kind: 'lead', id: leadId })}
+                  onSelectEmployee={
+                    perms.team_manage ? (emp) => setPermissionsModalNode(emp) : undefined
+                  }
                 />
               ) : (
                 <>
@@ -2930,7 +2962,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             return (
                               <div
                                 key={member.id}
-                                className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
+                                onClick={() => {
+                                  if (perms.team_manage) {
+                                    setPermissionsModalNode(member);
+                                  }
+                                }}
+                                className={`py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3 ${
+                                  perms.team_manage
+                                    ? 'cursor-pointer hover:bg-white/[0.04] rounded-lg px-2 -mx-2 transition-colors'
+                                    : ''
+                                }`}
                               >
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <UserAvatar
@@ -5288,6 +5329,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   canViewCrm={perms.crm_view}
                   onSelectTask={(taskId) => setDrawerSelection({ kind: 'task', id: taskId })}
                   onSelectLead={(leadId) => setDrawerSelection({ kind: 'lead', id: leadId })}
+                  onSelectEmployee={(emp) => setPermissionsModalNode(emp)}
                 />
               ) : (
                 <section className="rounded-xl border border-white/[0.07] bg-[#111114] shadow-2xl overflow-hidden">
