@@ -108,7 +108,6 @@ import {
   PRIMARY_BTN_CLASS,
   SECONDARY_BTN_CLASS,
 } from './ProgressiveModals';
-import { AuthGate } from './AuthGate';
 import {
   buildBuiltInChecklistForTask,
   getPlanPrice,
@@ -306,11 +305,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     {}
   );
 
-  // Progressive Disclosure Modals (Profile & Workspace)
   const [isMyPermissionsModalOpen, setIsMyPermissionsModalOpen] = useState(false);
   const [isMyAccessKeysModalOpen, setIsMyAccessKeysModalOpen] = useState(false);
   const [isLegalRequisitesModalOpen, setIsLegalRequisitesModalOpen] = useState(false);
-  const [isProductShowcaseOpen, setIsProductShowcaseOpen] = useState(false);
   const [isSecurityAuditModalOpen, setIsSecurityAuditModalOpen] = useState(false);
 
   const quickTaskInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -1989,7 +1986,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           messages: visibleMessages.length,
         }}
         onRequestSignOut={onResetSession ? requestSignOut : undefined}
-        onOpenProductShowcase={() => setIsProductShowcaseOpen(true)}
       />
 
       {/* БЛОК 2: Архитектура «Вложенного холста» (Inset Canvas) + Ambient Glow */}
@@ -4668,8 +4664,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                {/* Поток сообщений (px-6 pt-8 pb-6 space-y-3, чтобы верхняя панель реакций никогда не срезалась) */}
-                <div className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar px-4 sm:px-6 pt-8 pb-6 space-y-3">
+                <div className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar px-6 py-5 space-y-3">
                   {activeThreadMessages.length === 0 ? (
                     <RichEmptyState
                       variant="chat"
@@ -4721,7 +4716,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           String(prevMsg.sender_id || prevMsg.sender_name || '') !==
                             String(msg.sender_id || msg.sender_name || '');
 
-                        // Разделитель дат по центру («Сегодня», «Вчера», «27 октября») при смене дня
                         const msgDateObj = msg.created_at ? new Date(msg.created_at) : null;
                         const prevDateObj = prevMsg?.created_at ? new Date(prevMsg.created_at) : null;
                         const msgDayKey =
@@ -4785,11 +4779,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               } ${isFirstInSequence && idx > 0 ? 'mt-3' : 'mt-1'}`}
                             >
                               <div
-                                className={`relative flex items-end gap-2 w-full ${
+                                className={`relative flex items-end gap-2.5 w-full ${
                                   isOutgoing ? 'justify-end' : 'justify-start'
                                 }`}
                               >
-                                {/* В групповых каналах аватар только у первого сообщения в серии от автора; в личных 1-на-1 чатах аватар внутри баблов убран */}
                                 {!isDirectThread && !isOutgoing && (
                                   <div className="w-7 shrink-0 flex justify-center">
                                     {isFirstInSequence ? (
@@ -4803,39 +4796,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </div>
                                 )}
 
-                                {/* Карточки сообщений: в Светлой теме исходящие — мягкий благородный индиго (bg-indigo-600 text-white shadow-xs) */}
                                 <div
-                                  className={`relative group w-fit max-w-[70%] sm:max-w-[65%] px-3.5 py-2.5 text-[14px] leading-[1.38] break-words rounded-2xl transition-colors ${
+                                  className={`relative group w-fit max-w-[75%] px-4 py-2.5 text-[14px] leading-[1.4] break-words rounded-2xl transition-colors ${
                                     isOutgoing
                                       ? theme === 'light'
                                         ? 'ml-auto tc-bubble-outgoing bg-indigo-600 text-white border border-indigo-600 shadow-xs rounded-br-sm'
                                         : 'ml-auto tc-bubble-outgoing bg-indigo-600/90 border border-indigo-500/30 text-white shadow-xs rounded-br-sm'
                                       : theme === 'light'
-                                      ? 'bg-white border border-slate-200/90 text-slate-900 shadow-2xs rounded-bl-sm'
-                                      : 'bg-zinc-900/90 border border-white/[0.07] text-zinc-100 shadow-2xs rounded-bl-sm'
+                                      ? 'mr-auto bg-white border border-slate-200/90 text-slate-900 shadow-2xs rounded-bl-sm'
+                                      : 'mr-auto bg-zinc-900/90 border border-white/[0.07] text-zinc-100 shadow-2xs rounded-bl-sm'
                                   }`}
                                 >
-                                  {/* Компактная мини-капсула быстрых реакций прямо НАД верхним углом сообщения (-top-8 right-0 / left-0) */}
                                   <div
-                                    className={`tc-reaction-pill absolute z-30 -top-8 ${
+                                    className={`tc-reaction-pill absolute z-30 -top-9 ${
                                       isOutgoing ? 'right-0' : 'left-0'
-                                    } hidden group-hover:flex focus-within:flex items-center gap-0.5 px-1.5 py-0.5 rounded-full w-max whitespace-nowrap shadow-xl backdrop-blur-md bg-zinc-900/95 text-white border border-white/15 transition-all duration-150`}
+                                    } hidden group-hover:flex focus-within:flex items-center gap-1 px-2 py-1 rounded-full w-max whitespace-nowrap shadow-lg transition-all duration-150 ${
+                                      theme === 'light'
+                                        ? 'bg-white border border-slate-200 text-slate-900'
+                                        : 'bg-zinc-900 border border-white/10 text-zinc-100'
+                                    }`}
                                   >
-                                    {(['OK', '+1', 'ACK', 'SLA'] as const).map((reactionTag) => (
-                                      <button
-                                        key={reactionTag}
-                                        type="button"
-                                        onClick={() =>
-                                          void handleToggleMessageReaction(msg, reactionTag)
-                                        }
-                                        className="px-1.5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-bold hover:bg-white/15 transition-colors shrink-0 text-zinc-200"
-                                        title={reactionTag}
-                                      >
-                                        {reactionTag}
-                                      </button>
-                                    ))}
+                                    {(['👍', '🔥', '❤️', '✅', '👏', '👀'] as const).map(
+                                      (reactionEmoji) => (
+                                        <button
+                                          key={reactionEmoji}
+                                          type="button"
+                                          onClick={() =>
+                                            void handleToggleMessageReaction(msg, reactionEmoji)
+                                          }
+                                          className={`w-6 h-6 rounded-full inline-flex items-center justify-center text-sm hover:scale-110 transition-transform shrink-0 cursor-pointer ${
+                                            theme === 'light'
+                                              ? 'hover:bg-slate-100'
+                                              : 'hover:bg-white/10'
+                                          }`}
+                                          title={reactionEmoji}
+                                        >
+                                          {reactionEmoji}
+                                        </button>
+                                      )
+                                    )}
 
-                                    <span className="w-px h-3.5 bg-white/15 mx-0.5 shrink-0" />
+                                    <span
+                                      className={`w-px h-3.5 mx-0.5 shrink-0 ${
+                                        theme === 'light' ? 'bg-slate-200' : 'bg-white/15'
+                                      }`}
+                                    />
 
                                     <button
                                       type="button"
@@ -4846,7 +4851,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                           text: messageBody.slice(0, 140),
                                         })
                                       }
-                                      className="w-6 h-6 rounded-full inline-flex items-center justify-center hover:bg-white/15 text-zinc-200 hover:text-white transition-colors shrink-0"
+                                      className={`w-6 h-6 rounded-full inline-flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                                        theme === 'light'
+                                          ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900'
+                                          : 'hover:bg-white/15 text-zinc-300 hover:text-white'
+                                      }`}
                                       title={isEn ? 'Reply' : 'Ответить'}
                                       aria-label={isEn ? 'Reply' : 'Ответить'}
                                     >
@@ -4857,7 +4866,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => handleConvertMessageToTask(msg)}
-                                        className="w-6 h-6 rounded-full inline-flex items-center justify-center hover:bg-indigo-500/25 text-indigo-300 hover:text-indigo-200 transition-colors shrink-0"
+                                        className={`w-6 h-6 rounded-full inline-flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                                          theme === 'light'
+                                            ? 'hover:bg-indigo-50 text-indigo-600'
+                                            : 'hover:bg-indigo-500/25 text-indigo-300 hover:text-indigo-200'
+                                        }`}
                                         title={isEn ? 'Create Task' : 'Создать задачу'}
                                         aria-label={isEn ? 'Create Task' : 'Создать задачу'}
                                       >
@@ -4866,7 +4879,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     )}
                                   </div>
 
-                                  {/* В групповых каналах имя автора рендерится только на первом сообщении в серии */}
                                   {!isDirectThread && !isOutgoing && isFirstInSequence && (
                                     <div className="flex items-center gap-1.5 mb-1">
                                       <span className="text-xs font-semibold text-indigo-400 truncate">
@@ -4889,7 +4901,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                   )}
 
-                                  {/* Цитируемое сообщение (Reply Quote) */}
                                   {msg.reply_to && msg.reply_to.text && (
                                     <div
                                       className={`mb-1 px-2.5 py-1 rounded-lg border-l-2 text-xs ${
@@ -4907,7 +4918,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                   )}
 
-                                  {/* Текст сообщения + встроенное время и векторная иконка доставки CheckCheck */}
                                   <div className="inline-flex flex-wrap items-end gap-x-2.5 gap-y-0.5 max-w-full">
                                     <span className="whitespace-pre-wrap break-words">
                                       {messageBody}
@@ -4937,7 +4947,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                   )}
 
-                                  {/* Кнопка подтверждения ознакомления для циркуляров (Broadcast Read Receipts) */}
                                   {!isDirectThread && activeCommThread.type === 'broadcast' && (
                                     <div className="pt-2 mt-1.5 border-t border-white/10 flex items-center justify-between gap-2">
                                       {(() => {
@@ -4990,10 +4999,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 </div>
                               </div>
 
-                              {/* Пилюли поставленных реакций под баблом */}
                               {reactionEntries.length > 0 && (
                                 <div
-                                  className={`flex flex-wrap items-center gap-1 mt-1 ${
+                                  className={`flex flex-wrap items-center gap-1 mt-1.5 ${
                                     isOutgoing
                                       ? 'justify-end'
                                       : isDirectThread
@@ -5012,9 +5020,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                         onClick={() =>
                                           void handleToggleMessageReaction(msg, emoji)
                                         }
-                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors cursor-pointer ${
                                           isMine
-                                            ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200'
+                                            ? theme === 'light'
+                                              ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                                              : 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200'
+                                            : theme === 'light'
+                                            ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs'
                                             : 'bg-zinc-900/90 border-white/10 text-zinc-300 hover:bg-zinc-800'
                                         }`}
                                       >
@@ -5036,7 +5048,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   )}
                 </div>
 
-                {/* Плашка цитируемого сообщения (Reply Banner) над полем ввода — адаптивная под тему */}
                 {replyingToMessage && (
                   <div
                     className={`tc-reply-banner shrink-0 px-4 py-2 flex items-center justify-between gap-3 ${
@@ -5083,7 +5094,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
 
-                {/* Превью выбранных вложений перед отправкой (Light theme: bg-slate-100 border-t border-slate-200 text-slate-800) */}
                 {commAttachments.length > 0 && (
                   <div
                     className={`shrink-0 px-4 py-2 ${
@@ -5101,32 +5111,58 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
 
-                {/* Современная капсула ввода (Composer) с Emoji Picker, Paperclip, прозрачным Input, Urgent и круглой кнопкой Send */}
                 <div className="relative shrink-0 sticky bottom-0 p-3 border-t border-white/[0.07] bg-[#111115]">
                   {showEmojiPicker && (
-                    <div className="absolute bottom-16 left-4 z-30 p-2 rounded-2xl bg-[#18181F] border border-white/10 shadow-2xl flex flex-wrap gap-1.5 max-w-xs">
-                      {[
-                        isEn ? 'Accepted in work' : 'Принято в работу',
-                        isEn ? 'Approved' : 'Согласовано',
-                        isEn ? 'Completed' : 'Выполнено',
-                        isEn ? 'On Review' : 'На проверке',
-                        isEn ? 'Urgent SLA' : 'Срочно по SLA',
-                        isEn ? 'Send contract' : 'Отправьте договор',
-                      ].map((quickPhrase) => (
-                        <button
-                          key={quickPhrase}
-                          type="button"
-                          onClick={() => {
-                            setCommText((prev) =>
-                              prev ? `${prev} ${quickPhrase}` : quickPhrase
-                            );
-                            setShowEmojiPicker(false);
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-indigo-500/20 border border-white/10 text-[11px] font-medium text-zinc-200 transition-colors"
-                        >
-                          {quickPhrase}
-                        </button>
-                      ))}
+                    <div
+                      className={`absolute bottom-16 left-4 z-30 p-2.5 rounded-2xl shadow-xl flex flex-col gap-2 max-w-xs border ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-200 text-slate-900'
+                          : 'bg-zinc-900 border-white/10 text-zinc-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {(['👍', '🔥', '❤️', '✅', '👏', '👀'] as const).map((emojiChar) => (
+                          <button
+                            key={emojiChar}
+                            type="button"
+                            onClick={() => {
+                              setCommText((prev) => (prev ? `${prev} ${emojiChar}` : emojiChar));
+                              setShowEmojiPicker(false);
+                            }}
+                            className={`w-8 h-8 rounded-full inline-flex items-center justify-center text-base hover:scale-110 transition-transform cursor-pointer ${
+                              theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-white/10'
+                            }`}
+                          >
+                            {emojiChar}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-200/60 dark:border-white/10">
+                        {[
+                          isEn ? 'Accepted in work' : 'Принято в работу',
+                          isEn ? 'Approved' : 'Согласовано',
+                          isEn ? 'Completed' : 'Выполнено',
+                          isEn ? 'On Review' : 'На проверке',
+                        ].map((quickPhrase) => (
+                          <button
+                            key={quickPhrase}
+                            type="button"
+                            onClick={() => {
+                              setCommText((prev) =>
+                                prev ? `${prev} ${quickPhrase}` : quickPhrase
+                              );
+                              setShowEmojiPicker(false);
+                            }}
+                            className={`px-2 py-1 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer ${
+                              theme === 'light'
+                                ? 'bg-slate-50 hover:bg-indigo-50 border-slate-200 text-slate-700'
+                                : 'bg-white/[0.06] hover:bg-indigo-500/20 border-white/10 text-zinc-200'
+                            }`}
+                          >
+                            {quickPhrase}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -6684,36 +6720,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       />
 
-      {/* Product Showcase & Pricing Modal (О платформе и Тарифы) */}
-      {isProductShowcaseOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-[#060609] overflow-y-auto"
-          role="dialog"
-          aria-modal="true"
-        >
-          <AuthGate
-            existingNodes={safeNodes}
-            nodes={safeNodes}
-            tasks={visibleTasks}
-            leads={visibleLeads}
-            existingCompany={company}
-            company={company}
-            currentUser={currentProfile}
-            botUsername={botUsername}
-            showcaseOnly
-            onCloseShowcase={() => setIsProductShowcaseOpen(false)}
-            onSelectPlanFromWorkspace={(planTier) => {
-              setIsProductShowcaseOpen(false);
-              setCheckoutModalPlan(planTier);
-            }}
-            onAuthenticated={async () => {
-              setIsProductShowcaseOpen(false);
-            }}
-          />
-        </div>
-      )}
-
-      {/* TedCloud Intelligence Drawer (БЛОК 2) */}
       <TedCloudAiDrawer
         isOpen={isAiDrawerOpen}
         onClose={() => setIsAiDrawerOpen(false)}

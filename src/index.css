@@ -315,16 +315,15 @@ body.theme-light,
   box-shadow: none !important;
 }
 
-/* Floating Reaction Pill always retains high-contrast dark surface */
 .theme-light .tc-reaction-pill,
 .theme-light .tc-reaction-pill button,
 .theme-light .tc-reaction-pill span {
-  color: #ffffff !important;
+  color: #0f172a !important;
 }
 
 .theme-light .tc-reaction-pill {
-  background-color: rgba(24, 24, 27, 0.96) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
 }
 
 /* Outgoing chat card in Light Mode: Noble Royal Indigo bubble */

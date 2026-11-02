@@ -37,7 +37,6 @@ interface SidebarProps {
     messages: number;
   };
   onRequestSignOut?: () => void;
-  onOpenProductShowcase?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -46,7 +45,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentProfile,
   counts,
   onRequestSignOut,
-  onOpenProductShowcase,
 }) => {
   const { language, setLanguage, theme, toggleTheme, t, formatRole } = useLocale();
   const isEn = language === 'en';
@@ -146,7 +144,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       } shrink-0 bg-[#0b0d13] border-r border-white/[0.06] flex-col justify-between min-h-screen select-none overflow-hidden transition-all duration-200`}
     >
       <div>
-        {/* Brand Header with Collapse Toggle */}
         <div
           className={`h-14 ${
             isSidebarCollapsed ? 'px-2 justify-center' : 'px-3.5 justify-between'
@@ -186,7 +183,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Navigation Links */}
         <nav className={`${isSidebarCollapsed ? 'px-2' : 'px-2.5'} pt-2.5 pb-2 space-y-1`}>
           {!isSidebarCollapsed && (
             <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6E6E77] truncate">
@@ -253,27 +249,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      {/* Bottom Profile + Product Showcase Trigger + Sleek Control Bar */}
       <div className="p-2.5 pb-3 shrink-0 space-y-2 border-t border-white/[0.05]">
-        {onOpenProductShowcase && (
-          <button
-            type="button"
-            onClick={onOpenProductShowcase}
-            title={isEn ? 'Platform Overview & Pricing' : 'О платформе и Тарифы (Витрина)'}
-            className={`w-full flex items-center ${
-              isSidebarCollapsed ? 'justify-center px-0 py-2' : 'justify-between px-2.5 py-2'
-            } rounded-xl border border-indigo-500/20 bg-indigo-500/[0.07] hover:bg-indigo-500/[0.14] text-indigo-300 text-xs font-medium transition-colors cursor-pointer`}
-          >
-            <span className="flex items-center gap-2 min-w-0">
-              <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-              {!isSidebarCollapsed && (
-                <span className="truncate">
-                  {isEn ? 'Platform & Pricing' : 'О платформе и Тарифы'}
-                </span>
-              )}
-            </span>
-          </button>
-        )}
 
         {currentProfile ? (
           <button

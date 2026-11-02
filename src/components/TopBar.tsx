@@ -1,9 +1,8 @@
 import React from 'react';
-import { RefreshCw, Search, Command, X, Menu, Sun, Moon } from 'lucide-react';
+import { RefreshCw, Search, Command, X, Menu, Sun, Moon, Bot } from 'lucide-react';
 import { DashboardSection, OrganizationNode, TaskRecord, WorkShiftRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 import { WorkdayShiftWidget } from './EnterpriseB2BFeatures';
-import { TeddyAvatar } from './TedCloudAiDrawer';
 
 interface TopBarProps {
   companyId?: string;
@@ -52,7 +51,6 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <header className="h-14 border-b border-white/[0.07] bg-[#09090B]/90 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20 font-sans">
-      {/* Zone 1: Mobile Menu Trigger + Breadcrumbs */}
       <div className="flex items-center gap-2 min-w-0 text-xs">
         {onOpenMobileMenu && (
           <button
@@ -82,9 +80,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </span>
       </div>
 
-      {/* Zone 2 & 3: Global Search (Cmd+K) + Workday Shift Tracker + TedCloud Intelligence + Theme Switcher + Refresh */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        {/* Mobile compact search button (< 640px) */}
         {onOpenCommandBar && (
           <button
             type="button"
@@ -96,7 +92,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         )}
 
-        {/* Desktop & Tablet search bar (>= 640px) */}
         <div className="relative hidden sm:flex items-center">
           <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -140,7 +135,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Live Workday Shift Tracker */}
         <WorkdayShiftWidget
           companyId={companyId}
           currentProfile={currentProfile}
@@ -156,9 +150,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onOpenAiCopilot}
             aria-label="Teddy"
-            className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-indigo-500/30 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors whitespace-nowrap shadow-xs shrink-0"
+            className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-indigo-500/30 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors whitespace-nowrap shadow-xs shrink-0 cursor-pointer"
           >
-            <TeddyAvatar size="xs" />
+            <div className="w-5 h-5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <Bot className="w-3.5 h-3.5" />
+            </div>
             <span className="hidden md:inline">Teddy</span>
           </button>
         )}
