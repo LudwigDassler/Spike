@@ -121,6 +121,10 @@ function AppContent() {
   const recentMessagePatchesRef = useRef<
     Map<string, { updates: Record<string, any>; timestamp: number }>
   >(new Map());
+  const recentSentMessagesRef = useRef<
+    Map<string, { message: WorkspaceMessageRecord; timestamp: number }>
+  >(new Map());
+  const latestMaxMsgTimestampRef = useRef<number>(0);
 
   // Global crash protection for unhandled promise rejections (Block 4)
   useEffect(() => {
@@ -182,7 +186,7 @@ function AppContent() {
           localStorage.setItem(SESSION_CHAT_ID_KEY, urlTgId || urlChatId || '');
         } catch {}
       }
-      setActiveChatId(resolvedChatId);
+      setActiveChatId((prev) => (prev === resolvedChatId ? prev : resolvedChatId));
 
       const queryParams = new URLSearchParams();
       if (urlInvite) queryParams.set('invite', urlInvite);
@@ -210,15 +214,51 @@ function AppContent() {
       const loadedNodes: OrganizationNode[] = Array.isArray(payload.nodes)
         ? payload.nodes
         : [];
-      setCompany(payload.company || null);
-      setNodes(loadedNodes);
-      setTasks(Array.isArray(payload.tasks) ? payload.tasks : []);
-      setLeads(Array.isArray(payload.leads) ? payload.leads : []);
+      const nextCompany = payload.company || null;
+      const nextTasks: TaskRecord[] = Array.isArray(payload.tasks) ? payload.tasks : [];
+      const nextLeads: CrmLeadRecord[] = Array.isArray(payload.leads) ? payload.leads : [];
+      const nextInvoices: BillingInvoiceRecord[] = Array.isArray(payload.invoices)
+        ? payload.invoices
+        : [];
+      const nextWorkShifts: WorkShiftRecord[] = Array.isArray(payload.workShifts)
+        ? payload.workShifts
+        : [];
+      const nextAuditLogs: AuditLogRecord[] = Array.isArray(payload.auditLogs)
+        ? payload.auditLogs
+        : [];
+
+      setCompany((prev) =>
+        silent && JSON.stringify(prev) === JSON.stringify(nextCompany) ? prev : nextCompany
+      );
+      setNodes((prev) =>
+        silent && JSON.stringify(prev) === JSON.stringify(loadedNodes) ? prev : loadedNodes
+      );
+      setTasks((prev) =>
+        silent && JSON.stringify(prev) === JSON.stringify(nextTasks) ? prev : nextTasks
+      );
+      setLeads((prev) =>
+        silent && JSON.stringify(prev) === JSON.stringify(nextLeads) ? prev : nextLeads
+      );
       setMessages((prev) => {
         const now = Date.now();
         for (const [k, v] of recentMessagePatchesRef.current.entries()) {
-          if (now - v.timestamp > 8000) {
+          if (now - v.timestamp > 12000) {
             recentMessagePatchesRef.current.delete(k);
+          }
+        }
+        for (const [k, v] of recentSentMessagesRef.current.entries()) {
+          if (now - v.timestamp > 30000) {
+            recentSentMessagesRef.current.delete(k);
+          }
+        }
+
+        const prevArr = Array.isArray(prev) ? prev : [];
+        const prevClientKeyById = new Map<string, string>();
+        for (const pm of prevArr) {
+          const pid = String(pm.id || '');
+          const cKey = (pm as any)._clientKey;
+          if (pid && cKey) {
+            prevClientKeyById.set(pid, cKey);
           }
         }
 
@@ -227,12 +267,16 @@ function AppContent() {
           : [];
         const seenIds = new Set<string>();
         const dedupedServer: WorkspaceMessageRecord[] = [];
+        let maxTs = latestMaxMsgTimestampRef.current;
+
         for (const m of serverList) {
           const mid = String(m.id || '');
           if (mid && seenIds.has(mid)) continue;
           const mSender = String(m.sender_id || '');
           const mText = String(m.message_text || m.text || '').trim();
           const mTime = m.created_at ? new Date(m.created_at).getTime() : 0;
+          if (mTime > maxTs) maxTs = mTime;
+
           const isNearDuplicate = dedupedServer.some((existing) => {
             const eSender = String(existing.sender_id || '');
             const eText = String(existing.message_text || existing.text || '').trim();
@@ -243,39 +287,66 @@ function AppContent() {
               mText.length > 0 &&
               mTime > 0 &&
               eTime > 0 &&
-              Math.abs(mTime - eTime) <= 3000
+              Math.abs(mTime - eTime) <= 2500
             );
           });
           if (isNearDuplicate) continue;
           if (mid) seenIds.add(mid);
           const recentPatch = mid ? recentMessagePatchesRef.current.get(mid) : undefined;
-          dedupedServer.push(recentPatch ? { ...m, ...recentPatch.updates } : m);
+          const existingClientKey = mid ? prevClientKeyById.get(mid) : undefined;
+          const mergedMsg: any = recentPatch ? { ...m, ...recentPatch.updates } : { ...m };
+          if (existingClientKey) {
+            mergedMsg._clientKey = existingClientKey;
+          }
+          dedupedServer.push(mergedMsg);
         }
 
-        const prevArr = Array.isArray(prev) ? prev : [];
-        const remainingOptimistic = prevArr.filter((opt) => {
-          if (!String(opt.id || '').startsWith('optimistic_')) return false;
-          const optSender = String(opt.sender_id || '');
-          const optText = String(opt.message_text || opt.text || '').trim();
-          const optTime = opt.created_at ? new Date(opt.created_at).getTime() : Date.now();
-          const matchedInServer = dedupedServer.some((srv) => {
+        // Ensure recently sent messages (optimistic or confirmed within the last 30s) are never dropped by an in-flight poll
+        const pendingRecent: WorkspaceMessageRecord[] = [];
+        for (const [, entry] of recentSentMessagesRef.current.entries()) {
+          const rm = entry.message;
+          const rmId = String(rm.id || '');
+          const rmSender = String(rm.sender_id || '');
+          const rmText = String(rm.message_text || rm.text || '').trim();
+          const rmTime = rm.created_at ? new Date(rm.created_at).getTime() : 0;
+          if (rmTime > maxTs) maxTs = rmTime;
+
+          const matchedIndex = dedupedServer.findIndex((srv) => {
+            if (rmId && !rmId.startsWith('optimistic_') && String(srv.id || '') === rmId) {
+              return true;
+            }
             const srvSender = String(srv.sender_id || '');
             const srvText = String(srv.message_text || srv.text || '').trim();
             const srvTime = srv.created_at ? new Date(srv.created_at).getTime() : 0;
             return (
-              srvSender === optSender &&
-              srvText === optText &&
+              srvSender === rmSender &&
+              srvText === rmText &&
               srvTime > 0 &&
-              Math.abs(srvTime - optTime) <= 5000
+              Math.abs(srvTime - rmTime) <= 10000
             );
           });
-          return !matchedInServer;
-        });
+
+          if (matchedIndex !== -1) {
+            const srvItem: any = dedupedServer[matchedIndex];
+            if ((rm as any)._clientKey && !srvItem._clientKey) {
+              srvItem._clientKey = (rm as any)._clientKey;
+            }
+            // Preserve monotonic created_at if server returned an older clock value
+            if (rmTime > 0) {
+              const srvTime = srvItem.created_at ? new Date(srvItem.created_at).getTime() : 0;
+              if (rmTime > srvTime) {
+                srvItem.created_at = rm.created_at;
+              }
+            }
+          } else {
+            pendingRecent.push(rm);
+          }
+        }
+
+        latestMaxMsgTimestampRef.current = maxTs;
 
         const nextList =
-          remainingOptimistic.length > 0
-            ? [...remainingOptimistic, ...dedupedServer]
-            : dedupedServer;
+          pendingRecent.length > 0 ? [...pendingRecent, ...dedupedServer] : dedupedServer;
 
         if (silent && prevArr.length === nextList.length) {
           let identical = true;
@@ -299,32 +370,38 @@ function AppContent() {
 
         return nextList;
       });
-      setInvoices(Array.isArray(payload.invoices) ? payload.invoices : []);
-      setWorkShifts(Array.isArray(payload.workShifts) ? payload.workShifts : []);
-      setAuditLogs(Array.isArray(payload.auditLogs) ? payload.auditLogs : []);
+      setInvoices((prev) =>
+        silent && JSON.stringify(prev) === JSON.stringify(nextInvoices) ? prev : nextInvoices
+      );
+      setWorkShifts((prev) =>
+        silent && JSON.stringify(prev) === JSON.stringify(nextWorkShifts) ? prev : nextWorkShifts
+      );
+      setAuditLogs((prev) =>
+        silent && JSON.stringify(prev) === JSON.stringify(nextAuditLogs) ? prev : nextAuditLogs
+      );
 
       if (typeof payload.botUsername === 'string' && payload.botUsername.trim()) {
         const cleanBot = payload.botUsername.replace(/^@/, '').trim();
-        setServerBotUsername(cleanBot);
+        setServerBotUsername((prev) => (prev === cleanBot ? prev : cleanBot));
         try {
           localStorage.setItem('tedcloud_bot_username', cleanBot);
         } catch {}
       }
 
       if (payload.currentProfile) {
-        setCurrentProfile(payload.currentProfile);
+        const nextProf = payload.currentProfile;
+        setCurrentProfile((prev) =>
+          silent && JSON.stringify(prev) === JSON.stringify(nextProf) ? prev : nextProf
+        );
         try {
-          localStorage.setItem(SESSION_PROFILE_ID_KEY, payload.currentProfile.id);
-          if (payload.currentProfile.company_id) {
-            localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.currentProfile.company_id);
+          localStorage.setItem(SESSION_PROFILE_ID_KEY, nextProf.id);
+          if (nextProf.company_id) {
+            localStorage.setItem(SESSION_COMPANY_ID_KEY, nextProf.company_id);
           } else if (payload.company?.id) {
             localStorage.setItem(SESSION_COMPANY_ID_KEY, payload.company.id);
           }
-          if (payload.currentProfile.telegram_chat_id) {
-            localStorage.setItem(
-              SESSION_CHAT_ID_KEY,
-              String(payload.currentProfile.telegram_chat_id)
-            );
+          if (nextProf.telegram_chat_id) {
+            localStorage.setItem(SESSION_CHAT_ID_KEY, String(nextProf.telegram_chat_id));
           }
         } catch {}
         if (hasUrlAutoAuth) {
@@ -336,7 +413,9 @@ function AppContent() {
         }
       } else if (storedProfileId) {
         const matched = loadedNodes.find((n) => n.id === storedProfileId) || null;
-        setCurrentProfile(matched);
+        setCurrentProfile((prev) =>
+          silent && JSON.stringify(prev) === JSON.stringify(matched) ? prev : matched
+        );
         if (!matched) {
           try {
             localStorage.removeItem(SESSION_PROFILE_ID_KEY);
@@ -345,7 +424,9 @@ function AppContent() {
         }
       } else if (params.get('autostart') === '1' && loadedNodes.length > 0) {
         const autoNode = loadedNodes[0];
-        setCurrentProfile(autoNode);
+        setCurrentProfile((prev) =>
+          silent && JSON.stringify(prev) === JSON.stringify(autoNode) ? prev : autoNode
+        );
         try {
           localStorage.setItem(SESSION_PROFILE_ID_KEY, autoNode.id);
           if (autoNode.company_id) {
@@ -373,12 +454,12 @@ function AppContent() {
   }, [loadWorkspaceData]);
 
   useEffect(() => {
-    if (!currentProfile) return;
+    if (!currentProfile?.id) return;
     const interval = setInterval(() => {
       void loadWorkspaceData(false, true);
     }, 5000);
     return () => clearInterval(interval);
-  }, [currentProfile, loadWorkspaceData]);
+  }, [currentProfile?.id, loadWorkspaceData]);
 
   const handleAuthenticated = useCallback(
     async (profile: OrganizationNode, authCompany: Company | null) => {
@@ -629,9 +710,14 @@ function AppContent() {
       messagePayload: Record<string, any>
     ): Promise<{ ok: boolean; pushSent?: boolean }> => {
       // Optimistic UI (0ms instant bubble rendering — Block 4)
-      const tempId = `optimistic_${Date.now()}`;
-      const optimisticMessage: WorkspaceMessageRecord = {
+      const tempId = `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const monotonicTime = Math.max(Date.now(), latestMaxMsgTimestampRef.current + 1000);
+      latestMaxMsgTimestampRef.current = monotonicTime;
+      const monotonicCreatedAt = new Date(monotonicTime).toISOString();
+
+      const optimisticMessage: WorkspaceMessageRecord & { _clientKey?: string } = {
         id: tempId,
+        _clientKey: tempId,
         company_id: messagePayload.company_id || null,
         sender_id: messagePayload.sender_id || null,
         sender_name: messagePayload.sender_name || 'Сотрудник TedCloud',
@@ -651,16 +737,26 @@ function AppContent() {
           : [],
         reactions: {},
         reply_to: messagePayload.reply_to || null,
-        created_at: new Date().toISOString(),
+        created_at: monotonicCreatedAt,
       };
 
+      recentSentMessagesRef.current.set(tempId, {
+        message: optimisticMessage,
+        timestamp: Date.now(),
+      });
+
       setMessages((prev) => [optimisticMessage, ...(Array.isArray(prev) ? prev : [])]);
+
+      const payloadWithCreatedAt = {
+        ...messagePayload,
+        created_at: monotonicCreatedAt,
+      };
 
       try {
         const response = await fetch('/api/db', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table: 'workspace_messages', payload: messagePayload }),
+          body: JSON.stringify({ table: 'workspace_messages', payload: payloadWithCreatedAt }),
         });
         const result = await safeParseJson(response);
 
@@ -669,11 +765,33 @@ function AppContent() {
         }
 
         if (result.data) {
+          const srvTime = result.data.created_at
+            ? new Date(result.data.created_at).getTime()
+            : 0;
+          const confirmedMsg: WorkspaceMessageRecord & { _clientKey?: string } = {
+            ...result.data,
+            _clientKey: tempId,
+            created_at:
+              srvTime >= monotonicTime ? result.data.created_at : monotonicCreatedAt,
+          };
+          recentSentMessagesRef.current.set(tempId, {
+            message: confirmedMsg,
+            timestamp: Date.now(),
+          });
+
           setMessages((prev) => {
             const list = Array.isArray(prev) ? prev : [];
-            const replaced = list.map((m) => (m.id === tempId ? result.data : m));
+            let foundTemp = false;
+            const replaced = list.map((m) => {
+              if (m.id === tempId || (m as any)._clientKey === tempId) {
+                foundTemp = true;
+                return confirmedMsg;
+              }
+              return m;
+            });
+            const merged = foundTemp ? replaced : [confirmedMsg, ...replaced];
             const seen = new Set<string>();
-            return replaced.filter((m) => {
+            return merged.filter((m) => {
               const idStr = String(m.id || '');
               if (!idStr) return true;
               if (seen.has(idStr)) return false;
@@ -689,6 +807,7 @@ function AppContent() {
         };
       } catch (err: any) {
         console.error('[App] POST workspace_messages error:', err);
+        recentSentMessagesRef.current.delete(tempId);
         setMessages((prev) =>
           (Array.isArray(prev) ? prev : []).filter((m) => m.id !== tempId)
         );

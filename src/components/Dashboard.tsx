@@ -196,6 +196,203 @@ interface PendingConfirmAction {
 
 const CUSTOM_DEPTS_STORAGE_PREFIX = 'tedcloud_custom_departments_';
 
+interface ChatComposerBarProps {
+  theme: 'dark' | 'light';
+  isEn: boolean;
+  commUrgent: boolean;
+  setCommUrgent: React.Dispatch<React.SetStateAction<boolean>>;
+  commAttachmentsCount: number;
+  isProcessingCommAttachment: boolean;
+  isSendingComm: boolean;
+  onOpenFilePicker: () => void;
+  onSubmitMessage: (text: string) => void;
+}
+
+const ChatComposerBar: React.FC<ChatComposerBarProps> = React.memo(
+  ({
+    theme,
+    isEn,
+    commUrgent,
+    setCommUrgent,
+    commAttachmentsCount,
+    isProcessingCommAttachment,
+    isSendingComm,
+    onOpenFilePicker,
+    onSubmitMessage,
+  }) => {
+    const [text, setText] = useState<string>('');
+    const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      const trimmed = text.trim();
+      if (isSendingComm || (!trimmed && commAttachmentsCount === 0)) return;
+      setText('');
+      setShowEmojiPicker(false);
+      onSubmitMessage(trimmed);
+    };
+
+    return (
+      <div
+        className={`relative shrink-0 sticky bottom-0 p-3 border-t transition-colors ${
+          theme === 'light'
+            ? 'border-[#E2DFD7] bg-[#FAF9F5]'
+            : 'border-white/[0.07] bg-[#111115]'
+        }`}
+      >
+        {showEmojiPicker && (
+          <div
+            className={`absolute bottom-16 left-4 z-30 p-2.5 rounded-2xl shadow-xl flex flex-col gap-2 max-w-xs border ${
+              theme === 'light'
+                ? 'bg-white border-slate-200 text-slate-900'
+                : 'bg-zinc-900 border-white/10 text-zinc-100'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              {(['👍', '🔥', '❤️', '✅', '👏', '👀'] as const).map((emojiChar) => (
+                <button
+                  key={emojiChar}
+                  type="button"
+                  onClick={() => {
+                    setText((prev) => (prev ? `${prev} ${emojiChar}` : emojiChar));
+                    setShowEmojiPicker(false);
+                  }}
+                  className={`w-8 h-8 rounded-full inline-flex items-center justify-center text-base hover:scale-110 transition-transform cursor-pointer ${
+                    theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-white/10'
+                  }`}
+                >
+                  {emojiChar}
+                </button>
+              ))}
+            </div>
+            <div
+              className={`flex flex-wrap gap-1.5 pt-1 border-t ${
+                theme === 'light' ? 'border-slate-200/60' : 'border-white/10'
+              }`}
+            >
+              {[
+                isEn ? 'Accepted in work' : 'Принято в работу',
+                isEn ? 'Approved' : 'Согласовано',
+                isEn ? 'Completed' : 'Выполнено',
+                isEn ? 'On Review' : 'На проверке',
+              ].map((quickPhrase) => (
+                <button
+                  key={quickPhrase}
+                  type="button"
+                  onClick={() => {
+                    setText((prev) => (prev ? `${prev} ${quickPhrase}` : quickPhrase));
+                    setShowEmojiPicker(false);
+                  }}
+                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer ${
+                    theme === 'light'
+                      ? 'bg-slate-50 hover:bg-indigo-50 border-slate-200 text-slate-700'
+                      : 'bg-white/[0.06] hover:bg-indigo-500/20 border-white/10 text-zinc-200'
+                  }`}
+                >
+                  {quickPhrase}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <form
+          onSubmit={handleFormSubmit}
+          className={`flex items-center gap-1.5 rounded-full border px-2 py-1.5 shadow-lg transition-colors ${
+            theme === 'light'
+              ? 'bg-white border-[#D6D3CD] text-[#18181B]'
+              : 'bg-zinc-900/90 border-white/10 text-white'
+          }`}
+        >
+          <button
+            type="button"
+            disabled={isProcessingCommAttachment || isSendingComm}
+            onClick={onOpenFilePicker}
+            title={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
+            aria-label={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors shrink-0 ${
+              theme === 'light'
+                ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+            }`}
+          >
+            {isProcessingCommAttachment ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Paperclip className="w-4 h-4" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker((prev) => !prev)}
+            title={isEn ? 'Insert emoji' : 'Добавить эмодзи'}
+            aria-label={isEn ? 'Insert emoji' : 'Добавить эмодзи'}
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors shrink-0 ${
+              showEmojiPicker
+                ? 'bg-indigo-500/20 text-indigo-400'
+                : theme === 'light'
+                ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+            }`}
+          >
+            <Smile className="w-4 h-4" />
+          </button>
+
+          <input
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={isEn ? 'Write a message...' : 'Написать сообщение...'}
+            className={`tc-composer-input !bg-transparent border-0 focus:ring-0 outline-none flex-1 min-w-0 w-full h-8 px-2 text-sm ${
+              theme === 'light'
+                ? 'text-[#18181B] placeholder:text-zinc-400'
+                : 'text-white placeholder:text-zinc-500'
+            }`}
+          />
+
+          <button
+            type="button"
+            onClick={() => setCommUrgent((prev) => !prev)}
+            aria-label={isEn ? 'Urgent Telegram Push' : 'Срочный Push в Telegram'}
+            title={
+              commUrgent
+                ? isEn
+                  ? 'Urgent push enabled'
+                  : 'Срочный Push-статус включен'
+                : isEn
+                ? 'Mark message as Urgent'
+                : 'Отметить сообщение как «Срочно»'
+            }
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors shrink-0 ${
+              commUrgent
+                ? 'bg-amber-500/20 text-amber-400'
+                : theme === 'light'
+                ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+            }`}
+          >
+            <Zap className="w-4 h-4" />
+          </button>
+
+          <button
+            type="submit"
+            disabled={isSendingComm || (!text.trim() && commAttachmentsCount === 0)}
+            aria-label={isEn ? 'Send message' : 'Отправить сообщение'}
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors shrink-0 shadow-sm cursor-pointer"
+          >
+            {isSendingComm ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </form>
+      </div>
+    );
+  }
+);
+
 export const Dashboard: React.FC<DashboardProps> = ({
   company,
   currentProfile,
@@ -313,7 +510,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const quickTaskInputRef = React.useRef<HTMLInputElement | null>(null);
   const quickDealInputRef = React.useRef<HTMLInputElement | null>(null);
   const quickEmployeeInputRef = React.useRef<HTMLInputElement | null>(null);
-  const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = React.useRef<HTMLDivElement | null>(null);
   const lastScrolledThreadKeyRef = React.useRef<string>('');
   const lastScrolledMsgCountRef = React.useRef<number>(0);
   const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -637,13 +834,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (!isThreadSwitch && !isNewMessageAdded) return;
 
     const timer = setTimeout(() => {
+      const container = messagesContainerRef.current;
+      if (!container) return;
       try {
-        messagesEndRef.current?.scrollIntoView({
+        container.scrollTo({
+          top: container.scrollHeight,
           behavior: isThreadSwitch ? 'auto' : 'smooth',
-          block: 'end',
         });
-      } catch {}
-    }, 30);
+      } catch {
+        container.scrollTop = container.scrollHeight;
+      }
+    }, 20);
     return () => clearTimeout(timer);
   }, [
     activeSection,
@@ -662,6 +863,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
       ).length,
     [visibleMessages, currentProfile]
   );
+
+  const deptMessageCountsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const dept of companyDepartments) {
+      map.set(
+        dept,
+        filterMessagesForActiveThread(
+          visibleMessages,
+          { type: 'department', id: dept, label: dept },
+          currentProfile
+        ).length
+      );
+    }
+    return map;
+  }, [companyDepartments, visibleMessages, currentProfile]);
+
+  const directMessageCountsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!currentProfile) return map;
+    for (const col of colleagueNodes) {
+      const cnt = visibleMessages.filter((m) =>
+        isDirectMessageBetweenUsers(
+          m,
+          currentProfile.id,
+          currentProfile.name,
+          col.id,
+          col.name
+        )
+      ).length;
+      map.set(String(col.id), cnt);
+    }
+    return map;
+  }, [colleagueNodes, visibleMessages, currentProfile]);
 
   const kpis = useMemo(
     () => computeDashboardKpis(visibleLeads, visibleTasks, safeNodes),
@@ -1433,8 +1667,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     });
   };
 
-  const submitCurrentCommMessage = async () => {
-    const msgBody = commText.trim();
+  const submitCurrentCommMessage = async (overrideText?: string) => {
+    const msgBody = (typeof overrideText === 'string' ? overrideText : commText).trim();
     if ((!msgBody && commAttachments.length === 0) || !onSendMessage) return;
 
     const finalText =
@@ -1447,11 +1681,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const pendingFiles = [...commAttachments];
     const pendingUrgent = commUrgent;
 
-    setCommText('');
-    setCommAttachments([]);
-    setCommUrgent(false);
-    setReplyingToMessage(null);
-    setShowEmojiPicker(false);
+    if (commText) setCommText('');
+    if (commAttachments.length > 0) setCommAttachments([]);
+    if (commUrgent) setCommUrgent(false);
+    if (replyingToMessage) setReplyingToMessage(null);
+    if (showEmojiPicker) setShowEmojiPicker(false);
 
     let targetType: 'direct' | 'department' | 'broadcast' = 'broadcast';
     let targetId = 'general';
@@ -4480,11 +4714,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       const isSelected =
                         activeCommThread.type === 'department' &&
                         activeCommThread.id.toLowerCase() === dept.toLowerCase();
-                      const deptMsgCount = filterMessagesForActiveThread(
-                        visibleMessages,
-                        { type: 'department', id: dept, label: dept },
-                        currentProfile
-                      ).length;
+                      const deptMsgCount = deptMessageCountsMap.get(dept) ?? 0;
 
                       return (
                         <button
@@ -4543,17 +4773,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           activeCommThread.type === 'direct' &&
                           String(activeCommThread.id) === String(colleague.id);
                         const hasTelegram = Boolean(colleague.telegram_chat_id);
-                        const dialogCount = currentProfile
-                          ? visibleMessages.filter((m) =>
-                              isDirectMessageBetweenUsers(
-                                m,
-                                currentProfile.id,
-                                currentProfile.name,
-                                colleague.id,
-                                colleague.name
-                              )
-                            ).length
-                          : 0;
+                        const dialogCount =
+                          directMessageCountsMap.get(String(colleague.id)) ?? 0;
 
                         return (
                           <button
@@ -4658,14 +4879,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       : safeNodes.some((n) => Boolean(n.telegram_chat_id));
 
                   return (
-                    <div className="shrink-0 z-10 px-4 sm:px-6 py-3 border-b border-white/[0.07] bg-white/95 dark:bg-[#12151e]/95 backdrop-blur-md flex items-center justify-between gap-2.5">
+                    <div
+                      className={`shrink-0 z-10 px-4 sm:px-6 py-3 border-b flex items-center justify-between gap-2.5 transition-colors ${
+                        theme === 'light'
+                          ? 'bg-[#FAF9F5] border-[#E2DFD7] text-[#18181B]'
+                          : 'bg-[#14161C] border-white/[0.07] text-white'
+                      }`}
+                    >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {/* Компактная круглая/квадратная иконка возврата ← (w-8 h-8) на мобильном */}
                         <button
                           type="button"
                           onClick={() => setMobileChatOpen(false)}
                           aria-label={isEn ? 'Back to dialogs' : 'Назад к диалогам'}
-                          className="lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-white shrink-0 transition-colors"
+                          className={`lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border shrink-0 transition-colors ${
+                            theme === 'light'
+                              ? 'border-[#D6D3CD] bg-white hover:bg-zinc-100 text-[#18181B]'
+                              : 'border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-white'
+                          }`}
                         >
                           <ArrowLeft className="w-4 h-4" />
                         </button>
@@ -4677,20 +4908,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             size="md"
                           />
                         ) : (
-                          <div className="w-8 h-8 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center shrink-0">
+                          <div
+                            className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${
+                              theme === 'light'
+                                ? 'bg-white border-[#D6D3CD]'
+                                : 'bg-white/[0.05] border-white/[0.08]'
+                            }`}
+                          >
                             {activeCommThread.type === 'department' ? (
-                              <Hash className="w-4 h-4 text-zinc-300" />
+                              <Hash
+                                className={`w-4 h-4 ${
+                                  theme === 'light' ? 'text-zinc-600' : 'text-zinc-300'
+                                }`}
+                              />
                             ) : (
-                              <Radio className="w-4 h-4 text-emerald-400" />
+                              <Radio className="w-4 h-4 text-emerald-500" />
                             )}
                           </div>
                         )}
 
                         <div className="min-w-0 flex-1">
-                          <h2 className="text-sm font-semibold text-white truncate">
+                          <h2
+                            className={`text-sm font-semibold truncate ${
+                              theme === 'light' ? 'text-[#18181B]' : 'text-white'
+                            }`}
+                          >
                             {headerTitle}
                           </h2>
-                          <div className="flex items-center gap-2 text-[11px] text-[#8E8E93] truncate mt-0.5">
+                          <div
+                            className={`flex items-center gap-2 text-[11px] truncate mt-0.5 ${
+                              theme === 'light' ? 'text-[#52525B]' : 'text-[#8E8E93]'
+                            }`}
+                          >
                             <span className="truncate">{headerSubtitle}</span>
                             {tgActive && (
                               <span className="inline-flex items-center gap-1 text-emerald-400 font-medium shrink-0">
@@ -4705,7 +4954,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 })()}
 
-                <div className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar px-6 py-5 space-y-3">
+                <div
+                  ref={messagesContainerRef}
+                  className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar px-6 py-5 space-y-3"
+                >
                   {activeThreadMessages.length === 0 ? (
                     <RichEmptyState
                       variant="chat"
@@ -4804,8 +5056,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               )
                             : [];
 
+                        const stableMsgKey = String((msg as any)._clientKey || msg.id);
+
                         return (
-                          <React.Fragment key={msg.id}>
+                          <React.Fragment key={stableMsgKey}>
                             {showDateDivider && msgDateObj && (
                               <div className="flex justify-center my-3 select-none">
                                 <span className="tc-date-pill px-3 py-0.5 rounded-full text-[11px] font-medium bg-zinc-900/80 border border-white/[0.07] text-[#8E8E93]">
@@ -4951,7 +5205,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       }`}
                                     >
                                       <div className="font-semibold text-[11px] truncate">
-                                        {msg.reply_to.sender_name}
+                                        {(() => {
+                                          const rawReplySender = String(
+                                            msg.reply_to.sender_name || ''
+                                          ).trim();
+                                          if (msg.reply_to.id) {
+                                            const orig = activeThreadMessages.find(
+                                              (m) => String(m.id) === String(msg.reply_to?.id)
+                                            );
+                                            if (orig) {
+                                              const origNode = orig.sender_id
+                                                ? nodeMap.get(String(orig.sender_id))
+                                                : null;
+                                              if (origNode?.name && origNode.name !== 'Page') {
+                                                return origNode.name;
+                                              }
+                                              if (
+                                                orig.sender_name &&
+                                                orig.sender_name !== 'Page'
+                                              ) {
+                                                return orig.sender_name;
+                                              }
+                                            }
+                                          }
+                                          if (!rawReplySender || rawReplySender === 'Page') {
+                                            return currentProfile?.name || 'Сотрудник TedCloud';
+                                          }
+                                          return rawReplySender;
+                                        })()}
                                       </div>
                                       <div className="truncate opacity-90 text-[11px]">
                                         {msg.reply_to.text}
@@ -5084,7 +5365,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </React.Fragment>
                         );
                       })}
-                      <div ref={messagesEndRef} />
                     </>
                   )}
                 </div>
@@ -5152,149 +5432,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
 
-                <div className="relative shrink-0 sticky bottom-0 p-3 border-t border-white/[0.07] bg-[#111115]">
-                  {showEmojiPicker && (
-                    <div
-                      className={`absolute bottom-16 left-4 z-30 p-2.5 rounded-2xl shadow-xl flex flex-col gap-2 max-w-xs border ${
-                        theme === 'light'
-                          ? 'bg-white border-slate-200 text-slate-900'
-                          : 'bg-zinc-900 border-white/10 text-zinc-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {(['👍', '🔥', '❤️', '✅', '👏', '👀'] as const).map((emojiChar) => (
-                          <button
-                            key={emojiChar}
-                            type="button"
-                            onClick={() => {
-                              setCommText((prev) => (prev ? `${prev} ${emojiChar}` : emojiChar));
-                              setShowEmojiPicker(false);
-                            }}
-                            className={`w-8 h-8 rounded-full inline-flex items-center justify-center text-base hover:scale-110 transition-transform cursor-pointer ${
-                              theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-white/10'
-                            }`}
-                          >
-                            {emojiChar}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-200/60 dark:border-white/10">
-                        {[
-                          isEn ? 'Accepted in work' : 'Принято в работу',
-                          isEn ? 'Approved' : 'Согласовано',
-                          isEn ? 'Completed' : 'Выполнено',
-                          isEn ? 'On Review' : 'На проверке',
-                        ].map((quickPhrase) => (
-                          <button
-                            key={quickPhrase}
-                            type="button"
-                            onClick={() => {
-                              setCommText((prev) =>
-                                prev ? `${prev} ${quickPhrase}` : quickPhrase
-                              );
-                              setShowEmojiPicker(false);
-                            }}
-                            className={`px-2 py-1 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer ${
-                              theme === 'light'
-                                ? 'bg-slate-50 hover:bg-indigo-50 border-slate-200 text-slate-700'
-                                : 'bg-white/[0.06] hover:bg-indigo-500/20 border-white/10 text-zinc-200'
-                            }`}
-                          >
-                            {quickPhrase}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                <input
+                  ref={commFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                  onChange={handleCommFilesSelected}
+                  className="hidden"
+                />
 
-                  <form
-                    onSubmit={handleSendCorporateMessage}
-                    className="flex items-center gap-1.5 rounded-full bg-zinc-900/90 border border-white/10 px-2 py-1.5 shadow-lg"
-                  >
-                    <input
-                      ref={commFileInputRef}
-                      type="file"
-                      multiple
-                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
-                      onChange={handleCommFilesSelected}
-                      className="hidden"
-                    />
-
-                    <button
-                      type="button"
-                      disabled={isProcessingCommAttachment || isSendingComm}
-                      onClick={() => commFileInputRef.current?.click()}
-                      title={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
-                      aria-label={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-full text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors shrink-0"
-                    >
-                      {isProcessingCommAttachment ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Paperclip className="w-4 h-4" />
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowEmojiPicker((prev) => !prev)}
-                      title={isEn ? 'Insert emoji' : 'Добавить эмодзи'}
-                      aria-label={isEn ? 'Insert emoji' : 'Добавить эмодзи'}
-                      className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors shrink-0 ${
-                        showEmojiPicker
-                          ? 'bg-indigo-500/20 text-indigo-300'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      <Smile className="w-4 h-4" />
-                    </button>
-
-                    <input
-                      type="text"
-                      value={commText}
-                      onChange={(e) => setCommText(e.target.value)}
-                      placeholder={isEn ? 'Write a message...' : 'Написать сообщение...'}
-                      className="tc-composer-input !bg-transparent border-0 focus:ring-0 outline-none flex-1 min-w-0 w-full h-8 px-2 text-sm text-white placeholder:text-zinc-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => setCommUrgent((prev) => !prev)}
-                      aria-label={isEn ? 'Urgent Telegram Push' : 'Срочный Push в Telegram'}
-                      title={
-                        commUrgent
-                          ? isEn
-                            ? 'Urgent push enabled'
-                            : 'Срочный Push-статус включен'
-                          : isEn
-                          ? 'Mark message as Urgent'
-                          : 'Отметить сообщение как «Срочно»'
-                      }
-                      className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors shrink-0 ${
-                        commUrgent
-                          ? 'bg-amber-500/20 text-amber-400'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      <Zap className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={
-                        isSendingComm || (!commText.trim() && commAttachments.length === 0)
-                      }
-                      aria-label={isEn ? 'Send message' : 'Отправить сообщение'}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors shrink-0 shadow-sm"
-                    >
-                      {isSendingComm ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Send className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </form>
-                </div>
+                <ChatComposerBar
+                  theme={theme}
+                  isEn={isEn}
+                  commUrgent={commUrgent}
+                  setCommUrgent={setCommUrgent}
+                  commAttachmentsCount={commAttachments.length}
+                  isProcessingCommAttachment={isProcessingCommAttachment}
+                  isSendingComm={isSendingComm}
+                  onOpenFilePicker={() => commFileInputRef.current?.click()}
+                  onSubmitMessage={(msgText) => {
+                    void submitCurrentCommMessage(msgText);
+                  }}
+                />
               </section>
             </div>
             ))}

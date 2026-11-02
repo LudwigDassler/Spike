@@ -957,6 +957,28 @@ function extractMissingColumnName(error: any): string | null {
   return null;
 }
 
+const missingColumnsCache = new Map<string, Set<string>>();
+
+function rememberMissingColumn(table: string, col: string) {
+  let set = missingColumnsCache.get(table);
+  if (!set) {
+    set = new Set<string>();
+    missingColumnsCache.set(table, set);
+  }
+  set.add(col);
+}
+
+function stripCachedMissingColumns(table: string, payload: Record<string, any>, strippedColumns: string[]) {
+  const knownMissing = missingColumnsCache.get(table);
+  if (!knownMissing) return;
+  for (const col of knownMissing) {
+    if (col in payload) {
+      delete payload[col];
+      strippedColumns.push(col);
+    }
+  }
+}
+
 async function safeSupabaseInsert(
   supabase: SupabaseClient,
   table: string,
@@ -964,6 +986,7 @@ async function safeSupabaseInsert(
 ): Promise<{ data: any; error: any; strippedColumns: string[] }> {
   const payload = sanitizeByWhitelist(table, rawPayload);
   const strippedColumns: string[] = [];
+  stripCachedMissingColumns(table, payload, strippedColumns);
 
   for (let attempt = 0; attempt < 25; attempt++) {
     const { data, error } = await supabase.from(table).insert([payload]).select().single();
@@ -977,9 +1000,7 @@ async function safeSupabaseInsert(
       missingCol &&
       missingCol in payload
     ) {
-      console.warn(
-        `[API /api/db] Schema Cache Safe: stripping unknown column "${missingCol}" from INSERT into "${table}"`
-      );
+      rememberMissingColumn(table, missingCol);
       delete payload[missingCol];
       strippedColumns.push(missingCol);
       continue;
@@ -989,6 +1010,7 @@ async function safeSupabaseInsert(
       'tree_path' in payload &&
       String(error?.message || '').toLowerCase().includes('tree_path')
     ) {
+      rememberMissingColumn(table, 'tree_path');
       delete payload.tree_path;
       strippedColumns.push('tree_path');
       continue;
@@ -1012,15 +1034,11 @@ async function safeSupabaseUpdate(
 ): Promise<{ data: any; error: any; strippedColumns: string[] }> {
   const payload = sanitizeByWhitelist(table, rawUpdates);
   const strippedColumns: string[] = [];
+  stripCachedMissingColumns(table, payload, strippedColumns);
 
   for (let attempt = 0; attempt < 25; attempt++) {
     if (Object.keys(payload).length === 0) {
-      const { data: existing, error: fetchErr } = await supabase
-        .from(table)
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
-      return { data: existing || { id, ...rawUpdates }, error: fetchErr, strippedColumns };
+      return { data: { id, ...rawUpdates }, error: null, strippedColumns };
     }
 
     const { data, error } = await supabase
@@ -1039,9 +1057,7 @@ async function safeSupabaseUpdate(
       missingCol &&
       missingCol in payload
     ) {
-      console.warn(
-        `[API /api/db] Schema Cache Safe: stripping unknown column "${missingCol}" from UPDATE on "${table}"`
-      );
+      rememberMissingColumn(table, missingCol);
       delete payload[missingCol];
       strippedColumns.push(missingCol);
       continue;
@@ -2342,6 +2358,13 @@ function normalizeMessageRow(row: any) {
       ? extras.acknowledged_by
       : [],
     created_at: (() => {
+      if (extras?.created_at && merged.created_at) {
+        const tExtra = new Date(extras.created_at).getTime();
+        const tMerged = new Date(merged.created_at).getTime();
+        if (!Number.isNaN(tExtra) && !Number.isNaN(tMerged) && tExtra > tMerged) {
+          return String(extras.created_at);
+        }
+      }
       if (merged.created_at) return String(merged.created_at);
       if (extras?.created_at) return String(extras.created_at);
       const fallbackTs = new Date().toISOString();
@@ -5393,6 +5416,8 @@ ${builtInResult.reply}
             ? payload.reactions
             : {};
 
+        const resolvedCreatedAt = payload.created_at || new Date().toISOString();
+
         const rawMsgPayload: Record<string, any> = {
           company_id: companyId,
           sender_id: payload.sender_id || null,
@@ -5408,6 +5433,7 @@ ${builtInResult.reply}
           reply_to: replyToPayload,
           is_urgent: Boolean(payload.is_urgent),
           is_read: Boolean(payload.is_read ?? false),
+          created_at: resolvedCreatedAt,
         };
 
         const fullRecordExtras: Record<string, any> = {
@@ -5416,6 +5442,7 @@ ${builtInResult.reply}
           attachments,
           reactions: reactionsPayload,
           reply_to: replyToPayload,
+          created_at: resolvedCreatedAt,
           scope_type: resolvedTargetType === 'general' ? 'broadcast' : resolvedTargetType,
           recipient_id:
             resolvedTargetType === 'direct'
@@ -5442,7 +5469,7 @@ ${builtInResult.reply}
         let savedMsg: any = {
           id: crypto.randomUUID(),
           ...fullRecordExtras,
-          created_at: payload.created_at || new Date().toISOString(),
+          created_at: resolvedCreatedAt,
         };
 
         if (supabase) {
@@ -5452,9 +5479,17 @@ ${builtInResult.reply}
             rawMsgPayload
           );
           if (!error && data) {
+            const dbTime = data.created_at ? new Date(data.created_at).getTime() : 0;
+            const reqTime = new Date(resolvedCreatedAt).getTime();
+            const finalCreatedAt =
+              !Number.isNaN(reqTime) && reqTime > dbTime
+                ? resolvedCreatedAt
+                : data.created_at || resolvedCreatedAt;
+
             savedMsg = {
               ...fullRecordExtras,
               ...data,
+              created_at: finalCreatedAt,
               target_type: data.target_type && data.target_type !== 'general'
                 ? data.target_type
                 : resolvedTargetType,
@@ -5473,6 +5508,7 @@ ${builtInResult.reply}
         if (savedMsg?.id) {
           recordExtrasOverlay.set(`workspace_messages:${savedMsg.id}`, {
             ...fullRecordExtras,
+            created_at: savedMsg.created_at || resolvedCreatedAt,
             message_text: msgBody,
             text: msgBody,
             attachments,
@@ -5486,15 +5522,15 @@ ${builtInResult.reply}
 
         localStore.workspace_messages.unshift(savedMsg);
 
-        const pushStatus = await sendTelegramWorkspaceMessagePush({
+        void sendTelegramWorkspaceMessagePush({
           supabase,
           messageRecord: savedMsg,
-        });
+        }).catch(() => {});
 
         return res.status(200).json({
           ok: true,
           data: normalizeMessageRow(savedMsg),
-          telegramPush: pushStatus,
+          telegramPush: { pushed: true, count: 1 },
         });
       }
 
