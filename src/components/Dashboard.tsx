@@ -7141,7 +7141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             : null
         }
         theme={theme}
-        onToggleTheme={onToggleTheme}
+        onToggleTheme={toggleTheme}
         simulatedAccessLevel={simulatedAccessLevel}
         simulatedPermissions={simulatedPermissions}
         onSimulateRbac={(lvl, p) => {
