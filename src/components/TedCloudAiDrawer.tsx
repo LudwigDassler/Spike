@@ -1086,8 +1086,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                           )}
                           <span>
                             {isEn
-                              ? `Execute Batch in DB (Create ${checkedCount} Selected Records)`
-                              : `Выполнить пакет в БД (Создать выбранные записи: ${checkedCount})`}
+                              ? `Apply Selected Actions in DB (${checkedCount})`
+                              : `Применить выбранные действия в БД (${checkedCount})`}
                           </span>
                         </button>
                       )}

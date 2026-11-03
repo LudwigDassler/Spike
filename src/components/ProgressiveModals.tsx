@@ -323,7 +323,7 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
 
         <div className="p-5 space-y-4">
           {/* Center: Large Interactive Invite Code Plate (TC-XXXX) */}
-          <div className="bg-slate-50 dark:bg-zinc-900/90 border border-slate-200/90 dark:border-white/[0.08] rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="bg-slate-100 dark:bg-zinc-900 border border-slate-200/90 dark:border-white/10 text-slate-900 dark:text-zinc-100 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="text-xs font-medium text-slate-500 dark:text-zinc-400">
                 {isEn ? 'Personal Employee Invite Code' : 'Персональный инвайт-код сотрудника'}

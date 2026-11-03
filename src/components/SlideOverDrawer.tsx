@@ -382,18 +382,18 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
         onClick={onClose}
       >
         <div
-          className="max-w-3xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#14161C] shadow-2xl flex flex-col no-scrollbar transition-all duration-200"
+          className="max-w-2xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#14161C] text-slate-900 dark:text-zinc-100 shadow-2xl flex flex-col no-scrollbar transition-all duration-200"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between bg-[#181B22] sticky top-0 z-10 shrink-0">
+          <div className="px-6 py-4 border-b border-slate-200/80 dark:border-white/[0.08] flex items-center justify-between bg-slate-50/90 dark:bg-[#181B22] sticky top-0 z-10 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0">
-                <CheckSquare className="w-4 h-4 text-indigo-400" />
+              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/90 border border-slate-200/80 dark:border-white/[0.08] text-slate-700 dark:text-zinc-200 flex items-center justify-center shrink-0">
+                <CheckSquare className="w-4 h-4" />
               </div>
-              <span className="text-xs font-semibold text-white tracking-tight truncate">
+              <span className="text-xs font-semibold text-slate-900 dark:text-white tracking-tight truncate">
                 {t('drawer.taskHeader')}
               </span>
-              <span className="px-2 py-0.5 rounded bg-white/[0.06] text-[10px] font-semibold text-[#8E8E93] tabular-nums">
+              <span className="px-2 py-0.5 rounded bg-slate-200/70 dark:bg-white/[0.06] text-[10px] font-semibold text-slate-600 dark:text-[#8E8E93] tabular-nums">
                 #{String(taskRec.id || '').slice(0, 6).toUpperCase()}
               </span>
             </div>
@@ -981,19 +981,19 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
       onClick={onClose}
     >
       <div
-        className="max-w-3xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#14161C] shadow-2xl flex flex-col justify-between no-scrollbar transition-all duration-200"
+        className="max-w-2xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#14161C] text-slate-900 dark:text-zinc-100 shadow-2xl flex flex-col justify-between no-scrollbar transition-all duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between sticky top-0 bg-[#181B22] z-10">
+          <div className="px-6 py-4 border-b border-slate-200/80 dark:border-white/[0.08] flex items-center justify-between sticky top-0 bg-slate-50/90 dark:bg-[#181B22] z-10">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                <Briefcase className="w-4 h-4 text-emerald-400" />
+              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/90 border border-slate-200/80 dark:border-white/[0.08] text-slate-700 dark:text-zinc-200 flex items-center justify-center shrink-0">
+                <Briefcase className="w-4 h-4" />
               </div>
-              <span className="text-xs font-semibold text-white tracking-tight truncate">
+              <span className="text-xs font-semibold text-slate-900 dark:text-white tracking-tight truncate">
                 {t('drawer.dealHeader')}
               </span>
-              <span className="px-2 py-0.5 rounded bg-white/[0.06] text-[10px] font-semibold text-[#8E8E93] tabular-nums">
+              <span className="px-2 py-0.5 rounded bg-slate-200/70 dark:bg-white/[0.06] text-[10px] font-semibold text-slate-600 dark:text-[#8E8E93] tabular-nums">
                 #{String(dealRec.id || '').slice(0, 6).toUpperCase()}
               </span>
             </div>

@@ -98,6 +98,7 @@ import { UserAvatar, cropAndCompressAvatarToDataUrl } from './UserAvatar';
 import { TedCloudAiDrawer } from './TedCloudAiDrawer';
 import { CommandBarModal } from './CommandBarModal';
 import { TeamworkGraphView } from './TeamworkGraphView';
+import { DeveloperHudOverlay, installGlobalFetchSniffer } from './DeveloperHudOverlay';
 import { SubscriptionCheckoutModal, PrintableInvoiceModal } from './BillingModals';
 import {
   MyPermissionsModal,
@@ -633,16 +634,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
     `${activeSection}-${permissionsModalNode?.id || ''}-${drawerSelection?.id || ''}-${isAiDrawerOpen}`
   );
 
-  // Strict RBAC Permissions for Current User
-  const { access_level: currentAccessLevel, permissions: perms } = useMemo(
-    () =>
-      normalizeEmployeePermissions(
-        currentProfile?.access_level,
-        currentProfile?.permissions,
-        currentProfile?.role_type
-      ),
-    [currentProfile]
-  );
+  // Stealth Dev-HUD RBAC Simulator Overrides
+  const [simulatedAccessLevel, setSimulatedAccessLevel] = useState<AccessLevel | null>(null);
+  const [simulatedPermissions, setSimulatedPermissions] = useState<EmployeePermissions | null>(null);
+
+  useEffect(() => {
+    installGlobalFetchSniffer();
+  }, []);
+
+  // Strict RBAC Permissions for Current User (with Dev-HUD live override support)
+  const { access_level: currentAccessLevel, permissions: perms } = useMemo(() => {
+    const base = normalizeEmployeePermissions(
+      currentProfile?.access_level,
+      currentProfile?.permissions,
+      currentProfile?.role_type
+    );
+    return {
+      access_level: simulatedAccessLevel || base.access_level,
+      permissions: simulatedPermissions || base.permissions,
+    };
+  }, [currentProfile, simulatedAccessLevel, simulatedPermissions]);
 
   const canCreateOrEditTasks =
     currentAccessLevel !== 'observer' ||
@@ -6585,18 +6596,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 auditLogs={safeAuditLogs}
                 showToast={showToast}
               />
-
-              {/* 6. ЦЕНТР БЕЗОПАСНОСТИ И ЗДОРОВЬЯ КОНТУРА + РЕЖИМ ТЕСТИРОВЩИКА (E2E SANDBOX 8/8) */}
-              <SuperadminQaAuditPanel
-                company={company}
-                nodes={safeNodes}
-                tasks={safeTasks}
-                leads={safeLeads}
-                onSendMessage={onSendMessage}
-                onNavigateToSection={(sec) => setActiveSection(sec)}
-                onRefresh={onRefresh}
-                showToast={showToast}
-              />
             </div>
           )}
         </main>
@@ -7121,6 +7120,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
             setIsConfirmLoading(false);
           }
         }}
+      />
+
+      {/* Stealth Developer HUD (Ctrl+Shift+D or ?dev=1) */}
+      <DeveloperHudOverlay
+        company={company}
+        currentUser={currentProfile}
+        tasks={safeTasks}
+        leads={safeLeads}
+        nodes={safeNodes}
+        messages={safeMessages}
+        activeSection={activeSection}
+        activeModalName={
+          permissionsModalNode
+            ? `EmployeeInspector:${permissionsModalNode.name}`
+            : drawerSelection
+            ? `${drawerSelection.kind}:${drawerSelection.id}`
+            : isAiDrawerOpen
+            ? 'TeddyCopilot'
+            : null
+        }
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        simulatedAccessLevel={simulatedAccessLevel}
+        simulatedPermissions={simulatedPermissions}
+        onSimulateRbac={(lvl, p) => {
+          setSimulatedAccessLevel(lvl);
+          setSimulatedPermissions(p);
+        }}
+        onRefresh={onRefresh}
+        showToast={showToast}
       />
     </div>
   );
