@@ -284,27 +284,27 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md p-4 sm:p-6 overflow-y-auto font-sans"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg my-auto rounded-2xl border border-white/[0.1] bg-[#111115] shadow-2xl overflow-hidden"
+        className="w-full max-w-lg my-auto rounded-2xl border border-slate-200/90 dark:border-white/[0.1] bg-white dark:bg-[#111115] text-slate-900 dark:text-zinc-100 shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header: Employee Avatar, Full Name, Job Title */}
-        <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between gap-3">
+        <div className="px-5 py-4 border-b border-slate-200/80 dark:border-white/[0.08] bg-slate-50/90 dark:bg-[#16181F] flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={profile.name} avatarUrl={profile.avatar_url} size="md" />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-white truncate">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
                   {profile.name}
                 </h3>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-[10px] font-semibold text-indigo-300 shrink-0">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-white/[0.08] text-[10px] font-semibold text-slate-700 dark:text-zinc-300 shrink-0">
                   {isEn ? 'Digital Pass' : 'Цифровой пропуск'}
                 </span>
               </div>
-              <p className="text-xs text-[#8E8E93] truncate mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-zinc-400 truncate mt-0.5">
                 {formatRole(profile.role_type)}
                 {profile.department ? ` · ${formatRole(profile.department)}` : ''}
               </p>
@@ -315,7 +315,7 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label={t('invite.close')}
-            className="p-1.5 rounded-xl text-[#8E8E93] hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
+            className="p-1.5 rounded-xl text-slate-400 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -323,15 +323,15 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
 
         <div className="p-5 space-y-4">
           {/* Center: Large Interactive Invite Code Plate (TC-XXXX) */}
-          <div className="rounded-2xl border border-white/[0.1] bg-[#16161C] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="bg-slate-50 dark:bg-zinc-900/90 border border-slate-200/90 dark:border-white/[0.08] rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <div className="text-[11px] font-medium text-[#8E8E93]">
+              <div className="text-xs font-medium text-slate-500 dark:text-zinc-400">
                 {isEn ? 'Personal Employee Invite Code' : 'Персональный инвайт-код сотрудника'}
               </div>
-              <div className="text-2xl font-bold tracking-tight text-white tabular-nums">
+              <div className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-zinc-100 tabular-nums">
                 {inviteCode}
               </div>
-              <div className="text-[11px] text-[#8E8E93]">
+              <div className="text-xs text-slate-500 dark:text-zinc-400">
                 {isEn
                   ? 'Sign in without password or pair Telegram bot'
                   : 'Для быстрого входа без пароля и привязки бота'}
@@ -343,7 +343,7 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
               onClick={() => onCopy(inviteCode, 'modal-profile-code')}
               className={`inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
                 copiedToken === 'modal-profile-code'
-                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                  ? 'bg-emerald-50 dark:bg-emerald-500/20 border border-emerald-200 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                   : isLight
                   ? 'bg-slate-900 text-white hover:bg-slate-800 shadow-sm'
                   : 'bg-white text-black hover:bg-zinc-200'
@@ -351,7 +351,7 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
             >
               {copiedToken === 'modal-profile-code' ? (
                 <>
-                  <Check className="w-4 h-4 text-emerald-400" />
+                  <Check className="w-4 h-4" />
                   <span>{t('invite.copied')}</span>
                 </>
               ) : (
@@ -363,44 +363,44 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
             </button>
           </div>
 
-          {/* Bottom: 2 Handsome Card-Buttons in a 2-Column Grid (Zero Raw URLs) */}
+          {/* Bottom: 2 Handsome Card-Buttons in a 2-Column Grid (Zero Raw URLs, Monochrome Micro-blocks) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Card 1: 1-Click Web Pass */}
             <button
               type="button"
               onClick={() => onCopy(webPassUrl, 'modal-profile-web-link')}
-              className={`group text-left rounded-2xl border p-4 transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+              className={`group text-left rounded-xl border p-4 transition-all flex flex-col justify-between gap-3 cursor-pointer ${
                 copiedToken === 'modal-profile-web-link'
                   ? 'border-emerald-500/40 bg-emerald-500/10'
                   : isLight
-                  ? 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'
-                  : 'border-white/[0.09] bg-[#16161C] hover:bg-[#1C1C24] hover:border-white/20'
+                  ? 'border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300'
+                  : 'border-white/[0.08] bg-zinc-900/70 hover:bg-zinc-800/80 hover:border-white/20'
               }`}
             >
               <div className="flex items-center justify-between gap-2 w-full">
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center shrink-0">
                   {copiedToken === 'modal-profile-web-link' ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4" />
                   ) : (
                     <Link2 className="w-4 h-4" />
                   )}
                 </div>
-                <span className="text-[11px] font-medium text-indigo-400 group-hover:translate-x-0.5 transition-transform">
+                <span className="text-[11px] font-medium text-slate-600 dark:text-zinc-300">
                   {copiedToken === 'modal-profile-web-link'
                     ? t('invite.copied')
                     : isEn
-                    ? 'Copy Link →'
-                    : 'Скопировать →'}
+                    ? 'Copy Link'
+                    : 'Скопировать'}
                 </span>
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white leading-snug">
+                <div className="text-xs font-semibold text-slate-900 dark:text-zinc-100 leading-snug">
                   {isEn
                     ? 'Copy Web Pass (1-Click Login)'
                     : 'Скопировать веб-пропуск (Вход в 1 клик)'}
                 </div>
-                <p className="text-[11px] text-[#8E8E93] mt-1 leading-relaxed">
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
                   {isEn
                     ? 'Direct sign-in link for desktop or smartphone browser'
                     : 'Прямая ссылка для браузера ПК или смартфона'}
@@ -418,42 +418,42 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
                   onCopy(tgCmd, 'modal-profile-tg-cmd');
                 }
               }}
-              className={`group text-left rounded-2xl border p-4 transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+              className={`group text-left rounded-xl border p-4 transition-all flex flex-col justify-between gap-3 cursor-pointer ${
                 copiedToken === 'modal-profile-tg-link' || copiedToken === 'modal-profile-tg-cmd'
                   ? 'border-emerald-500/40 bg-emerald-500/10'
                   : isLight
-                  ? 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'
-                  : 'border-white/[0.09] bg-[#16161C] hover:bg-[#1C1C24] hover:border-white/20'
+                  ? 'border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300'
+                  : 'border-white/[0.08] bg-zinc-900/70 hover:bg-zinc-800/80 hover:border-white/20'
               }`}
             >
               <div className="flex items-center justify-between gap-2 w-full">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center shrink-0">
                   {copiedToken === 'modal-profile-tg-link' ||
                   copiedToken === 'modal-profile-tg-cmd' ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4" />
                   ) : (
                     <Send className="w-4 h-4" />
                   )}
                 </div>
-                <span className="text-[11px] font-medium text-emerald-400 group-hover:translate-x-0.5 transition-transform">
+                <span className="text-[11px] font-medium text-slate-600 dark:text-zinc-300">
                   {copiedToken === 'modal-profile-tg-link' ||
                   copiedToken === 'modal-profile-tg-cmd'
                     ? t('invite.copied')
                     : profile.telegram_chat_id
                     ? `ID: ${profile.telegram_chat_id}`
                     : isEn
-                    ? '1-Click Bind →'
-                    : 'Привязать →'}
+                    ? '1-Click Bind'
+                    : 'Привязать'}
                 </span>
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white leading-snug">
+                <div className="text-xs font-semibold text-slate-900 dark:text-zinc-100 leading-snug">
                   {isEn
                     ? 'Synchronize with Telegram Bot'
                     : 'Синхронизация с Telegram-ботом'}
                 </div>
-                <p className="text-[11px] text-[#8E8E93] mt-1 leading-relaxed">
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
                   {isEn
                     ? '1-click notification & 2FA binding'
                     : 'Привязка уведомлений в 1 клик'}
@@ -463,8 +463,8 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
           </div>
 
           {tgDeepLink && (
-            <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-2.5 text-xs">
-              <span className="text-[#8E8E93]">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200/80 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] px-4 py-2.5 text-xs">
+              <span className="text-slate-500 dark:text-zinc-400">
                 {isEn
                   ? 'Need to launch Telegram directly on this device?'
                   : 'Открыть Telegram-бота прямо сейчас на этом устройстве?'}
@@ -473,16 +473,16 @@ export const MyAccessKeysModal: React.FC<MyAccessKeysModalProps> = ({
                 href={tgDeepLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="inline-flex items-center gap-1 font-semibold text-slate-900 dark:text-zinc-100 hover:opacity-80 transition-opacity"
               >
                 <span>{isEn ? 'Open Bot' : 'Открыть бота'}</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
+                <ArrowUpRight className="w-4 h-4" />
               </a>
             </div>
           )}
         </div>
 
-        <div className="px-5 py-3.5 border-t border-white/[0.07] bg-[#0c0c10] flex justify-end">
+        <div className="px-5 py-3.5 border-t border-slate-200/80 dark:border-white/[0.07] bg-slate-50/90 dark:bg-[#0c0c10] flex justify-end">
           <button type="button" onClick={onClose} className={SECONDARY_BTN_CLASS}>
             {isEn ? 'Done' : 'Готово'}
           </button>

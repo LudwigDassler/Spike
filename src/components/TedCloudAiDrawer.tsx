@@ -1,1053 +1,1264 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   Send,
-  Plus,
+  Loader2,
   CheckCircle2,
-  ListTodo,
-  Clock,
-  ArrowUpRight,
-  Building2,
   Briefcase,
-  Bot,
+  Users,
+  FileText,
+  Layers,
+  SlidersHorizontal,
+  Plus,
+  Check,
+  Printer,
+  AtSign,
+  Hash,
+  Terminal,
+  Trash2,
 } from 'lucide-react';
-import {
-  Company,
-  CrmLeadRecord,
-  DashboardSection,
-  OrganizationNode,
-  TaskRecord,
-  WorkspaceMessageRecord,
-} from '../types/database';
+import { CrmLeadRecord, OrganizationNode, TaskPriority, TaskRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 
-export type TeddyPersonaMode = 'assistant' | 'actions' | 'operations' | 'finance' | 'automation';
+export const TeddyAvatar: React.FC<{ className?: string }> = ({
+  className = 'w-7 h-7',
+}) => (
+  <div
+    className={`rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center shrink-0 ${className}`}
+  >
+    <Terminal className="w-4 h-4" />
+  </div>
+);
 
-export interface TeddyAvatarProps {
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  className?: string;
-}
-
-export const TeddyAvatar: React.FC<TeddyAvatarProps> = ({ size = 'sm', className = '' }) => {
-  const boxDims =
-    size === 'xs'
-      ? 'w-6 h-6 rounded-md'
-      : size === 'lg'
-      ? 'w-9 h-9 rounded-xl'
-      : 'w-7 h-7 rounded-lg';
-  const iconDims =
-    size === 'xs' ? 'w-3.5 h-3.5' : size === 'lg' ? 'w-5 h-5' : 'w-4 h-4';
-
-  return (
-    <div
-      className={`${boxDims} bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 ${className}`}
-      title="Teddy"
-    >
-      <Bot className={iconDims} />
-    </div>
-  );
-};
-
-interface TedCloudAiDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  company?: Company | null;
-  companyName?: string;
-  currentProfile: OrganizationNode | null;
-  tasks: TaskRecord[];
-  leads: CrmLeadRecord[];
-  nodes: OrganizationNode[];
-  messages: WorkspaceMessageRecord[];
-  canCreateTasks?: boolean;
-  canViewCrm?: boolean;
-  onRefreshWorkspace?: () => void;
-  onCreateFollowUpTask?: (suggestedTitle?: string) => void;
-  onNavigateToCrm?: () => void;
-  onNavigateToTasks?: () => void;
-  onCreateSuggestedTask?: (draft: {
-    title: string;
-    description: string;
-    priority: 'High' | 'Medium' | 'Low';
-    department: string;
-    due_date: string;
-  }) => Promise<void>;
-  onSelectSection?: (section: DashboardSection) => void;
-  onSelectTask?: (taskId: string) => void;
-  onSelectLead?: (leadId: string) => void;
-}
-
-export interface TeddyMetricBadge {
-  label: string;
-  value: string;
-  tone: 'neutral' | 'emerald' | 'amber' | 'rose' | 'indigo';
-}
-
-export interface TeddyActionLink {
-  label: string;
-  targetSection?: DashboardSection;
-  taskId?: string;
+export interface StagingRowItem {
+  id: string;
+  checked: boolean;
+  mode: 'create_task' | 'reassign_task' | 'followup_lead';
+  title: string;
+  department: string;
+  assignedTo: string;
+  priority: TaskPriority;
+  dueDate: string;
+  existingTaskId?: string;
   leadId?: string;
+  dealValue?: number;
 }
 
-interface ChatTurn {
+interface CopilotTurn {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   timestamp: string;
-  persona?: TeddyPersonaMode;
-  highlights?: string[];
-  metrics?: TeddyMetricBadge[];
-  actionLinks?: TeddyActionLink[];
-  suggestedTasks?: Array<{
-    title: string;
-    description: string;
-    priority: 'High' | 'Medium' | 'Low';
-    department: string;
-    due_date: string;
+  commandType?: '/декомпозиция' | '/аудит-воронки' | '/балансировка' | '/договор' | 'analytics';
+  stagingRows?: StagingRowItem[];
+  executed?: boolean;
+  executedCount?: number;
+  analyticsRows?: Array<{
+    id: string;
+    label: string;
+    meta: string;
+    metric: string;
+    targetSection: 'tasks' | 'crm' | 'team';
   }>;
+  contractLeadId?: string;
 }
 
-function translateStatusRu(status: string | undefined, isEn: boolean): string {
-  const s = String(status || '').trim();
-  if (isEn) return s || 'In Progress';
-  if (s === 'Todo' || s === 'To Do') return 'К выполнению';
-  if (s === 'In Progress' || s === 'InProgress') return 'В работе';
-  if (s === 'Done' || s === 'Completed') return 'Выполнено';
-  if (s === 'New') return 'Новая';
-  if (s === 'Qualified') return 'Квалификация';
-  if (s === 'Proposal') return 'КП отправлено';
-  if (s === 'Negotiation') return 'Согласование';
-  if (s === 'Won' || s === 'Closed Won') return 'Успешно закрыта';
-  if (s === 'Lost' || s === 'Closed Lost') return 'Закрыта без сделки';
-  return s || 'К выполнению';
-}
-
-export function buildTeddyExecutiveBrief(params: {
-  prompt: string;
-  persona: TeddyPersonaMode;
-  isEn: boolean;
+interface TedCloudAiDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  companyId: string;
   companyName: string;
-  userRole: string;
-  userName: string;
+  currentUser: OrganizationNode;
+  nodes: OrganizationNode[];
   tasks: TaskRecord[];
   leads: CrmLeadRecord[];
-  nodes: OrganizationNode[];
-  messages: WorkspaceMessageRecord[];
-  formatMoney: (n: number) => string;
-}): {
-  headline: string;
-  highlights: string[];
-  metrics: TeddyMetricBadge[];
-  actionLinks: TeddyActionLink[];
-  suggestedTasks: Array<{
-    title: string;
-    description: string;
-    priority: 'High' | 'Medium' | 'Low';
-    department: string;
-    due_date: string;
-  }>;
-} {
-  const {
-    prompt,
-    isEn,
-    companyName,
-    userRole,
-    tasks,
-    leads,
-    nodes,
-    formatMoney,
-  } = params;
+  onRefreshData: () => Promise<void>;
+  onOptimisticTasksAdded?: (newTasks: TaskRecord[]) => void;
+  onNavigateToSection?: (section: 'overview' | 'tasks' | 'crm' | 'team' | 'workspace' | 'billing') => void;
+  onOpenLegalDocModal?: (lead: CrmLeadRecord, docType?: 'contract' | 'invoice' | 'act') => void;
+  showToast?: (msg: string) => void;
+}
 
-  const q = prompt.toLowerCase().trim();
-  const isExecutive =
-    userRole === 'CEO' ||
-    userRole === 'Founder' ||
-    userRole === 'Owner' ||
-    userRole === 'SuperAdmin' ||
-    userRole === 'SysAdmin' ||
-    userRole === 'DepartmentHead' ||
-    userRole.toLowerCase().includes('директор') ||
-    userRole.toLowerCase().includes('руковод');
+const SLASH_COMMANDS = [
+  {
+    cmd: '/декомпозиция' as const,
+    labelRu: '/декомпозиция',
+    labelEn: '/decompose',
+    descRu: 'Разбить сложную цель на пакет готовых задач с назначением отделов и сроков',
+    descEn: 'Break down a strategic goal into a batch of ready-to-assign tasks with departments and deadlines',
+    icon: Layers,
+  },
+  {
+    cmd: '/аудит-воронки' as const,
+    labelRu: '/аудит-воронки',
+    labelEn: '/pipeline-audit',
+    descRu: 'Интерактивная таблица зависших сделок CRM с кнопкой автоматического создания задач на дожим',
+    descEn: 'Interactive table of stalled CRM deals with automated follow-up task generation',
+    icon: Briefcase,
+  },
+  {
+    cmd: '/балансировка' as const,
+    labelRu: '/балансировка',
+    labelEn: '/rebalance',
+    descRu: 'Перераспределение задач с перегруженных сотрудников на свободных в 1 клик',
+    descEn: 'Rebalance active tasks from overloaded staff to available team members in 1 click',
+    icon: SlidersHorizontal,
+  },
+  {
+    cmd: '/договор' as const,
+    labelRu: '/договор',
+    labelEn: '/contract',
+    descRu: 'Мгновенное заполнение и открытие печатного Договора / Счета А4 по выбранному клиенту',
+    descEn: 'Instant population and printable A4 Contract / Invoice preview for a selected client',
+    icon: FileText,
+  },
+];
 
-  const nowDate = new Date().toISOString().slice(0, 10);
-  const next3Days = new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10);
-
-  const openTasks = tasks.filter((t) => t.status !== 'Done');
-  const doneTasks = tasks.filter((t) => t.status === 'Done');
-  const highPriorityOpen = openTasks.filter((t) => t.priority === 'High');
-  const overdueTasks = openTasks.filter((t) => t.due_date && t.due_date < nowDate);
-
-  const activeLeads = leads.filter((l) => l.status !== 'Won' && l.status !== 'Lost');
-  const wonLeads = leads.filter((l) => l.status === 'Won');
-  const pipelineAmount = activeLeads.reduce((s, l) => s + (l.amount || 0), 0);
-  const wonAmount = wonLeads.reduce((s, l) => s + (l.amount || 0), 0);
-  const topActiveLeads = [...activeLeads].sort((a, b) => (b.amount || 0) - (a.amount || 0));
-  const primaryLead = topActiveLeads[0];
-
-  const completionRate =
-    tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 100;
-
-  const attentionCount = highPriorityOpen.length + overdueTasks.length;
-
-  const metrics: TeddyMetricBadge[] = [
-    {
-      label: isEn ? 'Plan Completion' : 'Выполнение плана',
-      value: `${completionRate}% (${doneTasks.length}/${tasks.length})`,
-      tone: completionRate >= 65 ? 'emerald' : completionRate >= 40 ? 'amber' : 'rose',
-    },
-    {
-      label: isEn ? 'Needs Attention' : 'Требуют внимания',
-      value: isEn
-        ? `${highPriorityOpen.length} urgent · ${overdueTasks.length} overdue`
-        : `${highPriorityOpen.length} срочных · ${overdueTasks.length} просрочено`,
-      tone: overdueTasks.length > 0 ? 'rose' : highPriorityOpen.length > 0 ? 'amber' : 'emerald',
-    },
-    {
-      label: isEn ? 'Active Staff' : 'Активный штат',
-      value: isEn ? `${nodes.length} specialists` : `${nodes.length} сотр.`,
-      tone: 'indigo',
-    },
-  ];
-
-  const workloadByNode = new Map<string, { name: string; dept: string; open: number; high: number }>();
-  for (const n of nodes) {
-    workloadByNode.set(n.id, {
-      name: n.name || (isEn ? 'Specialist' : 'Сотрудник'),
-      dept: n.department || (isEn ? 'Operations' : 'Операционный отдел'),
-      open: 0,
-      high: 0,
-    });
-  }
-  for (const t of openTasks) {
-    const assigneeKey = t.assigned_to || t.owner_node_id;
-    if (assigneeKey && workloadByNode.has(assigneeKey)) {
-      const entry = workloadByNode.get(assigneeKey)!;
-      entry.open += 1;
-      if (t.priority === 'High') entry.high += 1;
-    }
-  }
-  const busiestStaff = Array.from(workloadByNode.values()).sort(
-    (a, b) => b.high * 2 + b.open - (a.high * 2 + a.open)
-  );
-  const topBusy = busiestStaff[0];
-
-  const isFinanceFocus =
-    q.includes('crm') ||
-    q.includes('сделк') ||
-    q.includes('выруч') ||
-    q.includes('воронк') ||
-    q.includes('финанс') ||
-    q.includes('revenue') ||
-    q.includes('pipeline');
-
-  let headline = '';
-  const highlights: string[] = [];
-  const actionLinks: TeddyActionLink[] = [];
-  const suggestedTasks: Array<{
-    title: string;
-    description: string;
-    priority: 'High' | 'Medium' | 'Low';
-    department: string;
-    due_date: string;
-  }> = [];
-
-  if (isFinanceFocus && isExecutive) {
-    headline = isEn
-      ? `In ${companyName}, ${activeLeads.length} deals are currently active worth ${formatMoney(pipelineAmount)}, with ${formatMoney(wonAmount)} already closed.`
-      : `По компании «${companyName}» в работе находится ${activeLeads.length} сделок на сумму ${formatMoney(pipelineAmount)}, уже закрыто контрактов на ${formatMoney(wonAmount)}.`;
-
-    if (primaryLead) {
-      highlights.push(
-        isEn
-          ? `Key deal "${primaryLead.client_name}" for ${formatMoney(primaryLead.amount || 0)} is at the "${translateStatusRu(primaryLead.status, true)}" stage — align final contract terms today.`
-          : `Крупнейшая сделка «${primaryLead.client_name}» на сумму ${formatMoney(primaryLead.amount || 0)} находится на этапе «${translateStatusRu(primaryLead.status, false)}» — рекомендуется согласовать график оплаты.`
-      );
-      actionLinks.push({
-        label: isEn ? `Open "${primaryLead.client_name}"` : `Сделка «${primaryLead.client_name}»`,
-        leadId: primaryLead.id,
-      });
-    }
-  } else {
-    headline = isEn
-      ? `Across ${companyName}, ${doneTasks.length} of ${tasks.length} tasks are completed (${completionRate}%). ${
-          attentionCount > 0
-            ? `${highPriorityOpen.length} urgent tasks are in work and ${overdueTasks.length} require deadline updates.`
-            : 'All active tasks are progressing on schedule.'
-        }${isExecutive && activeLeads.length > 0 ? ` Active CRM pipeline stands at ${formatMoney(pipelineAmount)}.` : ''}`
-      : `По компании «${companyName}» закрыто ${doneTasks.length} из ${tasks.length} задач (${completionRate}%). ${
-          attentionCount > 0
-            ? `Сейчас ${highPriorityOpen.length} срочных поручений требуют фокуса, просроченных — ${overdueTasks.length}.`
-            : 'Все текущие задачи выполняются в плановом графике без просрочек.'
-        }${isExecutive && activeLeads.length > 0 ? ` В воронке CRM в работе сделки на ${formatMoney(pipelineAmount)}.` : ''}`;
-
-    if (highPriorityOpen.length > 0) {
-      const topTask = highPriorityOpen[0];
-      const ruStatus = translateStatusRu(topTask.status, isEn);
-      highlights.push(
-        isEn
-          ? `Key task in focus: "${topTask.title}" (${topTask.department || 'Operations'}, status: ${ruStatus}).`
-          : `Главная задача в фокусе: «${topTask.title}» (${topTask.department || 'Операционный отдел'}, статус: ${ruStatus}).`
-      );
-      actionLinks.push({
-        label: isEn ? `Task "${topTask.title}"` : `Задача «${topTask.title}»`,
-        taskId: topTask.id,
-      });
-    }
-
-    if (isExecutive && primaryLead) {
-      const ruLeadStage = translateStatusRu(primaryLead.status, isEn);
-      highlights.push(
-        isEn
-          ? `Commercial priority: advance deal "${primaryLead.client_name}" (${formatMoney(primaryLead.amount || 0)}, stage: ${ruLeadStage}).`
-          : `Приоритетная сделка: «${primaryLead.client_name}» на ${formatMoney(primaryLead.amount || 0)} (этап: ${ruLeadStage}).`
-      );
-      actionLinks.push({
-        label: isEn ? `Deal "${primaryLead.client_name}"` : `Сделка «${primaryLead.client_name}»`,
-        leadId: primaryLead.id,
-      });
-    }
-
-    if (topBusy && topBusy.open > 0) {
-      highlights.push(
-        isEn
-          ? `Team workload: ${topBusy.name} is leading ${topBusy.open} open tasks (${topBusy.high} urgent).`
-          : `Загрузка команды: у сотрудника ${topBusy.name} в работе ${topBusy.open} поручений (из них срочных — ${topBusy.high}).`
-      );
-    }
-  }
-
-  actionLinks.push({
-    label: isEn ? 'Open Tasks' : 'Перейти к задачам',
-    targetSection: 'tasks',
-  });
-  if (isExecutive) {
-    actionLinks.push({
-      label: isEn ? 'Open CRM' : 'Открыть CRM',
-      targetSection: 'crm',
-    });
-  }
-
-  suggestedTasks.push({
-    title: isEn
-      ? `Review deadlines on ${Math.max(1, highPriorityOpen.length)} urgent tasks`
-      : `Проверить готовность по срочным поручениям (${Math.max(1, highPriorityOpen.length)} шт.)`,
-    description: isEn
-      ? 'Confirm deliverables with assignees and close completed items in the task board.'
-      : 'Сверить промежуточные результаты с ответственными и закрыть выполненные этапы.',
-    priority: 'High',
-    department: isEn ? 'Operations' : 'Операционный блок',
-    due_date: next3Days,
-  });
-
-  if (isExecutive && primaryLead) {
-    suggestedTasks.push({
-      title: isEn
-        ? `Finalize commercial offer for ${primaryLead.client_name}`
-        : `Согласовать условия договора и счет с «${primaryLead.client_name}»`,
-      description: isEn
-        ? `Deal value: ${formatMoney(primaryLead.amount || 0)}. Confirm contract specification and payment schedule.`
-        : `Сумма контракта: ${formatMoney(primaryLead.amount || 0)}. Зафиксировать спецификацию и дату оплаты.`,
-      priority: 'Medium',
-      department: primaryLead.department || (isEn ? 'Sales' : 'Отдел продаж'),
-      due_date: next3Days,
-    });
-  }
-
-  return {
-    headline,
-    highlights,
-    metrics,
-    actionLinks,
-    suggestedTasks,
-  };
+function buildDueDateIso(daysAhead: number): string {
+  const d = new Date(Date.now() + daysAhead * 86400000);
+  return d.toISOString().slice(0, 10);
 }
 
 export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   isOpen,
   onClose,
-  company,
-  companyName: companyNameProp,
-  currentProfile,
+  companyId,
+  companyName,
+  currentUser,
+  nodes,
   tasks,
   leads,
-  nodes,
-  messages,
-  canCreateTasks = true,
-  canViewCrm = true,
-  onRefreshWorkspace,
-  onCreateFollowUpTask,
-  onNavigateToCrm,
-  onNavigateToTasks,
-  onCreateSuggestedTask,
-  onSelectSection,
-  onSelectTask,
-  onSelectLead,
+  onRefreshData,
+  onOptimisticTasksAdded,
+  onNavigateToSection,
+  onOpenLegalDocModal,
+  showToast,
 }) => {
-  const { language, theme, formatMoney, formatRole } = useLocale();
+  const { language } = useLocale();
   const isEn = language === 'en';
-  const isLight = theme === 'light';
 
-  const resolvedCompanyName =
-    companyNameProp || company?.name || (isEn ? 'TedCloud Enterprise' : 'TedCloud');
+  const safeNodes = useMemo(() => (Array.isArray(nodes) ? nodes : []), [nodes]);
+  const safeTasks = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
+  const safeLeads = useMemo(() => (Array.isArray(leads) ? leads : []), [leads]);
 
-  const [viewTab, setViewTab] = useState<'assistant' | 'actions'>('assistant');
-  const [promptInput, setPromptInput] = useState('');
-  const [addedTitles, setAddedTitles] = useState<string[]>([]);
-  const [isThinking, setIsThinking] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [mentionPicker, setMentionPicker] = useState<'none' | 'staff' | 'deal'>('none');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [executingTurnId, setExecutingTurnId] = useState<string | null>(null);
+  const [selectedContractLeadId, setSelectedContractLeadId] = useState<string>('');
+  const [selectedDocKind, setSelectedDocKind] = useState<'contract' | 'invoice'>('contract');
+  const [inlineA4PreviewLead, setInlineA4PreviewLead] = useState<CrmLeadRecord | null>(null);
 
-  const userRole = currentProfile?.role_type || 'Member';
-  const userName = currentProfile?.name || (isEn ? 'Executive' : 'Руководитель');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const initialBrief = useMemo(
-    () =>
-      buildTeddyExecutiveBrief({
-        prompt: 'executive brief',
-        persona: viewTab,
-        isEn,
-        companyName: resolvedCompanyName,
-        userRole,
-        userName,
-        tasks,
-        leads: canViewCrm ? leads : [],
-        nodes,
-        messages,
-        formatMoney,
-      }),
-    [
-      viewTab,
-      isEn,
-      resolvedCompanyName,
-      userRole,
-      userName,
-      tasks,
-      leads,
-      canViewCrm,
-      nodes,
-      messages,
-      formatMoney,
-    ]
-  );
+  const pickEmployeeIdByKeyword = (deptHint: string, indexFallback: number): string => {
+    if (safeNodes.length === 0) return currentUser.id;
+    const lowerHint = deptHint.toLowerCase();
+    const matched = safeNodes.find(
+      (n) =>
+        String(n.department || '').toLowerCase().includes(lowerHint) ||
+        String(n.role_type || '').toLowerCase().includes(lowerHint)
+    );
+    if (matched) return matched.id;
+    return safeNodes[indexFallback % safeNodes.length]?.id || currentUser.id;
+  };
 
-  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
+  const generateDecompositionStaging = (goalTitle: string): StagingRowItem[] => {
+    const cleanGoal =
+      goalTitle
+        .replace(/^\/декомпозиция\s*/i, '')
+        .replace(/^\/decompose\s*/i, '')
+        .trim() || (isEn ? 'Severstal Enterprise Rollout' : 'Запуск проекта Северсталь');
 
-  const effectiveHistory: ChatTurn[] = useMemo(() => {
-    const welcomeTurn: ChatTurn = {
-      id: 'teddy-welcome',
-      role: 'assistant',
-      persona: viewTab,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      text: initialBrief.headline,
-      highlights: initialBrief.highlights,
-      metrics: initialBrief.metrics,
-      actionLinks: initialBrief.actionLinks,
-      suggestedTasks: initialBrief.suggestedTasks,
-    };
-    return [welcomeTurn, ...chatHistory];
-  }, [initialBrief, chatHistory, viewTab]);
+    const blueprint = [
+      {
+        title: isEn
+          ? `[Architecture] Technical specification & contour audit: ${cleanGoal}`
+          : `[Архитектура] Техническое задание и аудит контура: ${cleanGoal}`,
+        dept: isEn ? 'IT & Architecture' : 'ИТ и Архитектура',
+        priority: 'high' as TaskPriority,
+        days: 2,
+      },
+      {
+        title: isEn
+          ? `[Legal] Contract clearance & SLA specification: ${cleanGoal}`
+          : `[Юр. отдел] Согласование договора и приложения SLA: ${cleanGoal}`,
+        dept: isEn ? 'Legal' : 'Юридический отдел',
+        priority: 'high' as TaskPriority,
+        days: 3,
+      },
+      {
+        title: isEn
+          ? `[Commercial] Invoice issue & milestone schedule: ${cleanGoal}`
+          : `[Коммерция] Выставление счета и график траншей: ${cleanGoal}`,
+        dept: isEn ? 'Sales' : 'Коммерческий отдел',
+        priority: 'medium' as TaskPriority,
+        days: 4,
+      },
+      {
+        title: isEn
+          ? `[Operations] Production launch & Telegram 2FA onboarding: ${cleanGoal}`
+          : `[Операции] Ввод в эксплуатацию и подключение сотрудников: ${cleanGoal}`,
+        dept: isEn ? 'Operations' : 'Операционный блок',
+        priority: 'medium' as TaskPriority,
+        days: 6,
+      },
+    ];
+
+    return blueprint.map((b, idx) => ({
+      id: `stg-dec-${Date.now()}-${idx}`,
+      checked: true,
+      mode: 'create_task',
+      title: b.title,
+      department: b.dept,
+      assignedTo: pickEmployeeIdByKeyword(b.dept, idx),
+      priority: b.priority,
+      dueDate: buildDueDateIso(b.days),
+    }));
+  };
+
+  const generatePipelineAuditStaging = (): StagingRowItem[] => {
+    const activeLeads = safeLeads.filter(
+      (l) => !['closed_won', 'closed_lost'].includes(String(l.stage || '').toLowerCase())
+    );
+    const sourceLeads =
+      activeLeads.length > 0
+        ? activeLeads.slice(0, 5)
+        : [
+            {
+              id: 'sample-lead-1',
+              company_name: 'ПАО «Северсталь»',
+              contact_person: 'Соколов А.В.',
+              value: 2400000,
+              stage: 'Negotiation',
+            } as any,
+          ];
+
+    return sourceLeads.map((lead, idx) => ({
+      id: `stg-crm-${Date.now()}-${idx}`,
+      checked: true,
+      mode: 'followup_lead',
+      title: isEn
+        ? `Follow-up & commercial closing: ${lead.company_name}`
+        : `Дожим сделки и отправка КП / Договора: ${lead.company_name}`,
+      department: isEn ? 'Commercial Department' : 'Коммерческий отдел',
+      assignedTo: lead.assigned_to || pickEmployeeIdByKeyword('коммерч', idx),
+      priority: Number(lead.value || 0) >= 500000 ? 'high' : 'medium',
+      dueDate: buildDueDateIso(2 + idx),
+      leadId: lead.id,
+      dealValue: Number(lead.value || 0),
+    }));
+  };
+
+  const generateRebalanceStaging = (): StagingRowItem[] => {
+    const openTasks = safeTasks.filter((t) => t.status !== 'Done');
+    const loadMap = new Map<string, number>();
+    safeNodes.forEach((n) => loadMap.set(n.id, 0));
+    openTasks.forEach((t) => {
+      const uid = t.assigned_to || t.owner_node_id;
+      if (uid) loadMap.set(uid, (loadMap.get(uid) || 0) + 1);
+    });
+
+    const sortedByLeastLoad = [...safeNodes].sort(
+      (a, b) => (loadMap.get(a.id) || 0) - (loadMap.get(b.id) || 0)
+    );
+
+    const tasksToRebalance = openTasks.slice(0, 4);
+    if (tasksToRebalance.length === 0) {
+      return generateDecompositionStaging('Оптимизация нагрузки подразделений');
+    }
+
+    return tasksToRebalance.map((task, idx) => {
+      const targetAssignee =
+        sortedByLeastLoad[idx % Math.max(1, sortedByLeastLoad.length)]?.id || currentUser.id;
+      const targetNode = safeNodes.find((n) => n.id === targetAssignee);
+      return {
+        id: `stg-reb-${Date.now()}-${idx}`,
+        checked: true,
+        mode: 'reassign_task',
+        existingTaskId: task.id,
+        title: task.title,
+        department:
+          targetNode?.department ||
+          task.department ||
+          (isEn ? 'Operations' : 'Операционный контур'),
+        assignedTo: targetAssignee,
+        priority: (task.priority as TaskPriority) || 'medium',
+        dueDate: task.due_date ? String(task.due_date).slice(0, 10) : buildDueDateIso(3),
+      };
+    });
+  };
+
+  const [turns, setTurns] = useState<CopilotTurn[]>([]);
 
   useEffect(() => {
-    if (scrollContainerRef.current && chatHistory.length > 0) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    if (isOpen && turns.length === 0) {
+      const defaultLead = safeLeads[0]?.id || '';
+      setSelectedContractLeadId(defaultLead);
+      const initialStaging = generateDecompositionStaging('Запуск проекта Северсталь');
+      setTurns([
+        {
+          id: 'initial-copilot-turn',
+          role: 'assistant',
+          text: isEn
+            ? 'Teddy Command & Staging Console ready. Select a slash command (/decompose, /pipeline-audit, /rebalance, /contract) or edit the live task staging table below to commit records directly to Supabase.'
+            : 'Консоль управления Teddy AI готова. Используйте команды (/декомпозиция, /аудит-воронки, /балансировка, /договор), упоминания @сотрудник и #сделка, или отредактируйте черновик пакета задач ниже перед записью в БД.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          commandType: '/декомпозиция',
+          stagingRows: initialStaging,
+          executed: false,
+        },
+      ]);
     }
-  }, [chatHistory.length, isThinking]);
+  }, [isOpen]);
 
-  const formatPriorityLabel = (priority: 'High' | 'Medium' | 'Low') => {
-    if (isEn) return priority;
-    if (priority === 'High') return 'Высокий';
-    if (priority === 'Low') return 'Низкий';
-    return 'Средний';
-  };
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (inlineA4PreviewLead) {
+          setInlineA4PreviewLead(null);
+          return;
+        }
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose, inlineA4PreviewLead]);
 
   if (!isOpen) return null;
 
-  const handleAddRecommendedTask = async (st: {
-    title: string;
-    description: string;
-    priority: 'High' | 'Medium' | 'Low';
-    department: string;
-    due_date: string;
-  }) => {
-    setAddedTitles((prev) => (prev.includes(st.title) ? prev : [...prev, st.title]));
+  const updateStagingRow = (
+    turnId: string,
+    rowId: string,
+    patch: Partial<StagingRowItem>
+  ) => {
+    setTurns((prev) =>
+      prev.map((turn) => {
+        if (turn.id !== turnId || !turn.stagingRows) return turn;
+        return {
+          ...turn,
+          stagingRows: turn.stagingRows.map((r) => (r.id === rowId ? { ...r, ...patch } : r)),
+        };
+      })
+    );
+  };
 
-    if (onCreateSuggestedTask) {
-      await onCreateSuggestedTask(st);
+  const addStagingRow = (turnId: string) => {
+    const fallbackAssignee = safeNodes[0]?.id || currentUser.id;
+    const newRow: StagingRowItem = {
+      id: `stg-custom-${Date.now()}`,
+      checked: true,
+      mode: 'create_task',
+      title: isEn ? 'New operational task' : 'Новая операционная задача',
+      department: safeNodes[0]?.department || (isEn ? 'General' : 'Основное подразделение'),
+      assignedTo: fallbackAssignee,
+      priority: 'medium',
+      dueDate: buildDueDateIso(3),
+    };
+    setTurns((prev) =>
+      prev.map((turn) => {
+        if (turn.id !== turnId) return turn;
+        return {
+          ...turn,
+          stagingRows: [...(turn.stagingRows || []), newRow],
+        };
+      })
+    );
+  };
+
+  const removeStagingRow = (turnId: string, rowId: string) => {
+    setTurns((prev) =>
+      prev.map((turn) => {
+        if (turn.id !== turnId || !turn.stagingRows) return turn;
+        return {
+          ...turn,
+          stagingRows: turn.stagingRows.filter((r) => r.id !== rowId),
+        };
+      })
+    );
+  };
+
+  const handleExecuteStagingBatch = async (turn: CopilotTurn) => {
+    const selectedRows = (turn.stagingRows || []).filter((r) => r.checked && r.title.trim());
+    if (selectedRows.length === 0) {
+      if (showToast) {
+        showToast(isEn ? 'Select at least one row to commit' : 'Отметьте хотя бы одну запись для выполнения');
+      }
       return;
     }
 
+    setExecutingTurnId(turn.id);
+    const createdOptimisticTasks: TaskRecord[] = [];
+
     try {
-      await fetch('/api/db', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          table: 'tasks',
-          payload: {
-            company_id: currentProfile?.company_id || company?.id || 'default',
-            title: st.title,
-            description: st.description,
-            priority: st.priority,
-            status: 'Todo',
-            department: st.department || currentProfile?.department || null,
-            due_date: st.due_date,
-            owner_node_id: currentProfile?.id || null,
-            assigned_to: currentProfile?.id || null,
-          },
-        }),
-      });
-      if (onRefreshWorkspace) {
-        onRefreshWorkspace();
+      for (let i = 0; i < selectedRows.length; i++) {
+        const row = selectedRows[i];
+        const assigneeNode = safeNodes.find((n) => n.id === row.assignedTo);
+
+        if (row.mode === 'reassign_task' && row.existingTaskId) {
+          await fetch('/api/db', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              table: 'tasks',
+              id: row.existingTaskId,
+              company_id: companyId,
+              updates: {
+                title: row.title.trim(),
+                assigned_to: row.assignedTo,
+                owner_node_id: row.assignedTo,
+                department: assigneeNode?.department || row.department,
+                priority: row.priority,
+                due_date: new Date(row.dueDate).toISOString(),
+              },
+            }),
+          });
+        } else {
+          const payload = {
+            company_id: companyId,
+            title: row.title.trim(),
+            description:
+              row.mode === 'followup_lead'
+                ? `Сформировано через Teddy AI (/аудит-воронки) · Исполнитель: ${assigneeNode?.name || 'Сотрудник'}`
+                : `Пакетная декомпозиция Teddy AI · Отдел: ${row.department}`,
+            status: 'To Do' as const,
+            priority: row.priority,
+            assigned_to: row.assignedTo,
+            owner_node_id: row.assignedTo,
+            department: assigneeNode?.department || row.department,
+            due_date: new Date(row.dueDate).toISOString(),
+          };
+
+          const optimisticTask: TaskRecord = {
+            id: `opt-teddy-${Date.now()}-${i}`,
+            ...payload,
+            created_at: new Date().toISOString(),
+          };
+          createdOptimisticTasks.push(optimisticTask);
+
+          await fetch('/api/db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              table: 'tasks',
+              company_id: companyId,
+              record: payload,
+            }),
+          });
+        }
+
+        if (assigneeNode?.telegram_chat_id) {
+          fetch('/api/db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'send_telegram_notification',
+              chat_id: assigneeNode.telegram_chat_id,
+              text: `Teddy AI (${companyName}): Назначена задача «${row.title.trim()}» · Срок: ${row.dueDate}`,
+            }),
+          }).catch(() => {});
+        }
       }
-    } catch {
-      if (onCreateFollowUpTask) {
-        onCreateFollowUpTask(st.title);
+
+      if (createdOptimisticTasks.length > 0 && onOptimisticTasksAdded) {
+        onOptimisticTasksAdded(createdOptimisticTasks);
       }
+
+      setTurns((prev) =>
+        prev.map((t) =>
+          t.id === turn.id
+            ? { ...t, executed: true, executedCount: selectedRows.length }
+            : t
+        )
+      );
+
+      await onRefreshData();
+
+      if (showToast) {
+        showToast(
+          isEn
+            ? `Committed ${selectedRows.length} records to database & notified assignees`
+            : `Выполнено в БД: создано/обновлено записей (${selectedRows.length}) с синхронизацией в Telegram`
+        );
+      }
+    } finally {
+      setExecutingTurnId(null);
     }
   };
 
-  const handleAsk = async (customPrompt?: string) => {
-    const query = (customPrompt ?? promptInput).trim();
-    if (!query || isThinking) return;
+  const executeSlashOrPrompt = async (rawCommand: string) => {
+    const trimmed = rawCommand.trim();
+    if (!trimmed) return;
 
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const userTurn: ChatTurn = {
-      id: `user-${Date.now()}`,
+    setShowSlashMenu(false);
+    setMentionPicker('none');
+    setInputValue('');
+
+    const userTurn: CopilotTurn = {
+      id: `usr-${Date.now()}`,
       role: 'user',
-      text: query,
-      timestamp: nowTime,
+      text: trimmed,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    const localBrief = buildTeddyExecutiveBrief({
-      prompt: query,
-      persona: viewTab,
-      isEn,
-      companyName: resolvedCompanyName,
-      userRole,
-      userName,
-      tasks,
-      leads: canViewCrm ? leads : [],
-      nodes,
-      messages,
-      formatMoney,
-    });
+    setTurns((prev) => [...prev, userTurn]);
+    setIsProcessing(true);
 
-    setChatHistory((prev) => [...prev, userTurn]);
-    if (!customPrompt) setPromptInput('');
-    setIsThinking(true);
+    await new Promise((r) => setTimeout(r, 180));
 
-    try {
-      const response = await fetch('/api/db', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'ai_assistant',
-          mode: 'custom',
-          personaMode: 'operations',
-          lang: isEn ? 'en' : 'ru',
-          companyId: currentProfile?.company_id || company?.id || 'default',
-          companyName: resolvedCompanyName,
-          prompt: query,
-          currentUser: currentProfile,
-          nodes,
-          tasks,
-          leads: canViewCrm ? leads : [],
-          messages,
-        }),
-      });
+    const lower = trimmed.toLowerCase();
+    let assistantTurn: CopilotTurn;
 
-      let aiSummaryText = localBrief.headline;
-      let aiHighlights = localBrief.highlights;
-      let aiTasks = localBrief.suggestedTasks;
+    if (
+      lower.startsWith('/декомпозиция') ||
+      lower.startsWith('/decompose') ||
+      lower.includes('план') ||
+      lower.includes('задач') ||
+      lower.includes('северстал') ||
+      lower.includes('запуск') ||
+      lower.includes('создай')
+    ) {
+      const staging = generateDecompositionStaging(trimmed);
+      assistantTurn = {
+        id: `ast-${Date.now()}`,
+        role: 'assistant',
+        text: isEn
+          ? `Prepared an interactive task staging package (${staging.length} items). Review titles, assignees, priorities, and deadlines before committing to the database.`
+          : `Сформирован интерактивный черновик декомпозиции (${staging.length} задач). Проверьте названия, ответственных сотрудников, приоритеты и дедлайны перед записью в базу данных.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        commandType: '/декомпозиция',
+        stagingRows: staging,
+        executed: false,
+      };
+    } else if (
+      lower.startsWith('/аудит-воронки') ||
+      lower.startsWith('/pipeline-audit') ||
+      lower.includes('воронк') ||
+      lower.includes('сделк') ||
+      lower.includes('crm')
+    ) {
+      const staging = generatePipelineAuditStaging();
+      assistantTurn = {
+        id: `ast-${Date.now()}`,
+        role: 'assistant',
+        text: isEn
+          ? `Audited ${safeLeads.length} CRM deals. Generated follow-up tasks for active pipeline bottlenecks:`
+          : `Проведен аудит воронки CRM (${safeLeads.length} сделок). Сформирован пакет задач на дожим зависших контрактов:`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        commandType: '/аудит-воронки',
+        stagingRows: staging,
+        executed: false,
+      };
+    } else if (
+      lower.startsWith('/балансировка') ||
+      lower.startsWith('/rebalance') ||
+      lower.includes('баланс') ||
+      lower.includes('перегруз') ||
+      lower.includes('нагрузк')
+    ) {
+      const staging = generateRebalanceStaging();
+      assistantTurn = {
+        id: `ast-${Date.now()}`,
+        role: 'assistant',
+        text: isEn
+          ? 'Calculated optimal workload distribution across staff members. Confirm task reassignment below:'
+          : 'Рассчитана оптимальная балансировка нагрузки между сотрудниками. Подтвердите перераспределение задач в таблице:',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        commandType: '/балансировка',
+        stagingRows: staging,
+        executed: false,
+      };
+    } else if (
+      lower.startsWith('/договор') ||
+      lower.startsWith('/contract') ||
+      lower.includes('договор') ||
+      lower.includes('счет') ||
+      lower.includes('акт')
+    ) {
+      const matchedLead =
+        safeLeads.find((l) =>
+          lower.includes(String(l.company_name || '').toLowerCase())
+        ) || safeLeads[0];
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data?.reply && typeof data.reply === 'string' && data.reply.trim().length > 10) {
-          aiSummaryText = data.reply.trim();
-        } else if (
-          data?.summary &&
-          typeof data.summary === 'string' &&
-          data.summary.trim().length > 10
-        ) {
-          aiSummaryText = data.summary.trim();
-        }
-        if (Array.isArray(data?.highlights) && data.highlights.length > 0) {
-          aiHighlights = data.highlights;
-        }
-        if (Array.isArray(data?.suggestedTasks) && data.suggestedTasks.length > 0) {
-          aiTasks = data.suggestedTasks;
-        }
+      if (matchedLead) {
+        setSelectedContractLeadId(matchedLead.id);
       }
 
-      const assistantTurn: ChatTurn = {
-        id: `ai-${Date.now() + 1}`,
+      assistantTurn = {
+        id: `ast-${Date.now()}`,
         role: 'assistant',
-        persona: viewTab,
-        text: aiSummaryText,
+        text: isEn
+          ? 'Select the counterparty deal below to immediately populate and print an official A4 Contract or Invoice:'
+          : 'Выберите сделку контрагента ниже для мгновенного заполнения и открытия печатного Договора или Счета А4:',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        highlights: aiHighlights,
-        metrics: localBrief.metrics,
-        actionLinks: localBrief.actionLinks,
-        suggestedTasks: aiTasks,
+        commandType: '/договор',
+        contractLeadId: matchedLead?.id || '',
       };
+    } else {
+      const openTasksCount = safeTasks.filter((t) => t.status !== 'Done').length;
+      const doneTasksCount = safeTasks.filter((t) => t.status === 'Done').length;
+      const totalPipelineRub = safeLeads.reduce((acc, l) => acc + Number(l.value || 0), 0);
 
-      setChatHistory((prev) => [...prev, assistantTurn]);
-    } catch {
-      const assistantTurn: ChatTurn = {
-        id: `ai-${Date.now() + 1}`,
+      assistantTurn = {
+        id: `ast-${Date.now()}`,
         role: 'assistant',
-        persona: viewTab,
-        text: localBrief.headline,
+        text: isEn
+          ? `Live operational slice for "${companyName}": ${openTasksCount} active tasks (${doneTasksCount} completed), ${safeLeads.length} CRM deals totaling ${totalPipelineRub.toLocaleString('ru-RU')} RUB across ${safeNodes.length} staff members.`
+          : `Аналитический срез по компании «${companyName}»: в работе ${openTasksCount} задач (завершено ${doneTasksCount}), в воронке CRM ${safeLeads.length} сделок на сумму ${totalPipelineRub.toLocaleString('ru-RU')} ₽, штат: ${safeNodes.length} сотр.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        highlights: localBrief.highlights,
-        metrics: localBrief.metrics,
-        actionLinks: localBrief.actionLinks,
-        suggestedTasks: localBrief.suggestedTasks,
+        commandType: 'analytics',
+        analyticsRows: [
+          {
+            id: 'an-tasks',
+            label: isEn ? 'Active Operational Tasks' : 'Операционные задачи в работе',
+            meta: isEn ? `${doneTasksCount} completed on SLA` : `Завершено в срок: ${doneTasksCount}`,
+            metric: `${openTasksCount}`,
+            targetSection: 'tasks',
+          },
+          {
+            id: 'an-crm',
+            label: isEn ? 'Commercial Pipeline Volume' : 'Объем коммерческой воронки CRM',
+            meta: isEn ? `${safeLeads.length} active B2B deals` : `Активных B2B-сделок: ${safeLeads.length}`,
+            metric: `${totalPipelineRub.toLocaleString('ru-RU')} ₽`,
+            targetSection: 'crm',
+          },
+          {
+            id: 'an-team',
+            label: isEn ? 'Organization Staff & RBAC' : 'Штатное расписание и контур RBAC',
+            meta: isEn ? 'Active contour members' : 'Сотрудники в контуре',
+            metric: `${safeNodes.length}`,
+            targetSection: 'team',
+          },
+        ],
       };
-      setChatHistory((prev) => [...prev, assistantTurn]);
-    } finally {
-      setIsThinking(false);
     }
+
+    setTurns((prev) => [...prev, assistantTurn]);
+    setIsProcessing(false);
+    setTimeout(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    }, 60);
+  };
+
+  const handleOpenContractA4 = (leadId: string, kind: 'contract' | 'invoice') => {
+    const targetLead =
+      safeLeads.find((l) => l.id === leadId) ||
+      safeLeads[0] ||
+      ({
+        id: 'default-a4-lead',
+        company_id: companyId,
+        company_name: 'ПАО «Северсталь»',
+        contact_person: 'Соколов Алексей Викторович',
+        value: 1450000,
+        stage: 'Contract',
+        probability: 90,
+        created_at: new Date().toISOString(),
+      } as CrmLeadRecord);
+
+    if (onOpenLegalDocModal) {
+      onOpenLegalDocModal(targetLead, kind);
+      return;
+    }
+    setSelectedDocKind(kind);
+    setInlineA4PreviewLead(targetLead);
+  };
+
+  const insertContextMention = (token: string) => {
+    setInputValue((prev) => `${prev.replace(/[@#]\S*$/, '').trim()} ${token} `.trimStart());
+    setMentionPicker('none');
+    inputRef.current?.focus();
   };
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 font-sans transition-colors ${
-        isLight ? 'bg-slate-900/35 backdrop-blur-sm' : 'bg-black/65 backdrop-blur-sm'
-      }`}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md font-sans"
       role="dialog"
       aria-modal="true"
+      aria-label="Teddy AI Command & Staging Console"
       onClick={onClose}
     >
+      {/* Floating Command & Staging Console (БЛОК 3.1: max-w-2xl w-full rounded-xl bg-white dark:bg-[#111318] border border-slate-200/90 dark:border-white/[0.09] shadow-[0_24px_60px_-15px_rgba(0,0,0,0.35)] overflow-hidden) */}
       <div
-        className={`relative w-full max-w-3xl h-[88dvh] sm:h-[82dvh] rounded-2xl flex flex-col overflow-hidden transition-all ${
-          isLight
-            ? 'bg-white border border-slate-200/90 text-slate-900 shadow-2xl'
-            : 'bg-zinc-950 border border-white/[0.09] text-zinc-100 shadow-2xl'
-        }`}
+        className="max-w-2xl w-full rounded-xl bg-white dark:bg-[#111318] border border-slate-200/90 dark:border-white/[0.09] text-slate-900 dark:text-zinc-100 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col max-h-[88vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className={`shrink-0 px-5 py-3.5 border-b flex items-center justify-between gap-3 ${
-            isLight
-              ? 'border-slate-200/80 bg-slate-50/60'
-              : 'border-white/[0.07] bg-zinc-900/60'
-          }`}
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-              <Bot className="w-4 h-4" />
+        {/* Top Command Bar Header */}
+        <div className="px-4 py-3 border-b border-slate-200/80 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#151821] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center shrink-0">
+              <Terminal className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2
-                  className={`text-sm font-semibold tracking-tight ${
-                    isLight ? 'text-slate-900' : 'text-white'
-                  }`}
-                >
-                  Teddy
-                </h2>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-medium text-emerald-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>{resolvedCompanyName}</span>
+                <span className="text-xs font-semibold tracking-tight text-slate-900 dark:text-zinc-100">
+                  Teddy Copilot
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-zinc-800 text-[10px] font-medium text-slate-600 dark:text-zinc-400">
+                  {companyName}
                 </span>
               </div>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                {isEn
+                  ? 'Command Bar · Type / for actions, @ for staff, # for deals'
+                  : 'Командная консоль · Введите / для команд, @ для сотрудника, # для сделки'}
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <div
-              className={`inline-flex items-center p-0.5 rounded-lg border text-xs ${
-                isLight
-                  ? 'bg-slate-100 border-slate-200/90'
-                  : 'bg-zinc-900 border-white/[0.08]'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => setViewTab('assistant')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                  viewTab === 'assistant'
-                    ? isLight
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'bg-zinc-800 text-white shadow-2xs'
-                    : isLight
-                    ? 'text-slate-600 hover:text-slate-900'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {isEn ? 'Assistant' : 'Ассистент'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewTab('actions')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                  viewTab === 'actions'
-                    ? isLight
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'bg-zinc-800 text-white shadow-2xs'
-                    : isLight
-                    ? 'text-slate-600 hover:text-slate-900'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {isEn ? 'Auto-Actions' : 'Авто-действия'}
-              </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.06] transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Live Command Bar Input in Top Section */}
+        <div className="p-3.5 border-b border-slate-200/80 dark:border-white/[0.08] bg-white dark:bg-[#111318] relative">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void executeSlashOrPrompt(inputValue);
+            }}
+            className="flex items-center gap-2"
+          >
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onFocus={() => {
+                  if (!inputValue.trim() || inputValue.startsWith('/')) {
+                    setShowSlashMenu(true);
+                  }
+                }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setInputValue(val);
+                  if (val.startsWith('/') || val === '') {
+                    setShowSlashMenu(true);
+                    setMentionPicker('none');
+                  } else if (val.endsWith('@')) {
+                    setMentionPicker('staff');
+                    setShowSlashMenu(false);
+                  } else if (val.endsWith('#')) {
+                    setMentionPicker('deal');
+                    setShowSlashMenu(false);
+                  } else {
+                    setShowSlashMenu(false);
+                  }
+                }}
+                placeholder={
+                  isEn
+                    ? 'Enter command (/decompose, /pipeline-audit, /rebalance, /contract) or goal...'
+                    : 'Введите цель (напр. «Создай план запуска проекта Северсталь») или / для меню...'
+                }
+                className="w-full h-10 rounded-lg border border-slate-200/90 dark:border-white/[0.09] bg-slate-50 dark:bg-zinc-900/90 px-3.5 text-xs text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-500 focus:border-slate-400 dark:focus:border-zinc-500"
+              />
             </div>
 
             <button
               type="button"
-              onClick={onClose}
-              aria-label={isEn ? 'Close Teddy' : 'Закрыть Teddy'}
-              className={`p-1.5 rounded-lg border transition-colors shrink-0 cursor-pointer ${
-                isLight
-                  ? 'border-slate-200/80 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-                  : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08]'
-              }`}
+              onClick={() => {
+                setMentionPicker((p) => (p === 'staff' ? 'none' : 'staff'));
+                setShowSlashMenu(false);
+              }}
+              title={isEn ? 'Mention Employee (@)' : 'Упомянуть сотрудника (@)'}
+              className="h-10 w-10 rounded-lg border border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/80 text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0 cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <AtSign className="w-4 h-4" />
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMentionPicker((p) => (p === 'deal' ? 'none' : 'deal'));
+                setShowSlashMenu(false);
+              }}
+              title={isEn ? 'Mention Deal (#)' : 'Упомянуть сделку CRM (#)'}
+              className="h-10 w-10 rounded-lg border border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/80 text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0 cursor-pointer"
+            >
+              <Hash className="w-4 h-4" />
+            </button>
+
+            <button
+              type="submit"
+              disabled={isProcessing || !inputValue.trim()}
+              className="h-10 px-4 rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-40 text-xs font-semibold inline-flex items-center gap-1.5 transition shrink-0 cursor-pointer"
+            >
+              {isProcessing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              <span>{isEn ? 'Run' : 'Выполнить'}</span>
+            </button>
+          </form>
+
+          {/* Quick Slash Command Chips */}
+          <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+            {SLASH_COMMANDS.map((sc) => {
+              const Icon = sc.icon;
+              return (
+                <button
+                  key={sc.cmd}
+                  type="button"
+                  onClick={() => void executeSlashOrPrompt(sc.cmd)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/80 hover:bg-slate-100 dark:hover:bg-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300 transition cursor-pointer"
+                >
+                  <Icon className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                  <span>{isEn ? sc.labelEn : sc.labelRu}</span>
+                </button>
+              );
+            })}
           </div>
+
+          {/* Interactive Slash Menu Popover (БЛОК 3.2) */}
+          {showSlashMenu && (
+            <div className="mt-2 rounded-xl border border-slate-200/90 dark:border-white/[0.09] bg-white dark:bg-[#161922] shadow-xl divide-y divide-slate-100 dark:divide-white/[0.06] overflow-hidden">
+              <div className="px-3 py-1.5 bg-slate-50 dark:bg-zinc-900/70 flex items-center justify-between text-[10px] font-semibold text-slate-500 dark:text-zinc-400">
+                <span>
+                  {isEn ? 'SLASH COMMANDS (DIRECT DB ACTIONS)' : 'КОМАНДЫ УПРАВЛЕНИЯ (ПРЯМЫЕ ДЕЙСТВИЯ С БД)'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowSlashMenu(false)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200"
+                >
+                  Esc
+                </button>
+              </div>
+              {SLASH_COMMANDS.map((sc) => {
+                const Icon = sc.icon;
+                return (
+                  <button
+                    key={sc.cmd}
+                    type="button"
+                    onClick={() => void executeSlashOrPrompt(sc.cmd)}
+                    className="w-full px-3.5 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-white/[0.04] flex items-center justify-between gap-3 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center shrink-0">
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                          {isEn ? sc.labelEn : sc.labelRu}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                          {isEn ? sc.descEn : sc.descRu}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* @Employee or #Deal Context Picker */}
+          {mentionPicker !== 'none' && (
+            <div className="mt-2 rounded-xl border border-slate-200/90 dark:border-white/[0.09] bg-white dark:bg-[#161922] shadow-xl max-h-44 overflow-y-auto divide-y divide-slate-100 dark:divide-white/[0.06]">
+              {mentionPicker === 'staff'
+                ? safeNodes.map((emp) => (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      onClick={() => insertContextMention(`@${emp.name}`)}
+                      className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/[0.04] flex items-center justify-between"
+                    >
+                      <span className="font-medium text-slate-900 dark:text-zinc-100">
+                        @{emp.name}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-zinc-400">
+                        {emp.department || emp.role_type}
+                      </span>
+                    </button>
+                  ))
+                : safeLeads.map((deal) => (
+                    <button
+                      key={deal.id}
+                      type="button"
+                      onClick={() => insertContextMention(`#${deal.company_name}`)}
+                      className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/[0.04] flex items-center justify-between"
+                    >
+                      <span className="font-medium text-slate-900 dark:text-zinc-100">
+                        #{deal.company_name}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
+                        {Number(deal.value || 0).toLocaleString('ru-RU')} ₽
+                      </span>
+                    </button>
+                  ))}
+            </div>
+          )}
         </div>
 
+        {/* Main Interactive Staging & Dialogue Stream */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 w-full overflow-y-auto px-5 py-5 space-y-4"
+          className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/40 dark:bg-[#0D0F14]"
         >
-          {effectiveHistory.map((turn) => (
-            <div
-              key={turn.id}
-              className={`w-full flex flex-col ${
-                turn.role === 'user' ? 'items-end' : 'items-stretch'
-              }`}
-            >
-              <div
-                className={`rounded-2xl p-4 sm:p-5 space-y-4 transition-all ${
-                  turn.role === 'user'
-                    ? 'max-w-[80%] bg-indigo-600 text-white shadow-xs'
-                    : isLight
-                    ? 'w-full bg-slate-50/70 border border-slate-200/90 text-slate-900 shadow-2xs'
-                    : 'w-full bg-zinc-900/70 border border-white/[0.08] text-zinc-100 shadow-2xs'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    {turn.role === 'assistant' ? (
-                      <>
-                        <div className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                          <Bot className="w-3.5 h-3.5" />
-                        </div>
-                        <span
-                          className={`text-xs font-semibold ${
-                            isLight ? 'text-slate-900' : 'text-white'
-                          }`}
-                        >
-                          Teddy
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-xs font-semibold text-indigo-100">{userName}</span>
-                    )}
+          {turns.map((turn) => {
+            if (turn.role === 'user') {
+              return (
+                <div key={turn.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-xl bg-slate-900 text-white dark:bg-zinc-800 dark:text-zinc-100 px-3.5 py-2 text-xs">
+                    <div>{turn.text}</div>
                   </div>
-                  <span
-                    className={`text-[11px] tabular-nums ${
-                      turn.role === 'user'
-                        ? 'text-indigo-200'
-                        : isLight
-                        ? 'text-slate-400'
-                        : 'text-zinc-500'
-                    }`}
-                  >
+                </div>
+              );
+            }
+
+            const checkedCount = (turn.stagingRows || []).filter((r) => r.checked).length;
+
+            return (
+              <div
+                key={turn.id}
+                className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-[#14171F] p-4 space-y-3 shadow-2xs"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs text-slate-700 dark:text-zinc-200 leading-relaxed">
+                    {turn.text}
+                  </p>
+                  <span className="text-[10px] text-slate-400 dark:text-zinc-500 tabular-nums shrink-0">
                     {turn.timestamp}
                   </span>
                 </div>
 
-                {turn.metrics && turn.metrics.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    {turn.metrics.slice(0, 3).map((m, idx) => (
-                      <div
-                        key={`${turn.id}-m-${idx}`}
-                        className={`rounded-xl px-3.5 py-2.5 border ${
-                          m.tone === 'emerald'
-                            ? isLight
-                              ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
-                              : 'bg-emerald-500/[0.08] border-emerald-500/25 text-emerald-300'
-                            : m.tone === 'rose'
-                            ? isLight
-                              ? 'bg-rose-50/90 border-rose-200 text-rose-900'
-                              : 'bg-rose-500/[0.08] border-rose-500/25 text-rose-300'
-                            : m.tone === 'amber'
-                            ? isLight
-                              ? 'bg-amber-50/90 border-amber-200 text-amber-900'
-                              : 'bg-amber-500/[0.08] border-amber-500/25 text-amber-300'
-                            : isLight
-                            ? 'bg-white border-slate-200/90 text-slate-900'
-                            : 'bg-zinc-950/60 border-white/[0.08] text-zinc-200'
-                        }`}
+                {/* INTERACTIVE STAGING PREVIEW TABLE (БЛОК 3.3) */}
+                {turn.stagingRows && turn.stagingRows.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200/90 dark:border-white/[0.08]">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/80 text-[11px] font-semibold text-slate-600 dark:text-zinc-400">
+                            <th className="py-2 px-2.5 w-8 text-center">#</th>
+                            <th className="py-2 px-2.5">
+                              {isEn ? 'Task / Action Title' : 'Задача / Поручение (редактируемо)'}
+                            </th>
+                            <th className="py-2 px-2.5 w-40">
+                              {isEn ? 'Assignee' : 'Исполнитель'}
+                            </th>
+                            <th className="py-2 px-2.5 w-24">
+                              {isEn ? 'Priority' : 'Приоритет'}
+                            </th>
+                            <th className="py-2 px-2.5 w-32">
+                              {isEn ? 'Deadline' : 'Дедлайн'}
+                            </th>
+                            <th className="py-2 px-2 w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/70 dark:divide-white/[0.06]">
+                          {turn.stagingRows.map((row) => (
+                            <tr
+                              key={row.id}
+                              className={
+                                row.checked
+                                  ? 'bg-white dark:bg-zinc-900/40'
+                                  : 'bg-slate-50/60 dark:bg-zinc-950/40 opacity-60'
+                              }
+                            >
+                              <td className="py-2 px-2.5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={row.checked}
+                                  onChange={(e) =>
+                                    updateStagingRow(turn.id, row.id, {
+                                      checked: e.target.checked,
+                                    })
+                                  }
+                                  className="w-4 h-4 rounded border-slate-300 dark:border-zinc-600 cursor-pointer"
+                                />
+                              </td>
+                              <td className="py-2 px-2.5">
+                                <input
+                                  type="text"
+                                  value={row.title}
+                                  onChange={(e) =>
+                                    updateStagingRow(turn.id, row.id, {
+                                      title: e.target.value,
+                                    })
+                                  }
+                                  className="w-full h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900 px-2.5 text-xs text-slate-900 dark:text-zinc-100"
+                                />
+                              </td>
+                              <td className="py-2 px-2.5">
+                                <select
+                                  value={row.assignedTo}
+                                  onChange={(e) => {
+                                    const emp = safeNodes.find((n) => n.id === e.target.value);
+                                    updateStagingRow(turn.id, row.id, {
+                                      assignedTo: e.target.value,
+                                      department: emp?.department || row.department,
+                                    });
+                                  }}
+                                  className="w-full h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900 px-2 text-xs text-slate-900 dark:text-zinc-100"
+                                >
+                                  {safeNodes.map((emp) => (
+                                    <option key={emp.id} value={emp.id}>
+                                      {emp.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="py-2 px-2.5">
+                                <select
+                                  value={row.priority}
+                                  onChange={(e) =>
+                                    updateStagingRow(turn.id, row.id, {
+                                      priority: e.target.value as TaskPriority,
+                                    })
+                                  }
+                                  className="w-full h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900 px-2 text-xs text-slate-900 dark:text-zinc-100"
+                                >
+                                  <option value="high">{isEn ? 'High' : 'Высокий'}</option>
+                                  <option value="medium">{isEn ? 'Medium' : 'Средний'}</option>
+                                  <option value="low">{isEn ? 'Low' : 'Низкий'}</option>
+                                </select>
+                              </td>
+                              <td className="py-2 px-2.5">
+                                <input
+                                  type="date"
+                                  value={row.dueDate}
+                                  onChange={(e) =>
+                                    updateStagingRow(turn.id, row.id, {
+                                      dueDate: e.target.value,
+                                    })
+                                  }
+                                  className="w-full h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900 px-2 text-xs text-slate-900 dark:text-zinc-100 tabular-nums"
+                                />
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removeStagingRow(turn.id, row.id)}
+                                  className="p-1 text-slate-400 hover:text-rose-500 transition"
+                                  title={isEn ? 'Remove row' : 'Удалить строку'}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => addStagingRow(turn.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-zinc-300 transition cursor-pointer"
                       >
-                        <div className="text-[11px] font-medium opacity-75 truncate">
-                          {m.label}
+                        <Plus className="w-4 h-4" />
+                        <span>{isEn ? 'Add Row' : 'Добавить строку'}</span>
+                      </button>
+
+                      {turn.executed ? (
+                        <div className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>
+                            {isEn
+                              ? `Committed to DB (${turn.executedCount} records)`
+                              : `Выполнено в БД: создано записей (${turn.executedCount})`}
+                          </span>
                         </div>
-                        <div className="text-xs font-semibold tabular-nums mt-0.5 truncate">
-                          {m.value}
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={executingTurnId === turn.id || checkedCount === 0}
+                          onClick={() => void handleExecuteStagingBatch(turn)}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 text-xs font-semibold transition cursor-pointer"
+                        >
+                          {executingTurnId === turn.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Check className="w-4 h-4" />
+                          )}
+                          <span>
+                            {isEn
+                              ? `Execute Batch in DB (Create ${checkedCount} Selected Records)`
+                              : `Выполнить пакет в БД (Создать выбранные записи: ${checkedCount})`}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* CONTRACT / INVOICE A4 GENERATOR (/договор) */}
+                {turn.commandType === '/договор' && (
+                  <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/70 p-3.5 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 dark:text-zinc-400 mb-1">
+                          {isEn ? 'Select CRM Counterparty' : 'Контрагент из воронки CRM'}
+                        </label>
+                        <select
+                          value={selectedContractLeadId}
+                          onChange={(e) => setSelectedContractLeadId(e.target.value)}
+                          className="w-full h-9 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-zinc-950 px-2.5 text-xs text-slate-900 dark:text-zinc-100"
+                        >
+                          {safeLeads.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.company_name} — {Number(l.value || 0).toLocaleString('ru-RU')} ₽
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenContractA4(selectedContractLeadId, 'contract')}
+                          className="flex-1 h-9 px-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <FileText className="w-4 h-4" />
+                          <span>{isEn ? 'Open Contract A4' : 'Открыть Договор А4'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenContractA4(selectedContractLeadId, 'invoice')}
+                          className="flex-1 h-9 px-3 rounded-lg border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-xs font-semibold text-slate-800 dark:text-zinc-200 inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Printer className="w-4 h-4" />
+                          <span>{isEn ? 'Open Invoice A4' : 'Открыть Счет А4'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ANALYTICS TABLE SLICE */}
+                {turn.analyticsRows && turn.analyticsRows.length > 0 && (
+                  <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] divide-y divide-slate-200/70 dark:divide-white/[0.06] overflow-hidden">
+                    {turn.analyticsRows.map((ar) => (
+                      <div
+                        key={ar.id}
+                        className="px-3.5 py-2.5 bg-slate-50/70 dark:bg-zinc-900/50 flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div>
+                          <div className="font-semibold text-slate-900 dark:text-zinc-100">
+                            {ar.label}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+                            {ar.meta}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-semibold text-slate-900 dark:text-zinc-100 tabular-nums">
+                            {ar.metric}
+                          </span>
+                          {onNavigateToSection && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onNavigateToSection(ar.targetSection);
+                                onClose();
+                              }}
+                              className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-700 cursor-pointer"
+                            >
+                              {isEn ? 'Open' : 'Перейти'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
-
-                {viewTab === 'assistant' && (
-                  <>
-                    <p
-                      className={`text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
-                        turn.role === 'user'
-                          ? 'text-white font-medium'
-                          : isLight
-                          ? 'text-slate-800'
-                          : 'text-zinc-200'
-                      }`}
-                    >
-                      {turn.text}
-                    </p>
-
-                    {turn.highlights && turn.highlights.length > 0 && (
-                      <div
-                        className={`space-y-2 pt-2.5 border-t ${
-                          isLight ? 'border-slate-200/80' : 'border-white/[0.07]'
-                        }`}
-                      >
-                        {turn.highlights.map((h, idx) => (
-                          <div
-                            key={idx}
-                            className={`flex items-start gap-2.5 text-xs leading-relaxed ${
-                              isLight ? 'text-slate-700' : 'text-zinc-300'
-                            }`}
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 mt-1.5" />
-                            <span>{h}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {turn.actionLinks && turn.actionLinks.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        {turn.actionLinks.map((link, idx) => (
-                          <button
-                            key={`${turn.id}-link-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              if (link.taskId && onSelectTask) {
-                                onClose();
-                                onSelectTask(link.taskId);
-                              } else if (link.leadId && onSelectLead) {
-                                onClose();
-                                onSelectLead(link.leadId);
-                              } else if (link.targetSection && onSelectSection) {
-                                onClose();
-                                onSelectSection(link.targetSection);
-                              } else if (link.targetSection === 'crm' && onNavigateToCrm) {
-                                onClose();
-                                onNavigateToCrm();
-                              } else if (link.targetSection === 'tasks' && onNavigateToTasks) {
-                                onClose();
-                                onNavigateToTasks();
-                              }
-                            }}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer ${
-                              isLight
-                                ? 'border-slate-200 bg-white hover:bg-indigo-50 hover:border-indigo-200 text-slate-700'
-                                : 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-zinc-200 hover:text-white'
-                            }`}
-                          >
-                            {link.leadId ? (
-                              <Briefcase className="w-3 h-3 text-amber-500" />
-                            ) : link.taskId ? (
-                              <ListTodo className="w-3 h-3 text-indigo-500" />
-                            ) : (
-                              <ArrowUpRight className="w-3 h-3 text-emerald-500" />
-                            )}
-                            <span className="truncate max-w-[240px]">{link.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {canCreateTasks && turn.suggestedTasks && turn.suggestedTasks.length > 0 && (
-                  <div
-                    className={`pt-3 border-t space-y-2.5 ${
-                      isLight ? 'border-slate-200/80' : 'border-white/[0.07]'
-                    }`}
-                  >
-                    <div
-                      className={`text-xs font-semibold flex items-center gap-1.5 ${
-                        isLight ? 'text-slate-800' : 'text-zinc-200'
-                      }`}
-                    >
-                      <ListTodo className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>
-                        {isEn ? 'Suggested Tasks' : 'Конкретные поручения к запуску'}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {turn.suggestedTasks.map((st, idx) => {
-                        const isAdded = addedTitles.includes(st.title);
-                        return (
-                          <div
-                            key={`${turn.id}-task-${idx}`}
-                            className={`rounded-xl border p-3.5 flex flex-col justify-between gap-3 ${
-                              isLight
-                                ? 'border-slate-200/90 bg-white shadow-2xs'
-                                : 'border-white/[0.08] bg-zinc-950/70'
-                            }`}
-                          >
-                            <div className="space-y-1 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span
-                                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
-                                    st.priority === 'High'
-                                      ? isLight
-                                        ? 'bg-rose-50 border-rose-200 text-rose-700'
-                                        : 'bg-red-500/10 border-red-500/30 text-red-300'
-                                      : isLight
-                                      ? 'bg-amber-50 border-amber-200 text-amber-700'
-                                      : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                                  }`}
-                                >
-                                  {formatPriorityLabel(st.priority)}
-                                </span>
-                                <span
-                                  className={`text-[10px] truncate ${
-                                    isLight ? 'text-slate-500' : 'text-zinc-400'
-                                  }`}
-                                >
-                                  {formatRole(st.department)}
-                                </span>
-                              </div>
-                              <div
-                                className={`text-xs font-semibold leading-snug ${
-                                  isLight ? 'text-slate-900' : 'text-white'
-                                }`}
-                              >
-                                {st.title}
-                              </div>
-                              <div
-                                className={`text-[11px] line-clamp-2 ${
-                                  isLight ? 'text-slate-600' : 'text-zinc-400'
-                                }`}
-                              >
-                                {st.description}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2 pt-1">
-                              <span
-                                className={`inline-flex items-center gap-1 text-[10px] tabular-nums ${
-                                  isLight ? 'text-slate-500' : 'text-zinc-500'
-                                }`}
-                              >
-                                <Clock className="w-3 h-3" />
-                                {st.due_date}
-                              </span>
-
-                              <button
-                                type="button"
-                                disabled={isAdded}
-                                onClick={() => void handleAddRecommendedTask(st)}
-                                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors shrink-0 cursor-pointer ${
-                                  isAdded
-                                    ? isLight
-                                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                                      : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs'
-                                }`}
-                              >
-                                {isAdded ? (
-                                  <>
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>{isEn ? 'Created' : 'Создано'}</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Plus className="w-3 h-3" />
-                                    <span>
-                                      {isEn ? 'Create Task' : 'Создать поручение'}
-                                    </span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
-          ))}
-
-          {isThinking && (
-            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-indigo-500/25 bg-indigo-500/[0.07] w-full text-xs text-indigo-500 dark:text-indigo-300">
-              <div className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                <Bot className="w-3.5 h-3.5" />
-              </div>
-              <span className="animate-pulse">
-                {isEn
-                  ? 'Teddy is analyzing workspace data...'
-                  : 'Teddy анализирует данные компании...'}
-              </span>
-            </div>
-          )}
+            );
+          })}
         </div>
+      </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleAsk();
-          }}
-          className={`shrink-0 p-4 border-t ${
-            isLight
-              ? 'border-slate-200/80 bg-slate-50/70'
-              : 'border-white/[0.07] bg-zinc-900/60'
-          }`}
+      {/* Inline Printable A4 Document Modal if opened directly from Teddy */}
+      {inlineA4PreviewLead && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
+          onClick={() => setInlineA4PreviewLead(null)}
         >
           <div
-            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 transition-colors ${
-              isLight
-                ? 'bg-white border-slate-200/90 focus-within:border-indigo-500'
-                : 'bg-zinc-950 border-white/[0.09] focus-within:border-indigo-500/50'
-            }`}
+            className="max-w-3xl w-full rounded-xl bg-white text-slate-900 border border-slate-200 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
           >
-            <input
-              type="text"
-              value={promptInput}
-              onChange={(e) => setPromptInput(e.target.value)}
-              placeholder={
-                isEn
-                  ? 'Ask Teddy about tasks, deals, or team workload...'
-                  : 'Спросите Teddy о задачах, сделках или загрузке команды...'
-              }
-              className={`tc-composer-input flex-1 !bg-transparent border-0 text-xs sm:text-sm focus:outline-none ${
-                isLight
-                  ? '!text-slate-900 placeholder-slate-400'
-                  : '!text-zinc-100 placeholder-zinc-500'
-              }`}
-            />
-            <button
-              type="submit"
-              disabled={!promptInput.trim() || isThinking}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-xs transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>{isEn ? 'Ask' : 'Спросить'}</span>
-            </button>
+            <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="text-xs font-semibold text-slate-900">
+                {selectedDocKind === 'contract'
+                  ? `Договор оказания услуг А4 — ${inlineA4PreviewLead.company_name}`
+                  : `Счет на оплату А4 — ${inlineA4PreviewLead.company_name}`}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>{isEn ? 'Print A4' : 'Печать А4'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInlineA4PreviewLead(null)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-8 tc-a4-paper space-y-5 text-xs leading-relaxed">
+              <div className="flex justify-between items-start border-b border-slate-900 pb-4">
+                <div>
+                  <h2 className="text-base font-bold uppercase">
+                    {selectedDocKind === 'contract'
+                      ? `ДОГОВОР № ТК-${new Date().getFullYear()}/08`
+                      : `СЧЕТ НА ОПЛАТУ № СЧ-${new Date().getFullYear()}/08`}
+                  </h2>
+                  <p className="text-xs mt-1">
+                    Поставщик (Исполнитель): {companyName}
+                  </p>
+                  <p className="text-xs">
+                    Заказчик: {inlineA4PreviewLead.company_name} ({inlineA4PreviewLead.contact_person})
+                  </p>
+                </div>
+                <div className="text-right tabular-nums">
+                  <div>Дата: {new Date().toLocaleDateString('ru-RU')}</div>
+                  <div className="font-bold mt-1">
+                    Сумма: {Number(inlineA4PreviewLead.value || 0).toLocaleString('ru-RU')} ₽
+                  </div>
+                </div>
+              </div>
+              <table className="w-full border-collapse border border-slate-900 text-xs">
+                <thead>
+                  <tr>
+                    <th className="border border-slate-900 p-2 text-left">Наименование работ / услуг</th>
+                    <th className="border border-slate-900 p-2 text-right w-36">Сумма, ₽</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-slate-900 p-2">
+                      Комплексное сопровождение и поставка по проекту «{inlineA4PreviewLead.company_name}»
+                    </td>
+                    <td className="border border-slate-900 p-2 text-right tabular-nums font-semibold">
+                      {Number(inlineA4PreviewLead.value || 0).toLocaleString('ru-RU')} ₽
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 };

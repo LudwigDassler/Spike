@@ -228,30 +228,30 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="max-w-3xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#14161C] shadow-2xl no-scrollbar transition-all duration-200"
+        className="max-w-3xl w-full max-h-[88vh] overflow-y-auto rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#14161C] text-slate-900 dark:text-zinc-100 shadow-2xl no-scrollbar transition-all duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[#181B22] sticky top-0 z-10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/80 dark:border-white/[0.08] bg-slate-50/90 dark:bg-[#181B22] sticky top-0 z-10">
           <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={name || node.name} avatarUrl={node.avatar_url} size="md" />
             <div className="min-w-0">
               <h3
                 id="perm-matrix-title"
-                className="text-sm font-semibold text-white tracking-tight truncate"
+                className="text-sm font-semibold text-slate-900 dark:text-zinc-100 tracking-tight truncate"
               >
                 {isEn
                   ? 'Employee Card & Access Controls'
                   : 'Карточка сотрудника и Права доступа'}
               </h3>
-              <p className="text-xs text-zinc-400 truncate">
+              <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">
                 {name || node.name} · {formatRole(roleType || node.role_type)}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {autoSavedFlash && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-medium text-emerald-300">
-                <Check className="w-3 h-3" />
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                <Check className="w-4 h-4" />
                 <span>{isEn ? 'Saved' : 'Сохранено'}</span>
               </span>
             )}
@@ -259,50 +259,68 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label={t('invite.close')}
-              className="text-zinc-400 hover:text-white p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors shrink-0"
+              className="text-slate-400 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        <div className="px-6 pt-3 border-b border-white/[0.08] bg-[#181B22] flex items-center gap-1 overflow-x-auto no-scrollbar">
+        <div className="px-6 pt-3 border-b border-slate-200/80 dark:border-white/[0.08] bg-slate-50/90 dark:bg-[#181B22] flex items-center gap-1 overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setActiveTab('profile')}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+            className={`inline-flex items-center gap-2 px-3 py-2.5 text-xs font-medium border-b-2 transition whitespace-nowrap ${
               activeTab === 'profile'
-                ? 'border-white text-white font-semibold'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                ? 'border-slate-900 dark:border-white text-slate-900 dark:text-zinc-100 font-semibold'
+                : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
             }`}
           >
-            <User className="w-3.5 h-3.5" />
+            <User
+              className={`w-4 h-4 ${
+                activeTab === 'profile'
+                  ? 'text-slate-900 dark:text-zinc-100'
+                  : 'text-slate-400 dark:text-zinc-500'
+              }`}
+            />
             <span>{isEn ? 'Profile & Role' : 'Профиль и Должность'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('rbac')}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+            className={`inline-flex items-center gap-2 px-3 py-2.5 text-xs font-medium border-b-2 transition whitespace-nowrap ${
               activeTab === 'rbac'
-                ? 'border-white text-white font-semibold'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                ? 'border-slate-900 dark:border-white text-slate-900 dark:text-zinc-100 font-semibold'
+                : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
             }`}
           >
-            <Shield className="w-3.5 h-3.5 text-emerald-400" />
+            <Shield
+              className={`w-4 h-4 ${
+                activeTab === 'rbac'
+                  ? 'text-slate-900 dark:text-zinc-100'
+                  : 'text-slate-400 dark:text-zinc-500'
+              }`}
+            />
             <span>{isEn ? 'Access Matrix (RBAC)' : 'Матрица прав (RBAC)'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('access')}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+            className={`inline-flex items-center gap-2 px-3 py-2.5 text-xs font-medium border-b-2 transition whitespace-nowrap ${
               activeTab === 'access'
-                ? 'border-white text-white font-semibold'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                ? 'border-slate-900 dark:border-white text-slate-900 dark:text-zinc-100 font-semibold'
+                : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
             }`}
           >
-            <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+            <KeyRound
+              className={`w-4 h-4 ${
+                activeTab === 'access'
+                  ? 'text-slate-900 dark:text-zinc-100'
+                  : 'text-slate-400 dark:text-zinc-500'
+              }`}
+            />
             <span>{isEn ? 'Access & Invites' : 'Доступ и Инвайты'}</span>
           </button>
         </div>
@@ -313,37 +331,37 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
             <div className="space-y-3.5">
               {/* Employee Task KPIs */}
               <div className="grid grid-cols-2 gap-2.5">
-                <div className="rounded-xl border border-white/[0.08] bg-zinc-900/60 p-3 flex items-center justify-between">
+                <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/60 p-3.5 flex items-center justify-between">
                   <div>
-                    <div className="text-[11px] text-zinc-400">
+                    <div className="text-[11px] text-slate-500 dark:text-zinc-400">
                       {isEn ? 'Active Tasks' : 'Активные задачи'}
                     </div>
-                    <div className="text-lg font-bold text-white tabular-nums mt-0.5">
+                    <div className="text-lg font-bold text-slate-900 dark:text-zinc-100 tabular-nums mt-0.5">
                       {activeTasksCount}
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center">
                     <Clock className="w-4 h-4" />
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-white/[0.08] bg-zinc-900/60 p-3 flex items-center justify-between">
+                <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/60 p-3.5 flex items-center justify-between">
                   <div>
-                    <div className="text-[11px] text-zinc-400">
+                    <div className="text-[11px] text-slate-500 dark:text-zinc-400">
                       {isEn ? 'Completed Tasks' : 'Завершено задач'}
                     </div>
-                    <div className="text-lg font-bold text-emerald-400 tabular-nums mt-0.5">
+                    <div className="text-lg font-bold text-slate-900 dark:text-zinc-100 tabular-nums mt-0.5">
                       {completedTasksCount}
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center">
                     <CheckCircle2 className="w-4 h-4" />
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5">
                   {t('modal.empNameLabel')}
                 </label>
                 <input
@@ -351,13 +369,13 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                  className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 px-3.5 text-sm text-slate-900 dark:text-zinc-100 focus:border-slate-500 dark:focus:border-zinc-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5">
                     {isEn ? 'Job Title / Position' : 'Должность'}
                   </label>
                   <input
@@ -366,12 +384,12 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                     value={roleType}
                     onChange={(e) => setRoleType(e.target.value)}
                     placeholder={isEn ? 'e.g. Head of Legal' : 'Напр. Руководитель отдела'}
-                    className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 px-3.5 text-sm text-slate-900 dark:text-zinc-100 focus:border-slate-500 dark:focus:border-zinc-500 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5">
                     {isEn ? 'Department' : 'Подразделение (Отдел)'}
                   </label>
                   {!isCustomDept ? (
@@ -385,7 +403,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                           setDepartment(e.target.value);
                         }
                       }}
-                      className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                      className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 px-3 text-sm text-slate-900 dark:text-zinc-100 focus:border-slate-500 dark:focus:border-zinc-500 focus:outline-none"
                     >
                       <option value="">{t('dept.noneOption')}</option>
                       {departments.map((d) => (
@@ -405,7 +423,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                         value={customDept}
                         onChange={(e) => setCustomDept(e.target.value)}
                         placeholder={t('dept.customInputPlaceholder')}
-                        className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                        className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 px-3 text-sm text-slate-900 dark:text-zinc-100 focus:border-slate-500 dark:focus:border-zinc-500 focus:outline-none"
                       />
                       <button
                         type="button"
@@ -413,7 +431,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                           setIsCustomDept(false);
                           setCustomDept('');
                         }}
-                        className="p-2 text-zinc-400 hover:text-white"
+                        className="p-2 text-slate-400 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -423,7 +441,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5">
                   {isEn ? 'Corporate Email' : 'Корпоративный Email'}
                 </label>
                 <input
@@ -431,7 +449,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="employee@company.com"
-                  className="w-full h-10 rounded-xl border border-white/10 bg-zinc-900 px-3.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                  className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 px-3.5 text-sm text-slate-900 dark:text-zinc-100 focus:border-slate-500 dark:focus:border-zinc-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -440,10 +458,12 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
           {/* TAB 2: RBAC ACCESS MATRIX */}
           {activeTab === 'rbac' && (
             <div className="space-y-3.5">
-              <p className="text-xs text-zinc-400 leading-relaxed">{t('permModal.subtitle')}</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
+                {t('permModal.subtitle')}
+              </p>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5">
                   {t('permModal.presetLabel')}
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -456,8 +476,8 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                         onClick={() => handlePresetChange(lvl)}
                         className={`h-10 text-xs font-medium px-3 text-center truncate rounded-xl border transition-colors ${
                           isSelected
-                            ? 'border-white bg-white text-black font-semibold'
-                            : 'border-white/10 bg-zinc-900 text-zinc-400 hover:text-white hover:border-white/20'
+                            ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black font-semibold'
+                            : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-white/20'
                         }`}
                       >
                         {t(`accessShort.${lvl}`)}
@@ -468,12 +488,12 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
               </div>
 
               {isRootLocked && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-300">
+                <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
                   {t('permModal.rootNotice')}
                 </div>
               )}
 
-              <div className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/[0.06] max-h-[300px] overflow-y-auto no-scrollbar">
+              <div className="rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/70 dark:bg-zinc-900/60 divide-y divide-slate-200/80 dark:divide-white/[0.06] max-h-[300px] overflow-y-auto no-scrollbar">
                 {PERMISSION_KEYS.map((permKey) => {
                   const enabled = isRootLocked ? true : Boolean(permissions[permKey]);
                   return (
@@ -483,14 +503,14 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                       className={`flex items-center justify-between gap-3 px-4 py-2.5 text-xs transition-colors ${
                         isRootLocked
                           ? 'opacity-80 cursor-not-allowed'
-                          : 'cursor-pointer hover:bg-white/[0.04]'
+                          : 'cursor-pointer hover:bg-slate-100/80 dark:hover:bg-white/[0.04]'
                       }`}
                     >
                       <div className="min-w-0 pr-2">
-                        <div className="font-medium text-white font-sans">
+                        <div className="font-medium text-slate-900 dark:text-zinc-100 font-sans">
                           {t(`perm.${permKey}`)}
                         </div>
-                        <div className="text-[11px] text-zinc-400 font-sans leading-snug mt-0.5">
+                        <div className="text-[11px] text-slate-500 dark:text-zinc-400 font-sans leading-snug mt-0.5">
                           {t(`permDesc.${permKey}`)}
                         </div>
                       </div>
@@ -505,7 +525,7 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                           handleToggleKey(permKey);
                         }}
                         className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${
-                          enabled ? 'bg-emerald-500' : 'bg-zinc-700'
+                          enabled ? 'bg-slate-900 dark:bg-emerald-500' : 'bg-slate-300 dark:bg-zinc-700'
                         }`}
                       >
                         <span
@@ -524,16 +544,16 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
           {/* TAB 3: ACCESS & INVITES (Цифровой пропуск сотрудника + Пароль) */}
           {activeTab === 'access' && (
             <div className="space-y-3.5">
-              {/* Digital Employee Pass Plate */}
-              <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <div className="text-[11px] font-medium text-zinc-400">
+              {/* Digital Employee Pass Plate (БЛОК 1.2: bg-slate-50 border-slate-200/90 in Light, bg-zinc-900/90 border-white/[0.08] in Dark) */}
+              <div className="bg-slate-50 dark:bg-zinc-900/90 border border-slate-200/90 dark:border-white/[0.08] rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-slate-500 dark:text-zinc-400">
                     {isEn ? 'Personal Invite Code' : 'Персональный инвайт-код сотрудника'}
                   </div>
-                  <div className="text-2xl font-bold tracking-tight text-white tabular-nums">
+                  <div className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-zinc-100 tabular-nums">
                     {inviteCode}
                   </div>
-                  <div className="text-[11px] text-zinc-400">
+                  <div className="text-xs text-slate-500 dark:text-zinc-400">
                     {isEn
                       ? 'Instant login without password or bot pairing'
                       : 'Быстрый вход без пароля и синхронизация с ботом'}
@@ -542,11 +562,11 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleCopy(inviteCode, 'code')}
-                  className="h-10 px-4 rounded-xl bg-white text-black hover:bg-zinc-200 text-xs font-semibold inline-flex items-center justify-center gap-2 transition shrink-0 cursor-pointer"
+                  className="h-10 px-4 rounded-xl bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-xs font-semibold inline-flex items-center justify-center gap-2 transition shrink-0 cursor-pointer"
                 >
                   {copiedKey === 'code' ? (
                     <>
-                      <Check className="w-4 h-4 text-emerald-600" />
+                      <Check className="w-4 h-4" />
                       <span>{t('invite.copied')}</span>
                     </>
                   ) : (
@@ -558,36 +578,36 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                 </button>
               </div>
 
-              {/* 2 Handsome Card-Buttons in a 2-Column Grid (Zero Raw URLs) */}
+              {/* 2 Handsome Card-Buttons in a 2-Column Grid (БЛОК 2.2: Strict Monochrome Micro-blocks, Zero Text Arrows) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => handleCopy(webLoginUrl, 'web')}
-                  className="group text-left rounded-2xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-white/20 p-3.5 transition-all flex flex-col justify-between gap-2.5 cursor-pointer"
+                  className="group text-left rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-zinc-900/70 hover:bg-slate-50 dark:hover:bg-zinc-800/80 p-4 transition-all flex flex-col justify-between gap-2.5 cursor-pointer"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center">
                       {copiedKey === 'web' ? (
-                        <Check className="w-4 h-4 text-emerald-400" />
+                        <Check className="w-4 h-4" />
                       ) : (
                         <Link2 className="w-4 h-4" />
                       )}
                     </div>
-                    <span className="text-[11px] font-medium text-indigo-400">
+                    <span className="text-[11px] font-medium text-slate-600 dark:text-zinc-300">
                       {copiedKey === 'web'
                         ? t('invite.copied')
                         : isEn
-                        ? 'Copy →'
-                        : 'Скопировать →'}
+                        ? 'Copy'
+                        : 'Скопировать'}
                     </span>
                   </div>
                   <div>
-                    <div className="text-xs font-semibold text-white leading-snug">
+                    <div className="text-xs font-semibold text-slate-900 dark:text-zinc-100 leading-snug">
                       {isEn
                         ? 'Copy Web Pass (1-Click Login)'
                         : 'Скопировать веб-пропуск (Вход в 1 клик)'}
                     </div>
-                    <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
+                    <div className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 leading-snug">
                       {isEn
                         ? 'Direct link for PC or smartphone browser'
                         : 'Прямая ссылка для браузера ПК или смартфона'}
@@ -598,33 +618,33 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleCopy(tgDeepLink || tgStartCmd, 'tg')}
-                  className="group text-left rounded-2xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-white/20 p-3.5 transition-all flex flex-col justify-between gap-2.5 cursor-pointer"
+                  className="group text-left rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-zinc-900/70 hover:bg-slate-50 dark:hover:bg-zinc-800/80 p-4 transition-all flex flex-col justify-between gap-2.5 cursor-pointer"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-white/[0.07] text-slate-700 dark:text-zinc-300 flex items-center justify-center">
                       {copiedKey === 'tg' ? (
-                        <Check className="w-4 h-4 text-emerald-400" />
+                        <Check className="w-4 h-4" />
                       ) : (
                         <Send className="w-4 h-4" />
                       )}
                     </div>
-                    <span className="text-[11px] font-medium text-emerald-400">
+                    <span className="text-[11px] font-medium text-slate-600 dark:text-zinc-300">
                       {copiedKey === 'tg'
                         ? t('invite.copied')
                         : telegramChatId
                         ? `ID: ${telegramChatId}`
                         : isEn
-                        ? '1-Click →'
-                        : 'В 1 клик →'}
+                        ? '1-Click'
+                        : 'В 1 клик'}
                     </span>
                   </div>
                   <div>
-                    <div className="text-xs font-semibold text-white leading-snug">
+                    <div className="text-xs font-semibold text-slate-900 dark:text-zinc-100 leading-snug">
                       {isEn
                         ? 'Synchronize with Telegram Bot'
                         : 'Синхронизация с Telegram-ботом'}
                     </div>
-                    <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
+                    <div className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 leading-snug">
                       {isEn
                         ? '1-click notification & 2FA binding'
                         : 'Привязка уведомлений в 1 клик'}
@@ -633,15 +653,15 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                 </button>
               </div>
 
-              {/* Password & Telegram Chat ID Management (БЛОК 3) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-white/10 bg-zinc-900/60 p-3.5">
+              {/* Password & Telegram Chat ID Management */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-slate-50/70 dark:bg-zinc-900/60 p-3.5">
                 <div>
-                  <label className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
-                    <span className="inline-flex items-center gap-1">
-                      <Lock className="w-3 h-3 text-indigo-400" />
+                  <label className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400 mb-1.5">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Lock className="w-4 h-4 text-slate-400 dark:text-zinc-500" />
                       <span>{isEn ? 'Account Password' : 'Пароль сотрудника'}</span>
                     </span>
-                    <span className="text-[10px] text-emerald-400">
+                    <span className="text-[10px] font-medium text-slate-600 dark:text-zinc-300">
                       {node.has_password || node.password
                         ? isEn
                           ? 'Password set'
@@ -658,22 +678,22 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                     placeholder={
                       isEn ? 'Set or change password...' : 'Задать или сменить пароль...'
                     }
-                    className="w-full h-9 rounded-xl border border-white/10 bg-zinc-950 px-3 text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                    className="w-full h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 text-xs text-slate-900 dark:text-zinc-100 focus:border-slate-500 dark:focus:border-zinc-500 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
+                  <label className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400 mb-1.5">
                     <span>{isEn ? 'Telegram Chat ID' : 'Telegram Chat ID сотрудника'}</span>
                     {tgDeepLink && (
                       <a
                         href={tgDeepLink}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[10px] text-sky-400 hover:text-sky-300"
+                        className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white"
                       >
                         <span>{isEn ? 'Open Bot' : 'Открыть бота'}</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     )}
                   </label>
@@ -682,15 +702,15 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                     value={telegramChatId}
                     onChange={(e) => setTelegramChatId(e.target.value)}
                     placeholder={isEn ? 'e.g. 6432521579' : 'Напр. 6432521579'}
-                    className="w-full h-9 rounded-xl border border-white/10 bg-zinc-950 px-3 text-xs text-zinc-100 tabular-nums focus:border-zinc-500 focus:outline-none"
+                    className="w-full h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 text-xs text-slate-900 dark:text-zinc-100 tabular-nums focus:border-slate-500 dark:focus:border-zinc-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               {/* Danger Zone: Delete Employee */}
               {canManageTeam && onDeleteNode && !isRootLocked && (
-                <div className="pt-2 border-t border-white/[0.08] flex items-center justify-between">
-                  <span className="text-xs text-zinc-500">
+                <div className="pt-2 border-t border-slate-200/80 dark:border-white/[0.08] flex items-center justify-between">
+                  <span className="text-xs text-slate-500 dark:text-zinc-500">
                     {isEn
                       ? 'Remove employee from workspace'
                       : 'Удаление карточки сотрудника из штата'}
@@ -701,9 +721,9 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
                       onClose();
                       onDeleteNode(node);
                     }}
-                    className="h-9 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-xs font-medium text-rose-300 inline-flex items-center gap-1.5 transition"
+                    className="h-9 px-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border border-rose-200 dark:border-rose-500/25 text-xs font-medium text-rose-700 dark:text-rose-300 inline-flex items-center gap-1.5 transition"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                     <span>{isEn ? 'Delete Employee' : 'Удалить сотрудника'}</span>
                   </button>
                 </div>
@@ -712,24 +732,24 @@ export const PermissionsMatrixModal: React.FC<PermissionsMatrixModalProps> = ({
           )}
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/[0.08]">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200/80 dark:border-white/[0.08]">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              className="h-10 px-4 rounded-xl text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors whitespace-nowrap"
+              className="h-10 px-4 rounded-xl text-xs font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors whitespace-nowrap"
             >
               {t('modal.cancel')}
             </button>
             <button
               type="submit"
               disabled={isSaving}
-              className="h-10 inline-flex items-center gap-2 px-4 rounded-xl text-xs font-semibold bg-white text-black hover:bg-zinc-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+              className="h-10 inline-flex items-center gap-2 px-4 rounded-xl text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 transition-colors whitespace-nowrap"
             >
               {isSaving ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-4 h-4" />
               )}
               <span>{isEn ? 'Save Changes' : 'Сохранить изменения'}</span>
             </button>

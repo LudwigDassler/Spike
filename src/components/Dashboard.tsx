@@ -145,6 +145,7 @@ import {
   TimeAndAttendanceView,
   CorporateDataExportCenter,
   SuperadminQaAuditPanel,
+  useDesignLinter,
 } from './EnterpriseB2BFeatures';
 
 interface DashboardProps {
@@ -626,6 +627,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     kind: 'task' | 'lead';
     id: string;
   } | null>(null);
+
+  useDesignLinter(
+    theme,
+    `${activeSection}-${permissionsModalNode?.id || ''}-${drawerSelection?.id || ''}-${isAiDrawerOpen}`
+  );
 
   // Strict RBAC Permissions for Current User
   const { access_level: currentAccessLevel, permissions: perms } = useMemo(
@@ -6921,37 +6927,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       />
 
-      <TedCloudAiDrawer
-        isOpen={isAiDrawerOpen}
-        onClose={() => setIsAiDrawerOpen(false)}
-        company={company}
-        currentProfile={currentProfile}
-        nodes={safeNodes}
-        tasks={visibleTasks}
-        leads={visibleLeads}
-        messages={visibleMessages}
-        onRefreshWorkspace={onRefresh}
-        onCreateFollowUpTask={(suggestedTitle) => {
-          setInitialTaskDraft({
-            title:
-              suggestedTitle ||
-              'Операционное поручение по итогам сводки TedCloud Intelligence',
-            description:
-              'Задача создана на основе аналитического отчета TedCloud Intelligence.',
-            priority: 'High',
-          });
-          setModalType('tasks');
-        }}
-        onNavigateToCrm={() => {
-          if (perms.crm_view) {
-            setActiveSection('crm');
-          }
-        }}
-        onNavigateToTasks={() => {
-          setActiveSection('tasks');
-          setTaskViewMode('board');
-        }}
-      />
+      {currentProfile && (
+        <TedCloudAiDrawer
+          isOpen={isAiDrawerOpen}
+          onClose={() => setIsAiDrawerOpen(false)}
+          companyId={companyId}
+          companyName={companyName}
+          currentUser={currentProfile}
+          nodes={safeNodes}
+          tasks={visibleTasks}
+          leads={visibleLeads}
+          onRefreshData={async () => {
+            await onRefresh();
+          }}
+          onNavigateToSection={(sec) => {
+            if (sec === 'crm' && !perms.crm_view) return;
+            setActiveSection(sec as any);
+          }}
+          onOpenLegalDocModal={(lead) => {
+            setIsAiDrawerOpen(false);
+            setLegalDocModalDeal(lead);
+          }}
+          showToast={showToast}
+        />
+      )}
 
       {/* Global Command Bar & Omnisearch (Cmd+K / БЛОК 3) */}
       <CommandBarModal

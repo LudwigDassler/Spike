@@ -480,30 +480,15 @@ body.theme-light,
   border-color: #0f172a !important;
 }
 
-/* Primary Typography in Light Mode */
-.theme-light .text-white,
-.theme-light .text-\[\#EDEDED\],
-.theme-light .text-\[\#E4E4E7\],
-.theme-light .text-zinc-100,
-.theme-light .text-zinc-200 {
-  color: #0f172a !important;
+/* Global Industrial Iconography Standard (Figma / Linear 1.5px Hairline) */
+svg.lucide {
+  stroke-width: 1.5px !important;
 }
 
-/* Secondary Typography in Light Mode */
-.theme-light .text-\[\#D4D4D8\],
-.theme-light .text-\[\#A1A1AA\],
-.theme-light .text-zinc-300,
-.theme-light .text-zinc-400 {
-  color: #475569 !important;
-}
-
-/* Muted Typography in Light Mode */
-.theme-light .text-\[\#8E8E93\],
-.theme-light .text-\[\#71717A\],
-.theme-light .text-\[\#52525B\],
-.theme-light .text-zinc-500,
-.theme-light .text-zinc-600 {
-  color: #64748b !important;
+/* Ensure zinc-900/70 and zinc-900/80 surfaces adapt cleanly in Light Mode unless inside dark-only containers */
+.theme-light .bg-zinc-900\/70,
+.theme-light .bg-zinc-900\/80 {
+  background-color: #f8fafc !important;
 }
 
 /* Primary Action Buttons (bg-white text-black in Dark -> Deep Graphite #0f172a with #ffffff text in Light) */
@@ -537,51 +522,16 @@ body.theme-light,
   background-color: #f1f5f9 !important;
 }
 
-/* Status & Avatar Badges Contrast in Light Mode */
+/* Status & Avatar Badges Surface in Light Mode */
 .theme-light .bg-\[\#16161B\],
 .theme-light .bg-\[\#17171C\],
 .theme-light .bg-\[\#1A1A20\] {
   background-color: #f1f5f9 !important;
 }
 
-.theme-light .text-emerald-200,
-.theme-light .text-emerald-300,
-.theme-light .text-emerald-400 {
-  color: #059669 !important;
-}
-
 .theme-light .bg-emerald-950\/30 {
   background-color: #ecfdf5 !important;
   border-color: #a7f3d0 !important;
-}
-
-.theme-light .text-amber-200,
-.theme-light .text-amber-300,
-.theme-light .text-amber-400 {
-  color: #d97706 !important;
-}
-
-.theme-light .text-red-300,
-.theme-light .text-red-400,
-.theme-light .text-rose-200 {
-  color: #dc2626 !important;
-}
-
-.theme-light .text-indigo-200,
-.theme-light .text-indigo-300,
-.theme-light .text-indigo-400 {
-  color: #4f46e5 !important;
-}
-
-.theme-light .text-fuchsia-200,
-.theme-light .text-purple-300 {
-  color: #7e22ce !important;
-}
-
-.theme-light .text-sky-200,
-.theme-light .text-sky-400,
-.theme-light .text-blue-400 {
-  color: #0284c7 !important;
 }
 
 /* ============================================================================

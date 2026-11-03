@@ -3,6 +3,68 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        if (typeof window === 'undefined') return;
+        window.addEventListener(
+          'unhandledrejection',
+          function (e) {
+            var msg = String((e && e.reason && (e.reason.message || e.reason.stack || e.reason)) || '');
+            if (
+              msg.indexOf('WebSocket') !== -1 ||
+              msg.indexOf('@vite/client') !== -1 ||
+              msg.indexOf('createWebSocketModuleRunnerTransport') !== -1 ||
+              msg.indexOf('[vite]') !== -1
+            ) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+            }
+          },
+          true
+        );
+        var NativeWS = window.WebSocket;
+        if (NativeWS) {
+          var PatchedWS = function (url, protocols) {
+            var isViteHmr =
+              protocols === 'vite-hmr' ||
+              (Array.isArray(protocols) && protocols.indexOf('vite-hmr') !== -1);
+            if (isViteHmr) {
+              var dummy = {
+                url: String(url || ''),
+                readyState: 1,
+                protocol: 'vite-hmr',
+                extensions: '',
+                bufferedAmount: 0,
+                binaryType: 'blob',
+                send: function () {},
+                close: function () {},
+                addEventListener: function (type, listener) {
+                  if (type === 'open' && typeof listener === 'function') {
+                    setTimeout(function () {
+                      try {
+                        listener({ type: 'open', target: dummy });
+                      } catch (_err) {}
+                    }, 10);
+                  }
+                },
+                removeEventListener: function () {},
+                dispatchEvent: function () {
+                  return true;
+                },
+              };
+              return dummy;
+            }
+            return protocols !== undefined ? new NativeWS(url, protocols) : new NativeWS(url);
+          };
+          PatchedWS.prototype = NativeWS.prototype;
+          PatchedWS.CONNECTING = NativeWS.CONNECTING;
+          PatchedWS.OPEN = NativeWS.OPEN;
+          PatchedWS.CLOSING = NativeWS.CLOSING;
+          PatchedWS.CLOSED = NativeWS.CLOSED;
+          window.WebSocket = PatchedWS;
+        }
+      })();
+    </script>
     <title>TedCloud — Единая B2B2C SaaS-платформа для бизнеса и партнёрских сетей</title>
     <meta name="description" content="TedCloud — единое корпоративное рабочее пространство для управления клиентскими задачами, внутренними тикетами отделов, CRM-воронкой и партнёрской сетью." />
     <meta property="og:title" content="TedCloud — Единая B2B2C SaaS-платформа для бизнеса и партнёрских сетей" />
