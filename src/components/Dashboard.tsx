@@ -379,9 +379,9 @@ const ChatComposerBar: React.FC<ChatComposerBarProps> = React.memo(
 
           <button
             type="submit"
-            disabled={isSendingComm || (!text.trim() && commAttachmentsCount === 0)}
+            disabled={isSendingComm}
             aria-label={isEn ? 'Send message' : 'Отправить сообщение'}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors shrink-0 shadow-sm cursor-pointer"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white hover:bg-indigo-500 transition-colors shrink-0 shadow-sm cursor-pointer"
           >
             {isSendingComm ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -628,11 +628,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     kind: 'task' | 'lead';
     id: string;
   } | null>(null);
-
-  useDesignLinter(
-    theme,
-    `${activeSection}-${permissionsModalNode?.id || ''}-${drawerSelection?.id || ''}-${isAiDrawerOpen}`
-  );
 
   // Stealth Dev-HUD RBAC Simulator Overrides
   const [simulatedAccessLevel, setSimulatedAccessLevel] = useState<AccessLevel | null>(null);

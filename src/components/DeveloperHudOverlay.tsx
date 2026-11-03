@@ -227,14 +227,21 @@ export interface DeveloperHudOverlayProps {
   tasks: TaskRecord[];
   leads: CrmLeadRecord[];
   messages: WorkspaceMessageRecord[];
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
   simulatedAccessLevel: AccessLevel | null;
   simulatedPermissions: EmployeePermissions | null;
-  onApplyRbacSimulation: (
+  onSimulateRbac?: (
     level: AccessLevel | null,
     perms: EmployeePermissions | null
   ) => void;
-  onHotSyncDb: () => Promise<void>;
-  onClearUiCache: () => void;
+  onApplyRbacSimulation?: (
+    level: AccessLevel | null,
+    perms: EmployeePermissions | null
+  ) => void;
+  onRefresh?: () => Promise<void> | void;
+  onHotSyncDb?: () => Promise<void>;
+  onClearUiCache?: () => void;
   showToast?: (msg: string) => void;
 }
 
@@ -269,12 +276,37 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
   messages,
   simulatedAccessLevel,
   simulatedPermissions,
+  onSimulateRbac,
   onApplyRbacSimulation,
+  onRefresh,
   onHotSyncDb,
   onClearUiCache,
   showToast,
 }) => {
   const { theme, toggleTheme } = useLocale();
+  const applyRbacSim = (
+    level: AccessLevel | null,
+    perms: EmployeePermissions | null
+  ) => {
+    if (onSimulateRbac) onSimulateRbac(level, perms);
+    if (onApplyRbacSimulation) onApplyRbacSimulation(level, perms);
+  };
+  const triggerHotSync = async () => {
+    if (onHotSyncDb) await onHotSyncDb();
+    else if (onRefresh) await onRefresh();
+  };
+  const triggerClearUiCache = () => {
+    if (onClearUiCache) {
+      onClearUiCache();
+    } else if (typeof window !== 'undefined') {
+      Object.keys(window.localStorage).forEach((k) => {
+        if (k.startsWith('tedcloud_') && !k.includes('session')) {
+          window.localStorage.removeItem(k);
+        }
+      });
+    }
+  };
+
   const [isOpen, setIsOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
@@ -283,6 +315,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
   const [activeTab, setActiveTab] = useState<DevHudTabId>('sniffer');
   const [logs, setLogs] = useState<SnifferLogEntry[]>(() => [...snifferBuffer]);
   const [domIssues, setDomIssues] = useState<DomXRayIssue[]>([]);
+  const [hasScannedDom, setHasScannedDom] = useState(false);
   const [highlightDomIssues, setHighlightDomIssues] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [isSyncingHot, setIsSyncingHot] = useState(false);
@@ -322,7 +355,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+      if ((e.altKey || e.ctrlKey || e.metaKey) && e.code === 'KeyD') {
         e.preventDefault();
         setIsOpen((prev) => !prev);
       }
@@ -415,15 +448,11 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
       });
 
       setDomIssues(found);
+      setHasScannedDom(true);
       return found;
     },
     [theme]
   );
-
-  useEffect(() => {
-    if (!isOpen) return;
-    runDomXRayScan(false);
-  }, [isOpen, activeTab, theme, activeSection, activeModalName, runDomXRayScan]);
 
   useEffect(() => {
     document
@@ -443,7 +472,20 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
     }
   }, [highlightDomIssues, domIssues, isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        data-dev-hud="true"
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-3 right-3 z-[9999] bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg hover:opacity-90 transition cursor-pointer inline-flex items-center gap-1.5"
+        title="Открыть панель разработчика (Alt+D / Ctrl+D)"
+      >
+        <Terminal className="w-3.5 h-3.5" />
+        <span>DEV · Аудит</span>
+      </button>
+    );
+  }
 
   const currentEffLevel: AccessLevel =
     simulatedAccessLevel || currentUser?.access_level || 'root';
@@ -552,7 +594,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
         });
       }
 
-      await onHotSyncDb();
+      await triggerHotSync();
       if (showToast) {
         showToast('Входящий вебхук Telegram успешно обработан и синхронизирован');
       }
@@ -586,7 +628,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'cleanup_qa_sandbox' }),
       });
-      await onHotSyncDb();
+      await triggerHotSync();
       if (showToast) {
         showToast('E2E Sandbox 8/8 выполнен, тестовые записи очищены');
       }
@@ -603,7 +645,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'cleanup_qa_sandbox' }),
       });
-      await onHotSyncDb();
+      await triggerHotSync();
       if (showToast) {
         showToast('Песочница (__QA_SANDBOX_) принудительно очищена');
       }
@@ -797,9 +839,9 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                   <button
                     type="button"
                     onClick={() => runDomXRayScan(false)}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 font-medium cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold cursor-pointer"
                   >
-                    Пересканировать DOM
+                    Сканировать экран
                   </button>
                   <button
                     type="button"
@@ -817,7 +859,13 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                 </div>
               </div>
 
-              {domIssues.length === 0 ? (
+              {!hasScannedDom ? (
+                <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 p-4 flex items-center justify-between gap-2.5 text-slate-700 dark:text-zinc-300">
+                  <span>
+                    Фоновое сканирование отключено для нулевой задержки UI (Zero Layout Thrashing). Нажмите «Сканировать экран» для запуска разового X-Ray аудита.
+                  </span>
+                </div>
+              ) : domIssues.length === 0 ? (
                 <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 p-4 flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>
@@ -894,7 +942,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                     onClick={async () => {
                       setIsSyncingHot(true);
                       try {
-                        await onHotSyncDb();
+                        await triggerHotSync();
                         if (showToast) showToast('Горячая синхронизация с БД выполнена');
                       } finally {
                         setIsSyncingHot(false);
@@ -908,7 +956,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      onClearUiCache();
+                      triggerClearUiCache();
                       if (showToast) {
                         showToast('UI-кэш сброшен без завершения сессии пользователя');
                       }
@@ -973,7 +1021,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                   {(simulatedAccessLevel || simulatedPermissions) && (
                     <button
                       type="button"
-                      onClick={() => onApplyRbacSimulation(null, null)}
+                      onClick={() => applyRbacSim(null, null)}
                       className="px-3 py-1.5 rounded-lg bg-rose-500/15 text-rose-600 dark:text-rose-300 font-semibold cursor-pointer"
                     >
                       Сбросить симуляцию RBAC
@@ -988,7 +1036,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                     key={lvl}
                     type="button"
                     onClick={() =>
-                      onApplyRbacSimulation(lvl, getDefaultPermissionsForAccessLevel(lvl))
+                      applyRbacSim(lvl, getDefaultPermissionsForAccessLevel(lvl))
                     }
                     className={`h-9 rounded-xl border text-xs font-semibold transition cursor-pointer ${
                       currentEffLevel === lvl
@@ -1009,7 +1057,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                       key={pk}
                       type="button"
                       onClick={() =>
-                        onApplyRbacSimulation(currentEffLevel, {
+                        applyRbacSim(currentEffLevel, {
                           ...currentEffPerms,
                           [pk]: !enabled,
                         })
