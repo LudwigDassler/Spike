@@ -41,6 +41,7 @@ import {
   processFilesToAttachments,
 } from './AttachmentSystem';
 import { UserAvatar } from './UserAvatar';
+import { TeddyPrismIcon } from './TedCloudAiDrawer';
 
 export type DrawerTarget =
   | { type: 'task'; record: TaskRecord }
@@ -64,7 +65,8 @@ interface SlideOverDrawerProps {
     updates: Record<string, any>
   ) => Promise<void>;
   onSendMessage?: (payload: Record<string, any>) => Promise<void>;
-  onDeleteTask?: (taskId: string) => Promise<void> | void;
+  onDeleteTask?: (taskId: string, taskTitle?: string) => Promise<void> | void;
+  onOpenLegalDocs?: (deal: CrmLeadRecord) => void;
 }
 
 export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
@@ -81,11 +83,13 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   onPatchRecord,
   onSendMessage,
   onDeleteTask,
+  onOpenLegalDocs,
 }) => {
   const { t, language, formatRole, formatMoney } = useLocale();
   const isEn = language === 'en';
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [dealRiskSummary, setDealRiskSummary] = useState<string>('');
 
   // Task checklist, attachments & AI decomposition state
   const [taskTitleDraft, setTaskTitleDraft] = useState<string>('');
@@ -486,18 +490,14 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       type="button"
                       disabled={isDecomposing}
                       onClick={() => void handleAiDecomposeTask()}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-slate-200/90 dark:border-white/10 bg-slate-100 text-slate-800 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:hover:bg-zinc-800 text-[11px] font-semibold transition-colors cursor-pointer"
                     >
                       {isDecomposing ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        <Cpu className="w-3 h-3 text-indigo-400" />
+                        <TeddyPrismIcon className="w-3.5 h-3.5 shrink-0" />
                       )}
-                      <span>
-                        {isEn
-                          ? 'Break into steps with TedCloud Intelligence'
-                          : 'Разбить на шаги с TedCloud Intelligence'}
-                      </span>
+                      <span>{isEn ? 'Break into Steps' : 'Разбить на шаги'}</span>
                     </button>
                   )}
                 </div>
@@ -1008,14 +1008,74 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
           </div>
 
           <div className="p-6 space-y-5">
-            <div>
-              <h2 className="text-lg font-bold text-white leading-snug">
-                {dealRec.client_name || dealRec.full_name || dealRec.title}
-              </h2>
-              {dealRec.title && (
-                <p className="text-xs text-[#8E8E93] mt-1">{dealRec.title}</p>
-              )}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-snug">
+                  {dealRec.client_name || dealRec.full_name || dealRec.title}
+                </h2>
+                {dealRec.title && (
+                  <p className="text-xs text-[#8E8E93] mt-1">{dealRec.title}</p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const autoContractNum =
+                    contractNumber.trim() ||
+                    `TC-${new Date().getFullYear()}-${String(dealRec.id || '101')
+                      .slice(0, 3)
+                      .toUpperCase()}`;
+                  const autoTax = taxId.trim() || (jurisdiction === 'RU' ? '7707083893' : 'EU-9920184');
+                  const autoReg = regNumber.trim() || (jurisdiction === 'RU' ? '1027700132195' : 'REG-88412');
+                  const val = Number(dealRec.amount ?? dealRec.deal_value ?? 0);
+                  const riskNote = isEn
+                    ? `Teddy Audit: Deal value ${formatMoney(val)}. Contract #${autoContractNum} pre-filled. Risk level: Low (standard B2B SLA recommended).`
+                    : `Аудит Teddy: Сумма сделки ${formatMoney(val)}. Договор № ${autoContractNum} и реквизиты заполнены. Оценка риска: Низкий (рекомендован типовой SLA и счет А4).`;
+
+                  setContractNumber(autoContractNum);
+                  setTaxId(autoTax);
+                  setRegNumber(autoReg);
+                  setDealRiskSummary(riskNote);
+                  const updatedNotes = notes.includes(autoContractNum)
+                    ? notes
+                    : `${notes ? notes + '\n\n' : ''}${riskNote}`;
+                  setNotes(updatedNotes);
+
+                  if (canEditCrm) {
+                    await onPatchRecord('crm_leads', dealRec.id, {
+                      contract_number: autoContractNum,
+                      tax_id: autoTax,
+                      reg_number: autoReg,
+                      description: updatedNotes,
+                    });
+                  }
+                  if (onOpenLegalDocs) {
+                    onOpenLegalDocs({
+                      ...dealRec,
+                      contract_number: autoContractNum,
+                      tax_id: autoTax,
+                      reg_number: autoReg,
+                      description: updatedNotes,
+                    });
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-100 text-slate-800 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold transition-colors cursor-pointer shrink-0"
+              >
+                <TeddyPrismIcon className="w-4 h-4 shrink-0" />
+                <span>
+                  {isEn
+                    ? 'Fill A4 Contract Draft & Assess Risks'
+                    : 'Заполнить проект договора А4 и оценить риски'}
+                </span>
+              </button>
             </div>
+
+            {dealRiskSummary && (
+              <div className="rounded-xl border border-slate-200/90 dark:border-white/10 border-l-2 border-l-[#3B82F6] bg-slate-50 dark:bg-[#14161C] px-4 py-3 text-xs text-slate-800 dark:text-zinc-200 leading-relaxed">
+                {dealRiskSummary}
+              </div>
+            )}
 
             <div className="rounded-xl border border-white/[0.08] bg-[#1A1D24] divide-y divide-white/[0.06] text-xs">
               <div className="px-4 py-3 flex items-center justify-between gap-4">

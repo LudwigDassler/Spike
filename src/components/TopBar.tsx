@@ -1,8 +1,9 @@
 import React from 'react';
-import { RefreshCw, Search, Command, X, Menu, Sun, Moon, Bot } from 'lucide-react';
+import { RefreshCw, Search, Command, X, Menu, Sun, Moon } from 'lucide-react';
 import { DashboardSection, OrganizationNode, TaskRecord, WorkShiftRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 import { WorkdayShiftWidget } from './EnterpriseB2BFeatures';
+import { TeddyPrismIcon } from './TedCloudAiDrawer';
 
 interface TopBarProps {
   companyId?: string;
@@ -57,13 +58,13 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onOpenMobileMenu}
             aria-label={isEn ? 'Open navigation menu' : 'Открыть меню навигации'}
-            className="lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-[#111114] text-zinc-300 hover:text-white shrink-0"
+            className="lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111114] text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white shrink-0"
           >
             <Menu className="w-4 h-4" />
           </button>
         )}
 
-        <div className="lg:hidden w-6 h-6 rounded-md bg-white text-black flex items-center justify-center font-bold text-[11px] tracking-tight shrink-0">
+        <div className="lg:hidden w-6 h-6 rounded-md bg-indigo-600 !text-white flex items-center justify-center font-bold text-[11px] tracking-tight shrink-0">
           TC
         </div>
 
@@ -126,7 +127,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     ? 'Global Omnisearch & Command Bar (Cmd+K)'
                     : 'Глобальный поиск и командный бар (Cmd+K / Ctrl+K)'
                 }
-                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 hover:text-slate-900 dark:bg-zinc-800 dark:text-zinc-400 dark:border-white/10 dark:hover:text-white text-[10px] font-medium transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200/90 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:border-white/10 text-[10px] font-medium transition-colors"
               >
                 <Command className="w-2.5 h-2.5" />
                 <span>K</span>
@@ -150,12 +151,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onOpenAiCopilot}
             aria-label="Teddy"
-            className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-indigo-600 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold !text-white transition-colors whitespace-nowrap shadow-xs shrink-0 cursor-pointer"
+            title={isEn ? 'Teddy Optical Prism (Alt+Space)' : 'Оптический терминал Teddy (Alt+Space)'}
+            className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-slate-200/90 dark:border-white/10 bg-slate-100 text-slate-900 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold transition-colors whitespace-nowrap shadow-2xs shrink-0 cursor-pointer"
           >
-            <div className="w-5 h-5 rounded-md bg-white/15 !text-white flex items-center justify-center shrink-0">
-              <Bot className="w-3.5 h-3.5 !text-white" />
-            </div>
-            <span className="hidden md:inline !text-white">Teddy</span>
+            <TeddyPrismIcon className="w-4 h-4 shrink-0" />
+            <span className="hidden md:inline">Teddy</span>
           </button>
         )}
 

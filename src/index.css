@@ -245,7 +245,7 @@ body.theme-light,
 }
 
 /* Primary text in Light Mode -> #0F172A */
-.theme-light .text-white:not(.bg-indigo-600):not(.bg-slate-900):not(.bg-emerald-600):not(.bg-rose-600):not(.tc-btn-primary):not(.tc-bubble-outgoing):not(.tc-pricing-featured),
+.theme-light .text-white:not(button):not(.bg-indigo-600):not(.bg-slate-900):not(.bg-emerald-600):not(.bg-rose-600):not(.tc-btn-primary):not(.tc-bubble-outgoing):not(.tc-pricing-featured),
 .theme-light .text-zinc-100,
 .theme-light .text-zinc-200,
 .theme-light .text-zinc-300,
@@ -282,60 +282,12 @@ body.theme-light,
   opacity: 1 !important;
 }
 
-/* ============================================================================
-   TAB & BUTTON CONTRAST GUARANTEE (ZERO WHITE-ON-WHITE IN ANY THEME)
-   ============================================================================ */
-
-/* Active tabs or buttons with white background ALWAYS have #0F172A text */
-button.bg-white:not(.text-white),
-.theme-light button.bg-white,
-.dark button.dark\:bg-white,
-.theme-dark button.dark\:bg-white {
-  color: #0F172A !important;
-}
-
-button.bg-white:not(.text-white) > span:not(.bg-rose-500):not(.bg-indigo-600),
-button.bg-white:not(.text-white) > svg,
-.dark button.dark\:bg-white > span:not(.bg-rose-500):not(.bg-indigo-600),
-.dark button.dark\:bg-white > svg,
-.theme-dark button.dark\:bg-white > span:not(.bg-rose-500):not(.bg-indigo-600),
-.theme-dark button.dark\:bg-white > svg {
-  color: #0F172A !important;
-}
-
-/* Accent & Dark buttons (bg-indigo-600, bg-slate-900 without dark:bg-white, tc-btn-primary) ALWAYS have #FFFFFF text */
+/* Accent & Primary buttons keep crisp white text */
 .bg-indigo-600,
 .theme-light .bg-indigo-600,
 .tc-btn-primary,
-.theme-light .tc-btn-primary,
-.theme-light .bg-slate-900,
-.bg-slate-900:not(.dark\:bg-white) {
-  color: #FFFFFF !important;
-}
-
-.theme-light .bg-indigo-600 {
-  background-color: #4f46e5 !important;
-  border-color: #4338ca !important;
-}
-
-.theme-light .bg-slate-900 {
-  background-color: #0F172A !important;
-  border-color: #0F172A !important;
-}
-
-.bg-indigo-600 > span,
-.bg-indigo-600 > svg,
-.theme-light .bg-indigo-600 > span,
-.theme-light .bg-indigo-600 > svg,
-.theme-light .bg-slate-900 > span,
-.theme-light .bg-slate-900 > svg,
-.bg-slate-900:not(.dark\:bg-white) > span,
-.bg-slate-900:not(.dark\:bg-white) > svg,
-.tc-btn-primary > span,
-.tc-btn-primary > svg,
-.theme-light .tc-btn-primary > span,
-.theme-light .tc-btn-primary > svg {
-  color: #FFFFFF !important;
+.theme-light .tc-btn-primary {
+  color: #FFFFFF;
 }
 
 .theme-light .tc-btn-primary {
@@ -353,14 +305,9 @@ button.bg-white:not(.text-white) > svg,
 
 .theme-light .tc-btn-secondary {
   background-color: #FFFFFF !important;
-  color: #0F172A !important;
+  color: #0F172A;
   border-color: #E2E8F0 !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
-}
-
-.theme-light .tc-btn-secondary span,
-.theme-light .tc-btn-secondary svg {
-  color: #0F172A !important;
 }
 
 .theme-light .tc-btn-secondary:hover {

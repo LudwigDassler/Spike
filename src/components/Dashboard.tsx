@@ -95,7 +95,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { PermissionsMatrixModal } from './PermissionsMatrixModal';
 import { SlideOverDrawer, DrawerTarget } from './SlideOverDrawer';
 import { UserAvatar, cropAndCompressAvatarToDataUrl } from './UserAvatar';
-import { TedCloudAiDrawer } from './TedCloudAiDrawer';
+import { TedCloudAiDrawer, TeddyPrismIcon } from './TedCloudAiDrawer';
 import { CommandBarModal } from './CommandBarModal';
 import { TeamworkGraphView } from './TeamworkGraphView';
 import { DeveloperHudOverlay, installGlobalFetchSniffer } from './DeveloperHudOverlay';
@@ -537,7 +537,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (e.altKey && (e.code === 'Space' || e.key === ' ')) {
+        e.preventDefault();
+        setIsAiDrawerOpen((prev) => !prev);
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandBarOpen((prev) => !prev);
       } else if (e.altKey && e.key.toLowerCase() === 'n') {
@@ -2069,7 +2072,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             ? 'bg-red-500/15 text-red-600 dark:text-red-300 border-red-500/30'
             : isToday
             ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
-            : 'bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-zinc-800 dark:text-zinc-200 dark:border-white/10'
+            : 'bg-slate-100 text-slate-800 border border-slate-200/90 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:border-white/10'
         }`}
       >
         <Calendar className="w-3 h-3 shrink-0" />
@@ -2946,7 +2949,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       {renderTaskStatusBadge(task.status)}
                                       {renderDueDateBadge(task.due_date, task.status)}
                                       {task.department && (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/80 dark:bg-zinc-800 dark:border-white/10 dark:text-zinc-200 text-[11px]">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200/90 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:border-white/10 text-[11px]">
                                           {formatRole(task.department)}
                                         </span>
                                       )}
@@ -2960,7 +2963,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                               [task.id]: !prev[task.id],
                                             }));
                                           }}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/80 hover:bg-slate-200/70 dark:bg-zinc-800 dark:text-zinc-200 dark:border-white/10 dark:hover:bg-zinc-700 text-[11px] tabular-nums transition-colors"
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200/90 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:border-white/10 text-[11px] tabular-nums transition-colors"
                                           title={
                                             isEn
                                               ? 'Toggle AI subtask checklist'
@@ -3011,12 +3014,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             ? 'Decompose task into AI subtask checklist'
                                             : 'ИИ-декомпозиция задачи на чек-лист подзадач'
                                         }
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-200/80 hover:bg-slate-200/70 dark:bg-zinc-800 dark:text-zinc-200 dark:border-white/10 dark:hover:bg-zinc-700 text-[11px] font-medium transition-colors whitespace-nowrap"
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200/90 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:border-white/10 text-[11px] font-medium transition-colors whitespace-nowrap"
                                       >
                                         {isDecomposing ? (
                                           <Loader2 className="w-3 h-3 animate-spin" />
                                         ) : (
-                                          <Cpu className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                                          <TeddyPrismIcon className="w-3.5 h-3.5 shrink-0" />
                                         )}
                                         <span>{isEn ? 'AI Subtasks' : 'ИИ-декомпозиция'}</span>
                                       </button>
@@ -4960,7 +4963,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           >
                             <span className="truncate">{headerSubtitle}</span>
                             {tgActive && (
-                              <span className="inline-flex items-center gap-1 text-emerald-400 font-medium shrink-0">
+                              <span className="inline-flex items-center gap-1 text-emerald-500 dark:text-emerald-400 font-medium shrink-0">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                                 <span>TG Online</span>
                               </span>
@@ -4968,6 +4971,70 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </div>
                         </div>
                       </div>
+
+                      {canCreateOrEditTasks && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const recentMsgs = activeThreadMessages.slice(-4);
+                            const lastMsgText =
+                              recentMsgs.length > 0
+                                ? extractMessageText(recentMsgs[recentMsgs.length - 1])
+                                : headerTitle;
+                            const taskTitle = isEn
+                              ? `Chat Summary (${headerTitle}): ${lastMsgText.slice(0, 56)}`
+                              : `По итогам диалога (${headerTitle}): ${lastMsgText.slice(0, 56)}`;
+                            const steps =
+                              recentMsgs.length > 0
+                                ? recentMsgs.map((m, idx) => ({
+                                    id: `chat-chk-${Date.now()}-${idx}`,
+                                    title: `${m.sender_name || 'Сотрудник'}: ${extractMessageText(m).slice(0, 90)}`,
+                                    done: false,
+                                  }))
+                                : buildBuiltInChecklistForTask(taskTitle, '', language).checklist;
+
+                            const assigneeId =
+                              activeCommThread.type === 'direct'
+                                ? String(activeCommThread.id)
+                                : currentProfile?.id || safeNodes[0]?.id || null;
+
+                            const res = await onCreateRecord('tasks', {
+                              company_id: companyId,
+                              title: taskTitle,
+                              description: isEn
+                                ? `Created via Teddy Optical Prism from thread "${headerTitle}".`
+                                : `Сформировано через Teddy из переписки «${headerTitle}».`,
+                              status: 'Todo',
+                              priority: 'High',
+                              department:
+                                activeCommThread.type === 'department'
+                                  ? activeCommThread.id
+                                  : selectedColleague?.department || companyDepartments[0] || 'Общий контур',
+                              assigned_to: assigneeId,
+                              owner_node_id: assigneeId,
+                              created_by: currentProfile?.id || null,
+                              due_date: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+                              checklist: steps,
+                            });
+
+                            if (res.ok) {
+                              showToast(
+                                isEn
+                                  ? 'Chat thread summarized into an actionable task'
+                                  : 'Выжимка чата оформлена в задачу с чек-листом'
+                              );
+                              const createdRecordId = (res as any).record?.id || (res as any).id;
+                              if (createdRecordId) {
+                                setDrawerSelection({ kind: 'task', id: String(createdRecordId) });
+                              }
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-100 text-slate-800 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          <TeddyPrismIcon className="w-3.5 h-3.5 shrink-0" />
+                          <span>{isEn ? 'Summarize Chat to Task' : 'Выжимка чата в задачу'}</span>
+                        </button>
+                      )}
                     </div>
                   );
                 })()}
@@ -6915,6 +6982,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           setDrawerSelection(null);
           const matchedTask = safeTasks.find((tk) => tk.id === taskId);
           requestDeleteRecord('tasks', taskId, taskTitle || matchedTask?.title || taskId);
+        }}
+        onOpenLegalDocs={(deal) => {
+          setDrawerSelection(null);
+          setLegalDocModalDeal(deal);
         }}
         onSendMessage={
           onSendMessage
