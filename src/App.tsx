@@ -457,7 +457,7 @@ function AppContent() {
     if (!currentProfile?.id) return;
     const interval = setInterval(() => {
       void loadWorkspaceData(false, true);
-    }, 5000);
+    }, 10000);
     return () => clearInterval(interval);
   }, [currentProfile?.id, loadWorkspaceData]);
 
@@ -538,7 +538,7 @@ function AppContent() {
         });
         setMessages((prev) =>
           (Array.isArray(prev) ? prev : []).map((item) =>
-            item.id === id ? { ...item, ...updates } : item
+            item.id === id ? { ...item, ...updates, created_at: item.created_at } : item
           )
         );
       }
@@ -567,22 +567,26 @@ function AppContent() {
         if (table === 'tasks' && result.data) {
           setTasks((prev) =>
             (Array.isArray(prev) ? prev : []).map((item) =>
-              item.id === id ? result.data : item
+              item.id === id ? { ...result.data, created_at: item.created_at || result.data.created_at } : item
             )
           );
         } else if (table === 'crm_leads' && result.data) {
           setLeads((prev) =>
             (Array.isArray(prev) ? prev : []).map((item) =>
-              item.id === id ? result.data : item
+              item.id === id ? { ...result.data, created_at: item.created_at || result.data.created_at } : item
             )
           );
         } else if (table === 'organization_nodes' && result.data) {
           setNodes((prev) =>
             (Array.isArray(prev) ? prev : []).map((item) =>
-              item.id === id ? result.data : item
+              item.id === id ? { ...result.data, created_at: item.created_at || result.data.created_at } : item
             )
           );
-          setCurrentProfile((prev) => (prev && prev.id === id ? result.data : prev));
+          setCurrentProfile((prev) =>
+            prev && prev.id === id
+              ? { ...result.data, created_at: prev.created_at || result.data.created_at }
+              : prev
+          );
         } else if (table === 'companies' && result.data) {
           setCompany((prev) => (prev ? { ...prev, ...result.data } : result.data));
         } else if (table === 'billing_invoices' && result.data) {
@@ -594,12 +598,23 @@ function AppContent() {
         } else if (table === 'workspace_messages' && result.data) {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((item) =>
-              item.id === id ? { ...result.data, ...updates } : item
+              item.id === id
+                ? {
+                    ...item,
+                    ...result.data,
+                    ...updates,
+                    created_at: item.created_at || result.data.created_at,
+                  }
+                : item
             )
           );
         }
 
-        if (table !== 'workspace_messages') {
+        const isShiftOnlyUpdate =
+          table === 'organization_nodes' &&
+          Object.keys(updates).every((k) => k === 'shift_status' || k === 'shift_started_at');
+
+        if (table !== 'workspace_messages' && !isShiftOnlyUpdate) {
           void loadWorkspaceData(false, true);
         }
 

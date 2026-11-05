@@ -810,27 +810,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
       });
   }, [safeMessages, currentProfile, optimisticReactionsMap]);
 
+  const stableSortMessages = (list: WorkspaceMessageRecord[]): WorkspaceMessageRecord[] =>
+    [...list].sort(
+      (a, b) =>
+        new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime() ||
+        String(a.id || '').localeCompare(String(b.id || ''))
+    );
+
   const activeThreadMessages = useMemo(() => {
     const list = filterMessagesForActiveThread(visibleMessages, activeCommThread, currentProfile);
-    const getSafeTime = (m: any): number => {
-      const raw = m?.created_at || m?.timestamp || m?.inserted_at;
-      if (!raw) return 0;
-      const t = new Date(raw).getTime();
-      return Number.isNaN(t) ? 0 : t;
-    };
-    const getDayRank = (m: any): number => {
-      const ts = getSafeTime(m);
-      if (!ts) return 0;
-      const d = new Date(ts);
-      return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
-    };
-    return [...list].sort((a, b) => {
-      const dayDiff = getDayRank(a) - getDayRank(b);
-      if (dayDiff !== 0) return dayDiff;
-      const timeDiff = getSafeTime(a) - getSafeTime(b);
-      if (timeDiff !== 0) return timeDiff;
-      return String(a.id || '').localeCompare(String(b.id || ''));
-    });
+    return stableSortMessages(list);
   }, [visibleMessages, activeCommThread, currentProfile]);
 
   useEffect(() => {
@@ -845,16 +834,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     if (!isThreadSwitch && !isNewMessageAdded) return;
 
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const lastMsg = activeThreadMessages[activeThreadMessages.length - 1];
+    const isSentByMe =
+      lastMsg &&
+      currentProfile &&
+      String(lastMsg.sender_id || '') === String(currentProfile.id || '');
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = distanceFromBottom < 260;
+
+    if (!isThreadSwitch && !isNearBottom && !isSentByMe) return;
+
     const timer = setTimeout(() => {
-      const container = messagesContainerRef.current;
-      if (!container) return;
+      const el = messagesContainerRef.current;
+      if (!el) return;
       try {
-        container.scrollTo({
-          top: container.scrollHeight,
+        el.scrollTo({
+          top: el.scrollHeight,
           behavior: isThreadSwitch ? 'auto' : 'smooth',
         });
       } catch {
-        container.scrollTop = container.scrollHeight;
+        el.scrollTop = el.scrollHeight;
       }
     }, 20);
     return () => clearTimeout(timer);
@@ -864,6 +867,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     activeCommThread.type,
     activeCommThread.id,
     activeThreadMessages.length,
+    currentProfile,
   ]);
 
   const broadcastMessagesCount = useMemo(
@@ -2282,7 +2286,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           currentProfile={currentProfile}
           tasks={visibleTasks}
           onSyncShiftState={async (status, startedAt) => {
-            if (currentProfile) {
+            if (currentProfile && currentProfile.shift_status !== status) {
               await onPatchRecord('organization_nodes', currentProfile.id, {
                 shift_status: status,
                 shift_started_at: startedAt,
@@ -6905,9 +6909,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             showToast(t('drawer.savedToast'));
           }
         }}
-        onDeleteTask={(taskId, taskTitle) => {
+        onDeleteTask={(taskId: string, taskTitle?: string) => {
           setDrawerSelection(null);
-          requestDeleteRecord('tasks', taskId, taskTitle);
+          const matchedTask = safeTasks.find((tk) => tk.id === taskId);
+          requestDeleteRecord('tasks', taskId, taskTitle || matchedTask?.title || taskId);
         }}
         onSendMessage={
           onSendMessage

@@ -916,19 +916,21 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const root = document.documentElement;
       const body = document.body;
       if (theme === 'light') {
+        root.classList.remove('dark', 'theme-dark');
         root.classList.add('theme-light');
-        root.classList.remove('theme-dark');
+        body.classList.remove('dark', 'theme-dark');
         body.classList.add('theme-light');
-        body.classList.remove('theme-dark');
-        root.style.backgroundColor = '#f8fafc';
-        body.style.backgroundColor = '#f8fafc';
+        root.style.backgroundColor = '#F4F4F1';
+        body.style.backgroundColor = '#F4F4F1';
+        body.style.color = '#0F172A';
       } else {
-        root.classList.add('theme-dark');
+        root.classList.add('dark', 'theme-dark');
         root.classList.remove('theme-light');
-        body.classList.add('theme-dark');
+        body.classList.add('dark', 'theme-dark');
         body.classList.remove('theme-light');
-        root.style.backgroundColor = '#070709';
-        body.style.backgroundColor = '#070709';
+        root.style.backgroundColor = '#0B0C10';
+        body.style.backgroundColor = '#0B0C10';
+        body.style.color = '#F1F5F9';
       }
     } catch {}
   }, [theme]);

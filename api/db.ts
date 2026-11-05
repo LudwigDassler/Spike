@@ -2559,15 +2559,29 @@ export default async function handler(req: any, res: any) {
 
         const matchedCompany =
           localStore.companies.find((c) => String(c.id) === String(activeCompanyId)) || null;
-        const companyNodes = allNodes.filter(
-          (n) => String(n.company_id || '') === String(activeCompanyId)
-        );
+        const companyNodes = allNodes
+          .filter((n) => String(n.company_id || '') === String(activeCompanyId))
+          .sort(
+            (a, b) =>
+              (new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()) ||
+              String(a.id || '').localeCompare(String(b.id || ''))
+          );
         const companyTasks = localStore.tasks
           .map(normalizeTaskRow)
-          .filter((t) => String(t.company_id || '') === String(activeCompanyId));
+          .filter((t) => String(t.company_id || '') === String(activeCompanyId))
+          .sort(
+            (a, b) =>
+              (new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()) ||
+              String(a.id || '').localeCompare(String(b.id || ''))
+          );
         const companyLeads = localStore.crm_leads
           .map(normalizeLeadRow)
-          .filter((l) => String(l.company_id || '') === String(activeCompanyId));
+          .filter((l) => String(l.company_id || '') === String(activeCompanyId))
+          .sort(
+            (a, b) =>
+              (new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()) ||
+              String(a.id || '').localeCompare(String(b.id || ''))
+          );
         const companyMessages = localStore.workspace_messages
           .map(normalizeMessageRow)
           .filter(
@@ -2578,7 +2592,8 @@ export default async function handler(req: any, res: any) {
           .sort((a, b) => {
             const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
             const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return (Number.isNaN(tA) ? 0 : tA) - (Number.isNaN(tB) ? 0 : tB);
+            const diff = (Number.isNaN(tA) ? 0 : tA) - (Number.isNaN(tB) ? 0 : tB);
+            return diff !== 0 ? diff : String(a.id || '').localeCompare(String(b.id || ''));
           });
         const companyInvoices = localStore.billing_invoices
           .map(normalizeInvoiceRow)
@@ -2618,10 +2633,18 @@ export default async function handler(req: any, res: any) {
         auditLogsData,
       ] = await Promise.all([
         safeSelect(supabase, 'companies', (q) => q.order('created_at', { ascending: false }).limit(100)),
-        safeSelect(supabase, 'organization_nodes', (q) => q.order('created_at', { ascending: true })),
-        safeSelect(supabase, 'tasks', (q) => q.order('created_at', { ascending: false })),
-        safeSelect(supabase, 'crm_leads', (q) => q.order('created_at', { ascending: false })),
-        safeSelect(supabase, 'workspace_messages', (q) => q.order('created_at', { ascending: false }).limit(300)),
+        safeSelect(supabase, 'organization_nodes', (q) =>
+          q.order('created_at', { ascending: true }).order('id', { ascending: true })
+        ),
+        safeSelect(supabase, 'tasks', (q) =>
+          q.order('created_at', { ascending: true }).order('id', { ascending: true })
+        ),
+        safeSelect(supabase, 'crm_leads', (q) =>
+          q.order('created_at', { ascending: true }).order('id', { ascending: true })
+        ),
+        safeSelect(supabase, 'workspace_messages', (q) =>
+          q.order('created_at', { ascending: true }).order('id', { ascending: true }).limit(400)
+        ),
         safeSelect(supabase, 'billing_invoices', (q) => q.order('created_at', { ascending: false }).limit(100)),
         safeSelect(supabase, 'work_shifts', (q) => q.order('created_at', { ascending: false }).limit(200)),
         safeSelect(supabase, 'audit_logs', (q) => q.order('created_at', { ascending: false }).limit(100)),
@@ -2680,15 +2703,27 @@ export default async function handler(req: any, res: any) {
       }
 
       // STRICT MULTI-TENANCY FILTER BY company_id
-      const companyNodes = rawNodes.filter(
-        (n: any) => String(n.company_id || '') === String(activeCompanyId)
-      );
-      const companyTasks = rawTasks.filter(
-        (t: any) => String(t.company_id || '') === String(activeCompanyId)
-      );
-      const companyLeads = rawLeads.filter(
-        (l: any) => String(l.company_id || '') === String(activeCompanyId)
-      );
+      const companyNodes = rawNodes
+        .filter((n: any) => String(n.company_id || '') === String(activeCompanyId))
+        .sort(
+          (a: any, b: any) =>
+            (new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()) ||
+            String(a.id || '').localeCompare(String(b.id || ''))
+        );
+      const companyTasks = rawTasks
+        .filter((t: any) => String(t.company_id || '') === String(activeCompanyId))
+        .sort(
+          (a: any, b: any) =>
+            (new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()) ||
+            String(a.id || '').localeCompare(String(b.id || ''))
+        );
+      const companyLeads = rawLeads
+        .filter((l: any) => String(l.company_id || '') === String(activeCompanyId))
+        .sort(
+          (a: any, b: any) =>
+            (new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()) ||
+            String(a.id || '').localeCompare(String(b.id || ''))
+        );
 
       // Merge remote workspace_messages with in-memory fallback messages strictly for activeCompanyId
       const remoteMessages = Array.isArray(messagesData) ? messagesData : [];
@@ -2709,7 +2744,8 @@ export default async function handler(req: any, res: any) {
       mergedMessages.sort((a, b) => {
         const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
         const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return (Number.isNaN(tA) ? 0 : tA) - (Number.isNaN(tB) ? 0 : tB);
+        const diff = (Number.isNaN(tA) ? 0 : tA) - (Number.isNaN(tB) ? 0 : tB);
+        return diff !== 0 ? diff : String(a.id || '').localeCompare(String(b.id || ''));
       });
 
       // Merge remote billing_invoices with in-memory fallback invoices strictly for activeCompanyId
@@ -4358,10 +4394,11 @@ export default async function handler(req: any, res: any) {
                   ? 'Проведи живой управленческий анализ распределения задач по сотрудникам и конверсии сделок CRM, дай 2–3 точные рекомендации без КАПСЛОКА.'
                   : `Ответь на запрос сотрудника: «${promptText}» живо, по делу и на основе реальных данных компании без КАПСЛОКА.`;
 
+              const personaStr = String(personaMode || '');
               const personaInstruction =
-                personaMode === 'finance' || personaMode === 'mathematician'
+                personaStr === 'finance' || personaStr === 'mathematician'
                   ? 'Активный фокус: «Финансовая аналитика» — опирайся на выручку, конверсию воронки CRM, рентабельность и финансовую дисциплину.'
-                  : personaMode === 'automation'
+                  : personaStr === 'automation'
                   ? 'Активный фокус: «Автоматизация задач» — декомпозируй цели на четкие шаги чек-листов, распределяй исполнителей и оптимизируй процессы.'
                   : 'Активный фокус: «Операционный контроль» — контролируй сроки исполнения поручений (SLA), баланс нагрузки по отделам и доведение сделок до результата.';
 
@@ -6148,14 +6185,28 @@ ${builtInResult.reply}
           };
         }
 
+        let existingMsg: any =
+          localIdx !== -1 ? localStore.workspace_messages[localIdx] : null;
+
         if (supabase) {
+          const { data: existingFromDb } = await supabase
+            .from('workspace_messages')
+            .select('*')
+            .eq('id', id)
+            .maybeSingle();
+          if (existingFromDb) {
+            existingMsg = existingFromDb;
+          }
           await safeSupabaseUpdate(supabase, 'workspace_messages', id, rawUpdates);
         }
 
-        const updatedMsg =
-          localIdx !== -1
-            ? localStore.workspace_messages[localIdx]
-            : { id, ...prevMsgExtras, ...rawUpdates };
+        const updatedMsg = {
+          ...(existingMsg || {}),
+          id,
+          ...prevMsgExtras,
+          ...rawUpdates,
+          ...(existingMsg?.created_at ? { created_at: existingMsg.created_at } : {}),
+        };
 
         return res.status(200).json({
           ok: true,

@@ -13,9 +13,12 @@ import {
   Printer,
   Terminal,
   Trash2,
+  Calendar,
+  ChevronDown,
 } from 'lucide-react';
 import { CrmLeadRecord, OrganizationNode, TaskPriority, TaskRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
+import { UserAvatar } from './UserAvatar';
 
 export const TeddyAvatar: React.FC<{ className?: string }> = ({
   className = 'w-8 h-8',
@@ -88,7 +91,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   onOpenLegalDocModal,
   showToast,
 }) => {
-  const { language, formatMoney } = useLocale();
+  const { language, theme, formatMoney } = useLocale();
   const isEn = language === 'en';
 
   const [inputText, setInputText] = useState<string>('');
@@ -103,7 +106,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const [isApplyingDb, setIsApplyingDb] = useState<boolean>(false);
   const [appliedSuccessBanner, setAppliedSuccessBanner] = useState<string | null>(null);
   const [dialogue, setDialogue] = useState<ChatTurn[]>([]);
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [openAssigneePopoverRowId, setOpenAssigneePopoverRowId] = useState<string | null>(null);
+  const [openDeptPopoverRowId, setOpenDeptPopoverRowId] = useState<string | null>(null);
+  const [editingTitleRowId, setEditingTitleRowId] = useState<string | null>(null);
+
+  const feedScrollRef = useRef<HTMLDivElement | null>(null);
 
   const departments = useMemo(() => {
     const set = new Set<string>(['Отдел продаж', 'Производство и ИТ', 'Финансы и Юр. отдел']);
@@ -119,6 +126,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     const n0 = nodes[0]?.id || currentUser?.id || '';
     const n1 = nodes[1]?.id || n0;
     const n2 = nodes[2]?.id || n0;
+    const n3 = nodes[3]?.id || n1;
 
     return [
       {
@@ -128,7 +136,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         title: `${prefix}${isEn ? 'Prepare commercial specification & SLA' : 'Подготовить ТЗ, смету и регламент SLA'}`,
         department: departments[0] || 'Отдел продаж',
         assignedTo: n0,
-        priority: 'high',
+        priority: 'High',
         dueDate: getIsoDateOffset(2),
       },
       {
@@ -138,7 +146,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         title: `${prefix}${isEn ? 'Configure production pipeline & QA' : 'Настроить контур исполнения и контроль качества'}`,
         department: departments[1] || 'Производство и ИТ',
         assignedTo: n1,
-        priority: 'medium',
+        priority: 'Medium',
         dueDate: getIsoDateOffset(4),
       },
       {
@@ -148,15 +156,25 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         title: `${prefix}${isEn ? 'Approve B2B contract & issue invoice' : 'Согласовать договор поставки и выставить счет'}`,
         department: departments[2] || 'Финансы и Юр. отдел',
         assignedTo: n2,
-        priority: 'high',
+        priority: 'High',
         dueDate: getIsoDateOffset(3),
+      },
+      {
+        id: `stg-dec-4-${Date.now()}`,
+        checked: true,
+        mode: 'create_task',
+        title: `${prefix}${isEn ? 'Verify client onboarding & final acceptance' : 'Провести контрольную приемку и запуск клиента'}`,
+        department: departments[0] || 'Отдел продаж',
+        assignedTo: n3,
+        priority: 'Medium',
+        dueDate: getIsoDateOffset(5),
       },
     ];
   };
 
   const buildDealsAuditRows = (): StagingRowItem[] => {
-    const activeLeads = leads.filter((l) => l.status !== 'Closed Won');
-    const source = activeLeads.length > 0 ? activeLeads.slice(0, 5) : leads.slice(0, 4);
+    const activeLeads = leads.filter((l) => l.status !== 'Won');
+    const source = activeLeads.length > 0 ? activeLeads.slice(0, 4) : leads.slice(0, 4);
 
     if (source.length === 0) {
       return [
@@ -169,24 +187,29 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             : 'Связаться с ЛПР по ключевой сделке и направить КП',
           department: departments[0] || 'Отдел продаж',
           assignedTo: currentUser?.id || nodes[0]?.id || '',
-          priority: 'high',
+          priority: 'High',
           dueDate: getIsoDateOffset(1),
         },
       ];
     }
 
-    return source.map((lead, idx) => ({
-      id: `stg-crm-${lead.id}-${idx}`,
-      checked: true,
-      mode: 'followup_lead',
-      title: `${isEn ? 'Follow-up:' : 'Дожим сделки:'} ${lead.company_name} (${formatMoney(Number(lead.value_amount || 0))})`,
-      department: departments[0] || 'Отдел продаж',
-      assignedTo: lead.owner_id || currentUser?.id || nodes[0]?.id || '',
-      priority: Number(lead.value_amount || 0) >= 300000 ? 'high' : 'medium',
-      dueDate: getIsoDateOffset(1 + (idx % 3)),
-      leadId: lead.id,
-      dealValue: Number(lead.value_amount || 0),
-    }));
+    return source.map((lead, idx) => {
+      const leadTitle = lead.client_name || lead.title || 'Контрагент';
+      const leadVal = Number(lead.amount || 0);
+      const prio: TaskPriority = leadVal >= 300000 ? 'High' : 'Medium';
+      return {
+        id: `stg-crm-${lead.id}-${idx}`,
+        checked: true,
+        mode: 'followup_lead' as const,
+        title: `${isEn ? 'Follow-up:' : 'Дожим сделки:'} ${leadTitle} (${formatMoney(leadVal)})`,
+        department: departments[0] || 'Отдел продаж',
+        assignedTo: lead.assigned_to || currentUser?.id || nodes[0]?.id || '',
+        priority: prio,
+        dueDate: getIsoDateOffset(1 + (idx % 3)),
+        leadId: lead.id,
+        dealValue: leadVal,
+      };
+    });
   };
 
   const buildRebalanceRows = (): StagingRowItem[] => {
@@ -204,14 +227,14 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       return buildDecompositionRows(isEn ? 'Sprint Rebalance' : 'Балансировка спринта');
     }
 
-    return openTasks.slice(0, 5).map((t, idx) => ({
+    return openTasks.slice(0, 4).map((t, idx) => ({
       id: `stg-reb-${t.id}-${idx}`,
       checked: true,
       mode: 'reassign_task',
       title: t.title,
       department: t.department || leastBusyNode?.department || departments[0] || 'Отдел продаж',
       assignedTo: leastBusyNode?.id || currentUser?.id || '',
-      priority: (t.priority as TaskPriority) || 'medium',
+      priority: (t.priority as TaskPriority) || 'Medium',
       dueDate: t.due_date ? String(t.due_date).split('T')[0] : getIsoDateOffset(2 + idx),
       existingTaskId: t.id,
     }));
@@ -230,8 +253,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           role: 'assistant',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           text: isEn
-            ? `Workspace "${companyName}" analyzed (${tasks.length} tasks, ${leads.length} deals, ${nodes.length} employees). Select a quick action in the top bar or describe your goal below — the interactive table on the right is ready for editing and committing to the database.`
-            : `Проанализирован контур «${companyName}» (задач: ${tasks.length}, сделок: ${leads.length}, сотрудников: ${nodes.length}). Выберите действие в верхней панели или опишите задачу в чате — справа на холсте сформирована интерактивная таблица для проверки и записи в БД.`,
+            ? `Workspace "${companyName}" analyzed (${tasks.length} tasks, ${leads.length} deals, ${nodes.length} employees). Click any field on the action cards below to edit inline, or choose a quick command above the input dock.`
+            : `Проанализирован контур «${companyName}» (задач: ${tasks.length}, сделок: ${leads.length}, сотрудников: ${nodes.length}). Отредактируйте карточки прямого действия ниже в один клик или выберите быструю команду над строкой ввода.`,
           canvasMode: 'decompose',
         },
       ]);
@@ -241,15 +264,12 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!chatScrollRef.current) return;
-    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-  }, [dialogue.length]);
-
   if (!isOpen) return null;
 
   const triggerQuickAction = (mode: TeddyCanvasMode, customTopic?: string) => {
     setAppliedSuccessBanner(null);
+    setOpenAssigneePopoverRowId(null);
+    setOpenDeptPopoverRowId(null);
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     if (mode === 'decompose') {
@@ -264,20 +284,20 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           : 'Декомпозиция цели в задачи'
       );
       setDialogue((prev) => [
-        ...prev,
+        ...prev.slice(-3),
         {
           id: `u-${Date.now()}`,
           role: 'user',
           timestamp: nowTime,
-          text: customTopic || (isEn ? 'Decompose goal into tasks' : 'Декомпозиция цели'),
+          text: customTopic || (isEn ? 'Break goal into tasks' : 'Разбить цель на задачи'),
         },
         {
           id: `a-${Date.now() + 1}`,
           role: 'assistant',
           timestamp: nowTime,
           text: isEn
-            ? `Prepared ${rows.length} structured tasks on the right canvas. Adjust assignees, priority, or deadlines and click "Apply to Database".`
-            : `Сформировал пакет из ${rows.length} поручений на правом холсте. Проверьте ответственных, приоритет и сроки, после чего нажмите «Применить в базу данных».`,
+            ? `Prepared ${rows.length} interactive task cards. Click any title, assignee, or priority to customize before creating.`
+            : `Подготовил ${rows.length} карточки поручений. Кликните по названию, исполнителю или приоритету для точной настройки.`,
           canvasMode: 'decompose',
         },
       ]);
@@ -286,23 +306,23 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       setStagingRows(rows);
       setActiveCanvasMode('deals_audit');
       setCanvasTitle(
-        isEn ? 'CRM Pipeline Audit & Follow-up Tasks' : 'Аудит сделок CRM и задачи на дожим'
+        isEn ? 'Stalled Deals Audit & Follow-ups' : 'Проверка зависших сделок CRM'
       );
       setDialogue((prev) => [
-        ...prev,
+        ...prev.slice(-3),
         {
           id: `u-${Date.now()}`,
           role: 'user',
           timestamp: nowTime,
-          text: isEn ? 'Audit CRM deals' : 'Аудит сделок',
+          text: isEn ? 'Check stalled deals' : 'Проверить зависшие сделки',
         },
         {
           id: `a-${Date.now() + 1}`,
           role: 'assistant',
           timestamp: nowTime,
           text: isEn
-            ? `Analyzed active CRM deals (${leads.length}) and generated ${rows.length} follow-up tasks on the right canvas.`
-            : `Проверил активные сделки CRM (${leads.length}) и подготовил ${rows.length} поручений на дожим клиентов в правой панели.`,
+            ? `Audited ${leads.length} CRM deals and prepared ${rows.length} follow-up action cards.`
+            : `Проверил воронку CRM (${leads.length} сделок) и сформировал ${rows.length} поручения на дожим клиентов.`,
           canvasMode: 'deals_audit',
         },
       ]);
@@ -314,20 +334,20 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         isEn ? 'Workload Rebalancing Across Staff' : 'Балансировка нагрузки сотрудников'
       );
       setDialogue((prev) => [
-        ...prev,
+        ...prev.slice(-3),
         {
           id: `u-${Date.now()}`,
           role: 'user',
           timestamp: nowTime,
-          text: isEn ? 'Rebalance team workload' : 'Балансировка нагрузки',
+          text: isEn ? 'Rebalance workload' : 'Сбалансировать нагрузку',
         },
         {
           id: `a-${Date.now() + 1}`,
           role: 'assistant',
           timestamp: nowTime,
           text: isEn
-            ? `Calculated optimal task redistribution across ${nodes.length} employees. Review the changes on the right and apply to the database.`
-            : `Рассчитал перераспределение ${rows.length} активных задач между сотрудниками (${nodes.length} чел.). Проверьте назначения справа и примените в БД.`,
+            ? `Calculated optimal redistribution across ${nodes.length} staff members.`
+            : `Рассчитал оптимальное перераспределение ${rows.length} задач между сотрудниками (${nodes.length} чел.).`,
           canvasMode: 'rebalance',
         },
       ]);
@@ -339,23 +359,23 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       }
       setActiveCanvasMode('contract');
       setCanvasTitle(
-        isEn ? 'B2B Contract & Specification Generator' : 'Формирование договора и спецификации'
+        isEn ? 'B2B Contract A4 Generator' : 'Подготовка договора поставки А4'
       );
       setDialogue((prev) => [
-        ...prev,
+        ...prev.slice(-3),
         {
           id: `u-${Date.now()}`,
           role: 'user',
           timestamp: nowTime,
-          text: isEn ? 'Generate B2B contract' : 'Сформировать договор',
+          text: isEn ? 'Prepare A4 contract' : 'Подготовить договор А4',
         },
         {
           id: `a-${Date.now() + 1}`,
           role: 'assistant',
           timestamp: nowTime,
           text: isEn
-            ? `Prepared official B2B contract preview on the right canvas. You can select any deal and open the print-ready A4 sheet.`
-            : `Подготовил бланк коммерческого договора на правом холсте. Выберите сделку из списка и откройте печатную форму А4 или сохраните задачу на согласование.`,
+            ? `Prepared official B2B contract A4 sheet below. Select a counterparty deal and open print preview or create an approval task.`
+            : `Сформировал карточку коммерческого договора А4. Выберите сделку контрагента для вывода на печать или создания поручения на визирование.`,
           canvasMode: 'contract',
         },
       ]);
@@ -391,19 +411,49 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   };
 
   const handleAddBlankRow = () => {
-    setStagingRows((prev) => [
-      ...prev,
-      {
-        id: `stg-custom-${Date.now()}`,
-        checked: true,
-        mode: 'create_task',
-        title: isEn ? 'New operational task' : 'Новое операционное поручение',
-        department: departments[0] || 'Отдел продаж',
-        assignedTo: currentUser?.id || nodes[0]?.id || '',
-        priority: 'medium',
-        dueDate: getIsoDateOffset(3),
-      },
-    ]);
+    const newId = `stg-custom-${Date.now()}`;
+    const newRow: StagingRowItem = {
+      id: newId,
+      checked: true,
+      mode: 'create_task',
+      title: isEn ? 'New operational task' : 'Новое операционное поручение',
+      department: departments[0] || 'Отдел продаж',
+      assignedTo: currentUser?.id || nodes[0]?.id || '',
+      priority: 'Medium',
+      dueDate: getIsoDateOffset(3),
+    };
+    setStagingRows((prev) => [...prev, newRow]);
+    setEditingTitleRowId(newId);
+  };
+
+  const cyclePriority = (current: TaskPriority): TaskPriority => {
+    const norm = String(current || 'Medium').toLowerCase();
+    if (norm === 'high') return 'Medium';
+    if (norm === 'medium') return 'Low';
+    return 'High';
+  };
+
+  const getPriorityBadgeMeta = (priority: TaskPriority) => {
+    const norm = String(priority || 'Medium').toLowerCase();
+    if (norm === 'high') {
+      return {
+        label: isEn ? 'High' : 'Высокий',
+        className:
+          'bg-rose-500/10 text-rose-600 dark:text-rose-300 border-rose-500/25 hover:bg-rose-500/20',
+      };
+    }
+    if (norm === 'low') {
+      return {
+        label: isEn ? 'Low' : 'Низкий',
+        className:
+          'bg-slate-500/10 text-slate-600 dark:text-zinc-300 border-slate-400/25 hover:bg-slate-500/20',
+      };
+    }
+    return {
+      label: isEn ? 'Medium' : 'Средний',
+      className:
+        'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25 hover:bg-amber-500/20',
+    };
   };
 
   const handleCommitToDatabase = async () => {
@@ -440,7 +490,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             company_id: companyId,
             title: item.title.trim(),
             description: `Создано через Teddy Copilot (${canvasTitle})`,
-            status: 'To Do' as const,
+            status: 'Todo' as const,
             priority: item.priority,
             department: item.department,
             assigned_to: item.assignedTo || null,
@@ -472,8 +522,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       await onRefreshData();
 
       const msg = isEn
-        ? `Successfully applied ${selected.length} records to the database.`
-        : `Успешно записано в базу данных: ${selected.length} поз.`;
+        ? `Created & synchronized ${selected.length} tasks in workspace.`
+        : `Успешно создано и синхронизировано поручений: ${selected.length}`;
       setAppliedSuccessBanner(msg);
       if (showToast) showToast(msg);
     } finally {
@@ -484,67 +534,43 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const selectedLeadForContract =
     leads.find((l) => l.id === selectedContractLeadId) || leads[0] || null;
   const checkedCount = stagingRows.filter((r) => r.checked).length;
+  const lastAssistantTurn =
+    [...dialogue].reverse().find((d) => d.role === 'assistant') || dialogue[dialogue.length - 1];
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-md"
       onClick={onClose}
     >
       <div
-        className="max-w-5xl w-full h-[78vh] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111319] text-slate-900 dark:text-zinc-100 shadow-2xl flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        style={{
+          backgroundImage:
+            'radial-gradient(600px circle at 50% 0%, rgba(99,102,241,0.10), transparent 70%)',
+        }}
+        className="max-w-3xl w-full max-h-[86vh] rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#12141C] text-slate-900 dark:text-zinc-100 shadow-[0_30px_90px_-15px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)] flex flex-col overflow-hidden relative"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpenAssigneePopoverRowId(null);
+          setOpenDeptPopoverRowId(null);
+        }}
       >
-        {/* ВЕРХНЯЯ ШАПКА (h-14 shrink-0 px-6 border-b flex items-center justify-between) */}
-        <div className="h-14 shrink-0 px-6 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#14171F] flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5 shrink-0">
+        {/* STREAMLINED RAYCAST AI / LINEAR ASK HEADER */}
+        <div className="h-14 shrink-0 px-6 border-b border-slate-200/80 dark:border-white/[0.08] flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
             <TeddyAvatar className="w-8 h-8" />
-            <span className="text-sm font-semibold tracking-tight text-slate-900 dark:text-zinc-100">
-              Teddy
-            </span>
-          </div>
-
-          {/* 4 аккуратные кнопки быстрых действий в один ряд без слэшей '/' */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {[
-              {
-                id: 'decompose' as TeddyCanvasMode,
-                label: isEn ? 'Goal Decomposition' : 'Декомпозиция цели',
-                icon: Layers,
-              },
-              {
-                id: 'deals_audit' as TeddyCanvasMode,
-                label: isEn ? 'Deals Audit' : 'Аудит сделок',
-                icon: Briefcase,
-              },
-              {
-                id: 'rebalance' as TeddyCanvasMode,
-                label: isEn ? 'Workload Balance' : 'Балансировка нагрузки',
-                icon: SlidersHorizontal,
-              },
-              {
-                id: 'contract' as TeddyCanvasMode,
-                label: isEn ? 'Generate Contract' : 'Сформировать договор',
-                icon: FileText,
-              },
-            ].map((btn) => {
-              const Icon = btn.icon;
-              const isActive = activeCanvasMode === btn.id;
-              return (
-                <button
-                  key={btn.id}
-                  type="button"
-                  onClick={() => triggerQuickAction(btn.id)}
-                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition cursor-pointer border ${
-                    isActive
-                      ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-2xs'
-                      : 'bg-slate-100/80 dark:bg-zinc-800/80 text-slate-700 dark:text-zinc-300 border-slate-200/90 dark:border-white/[0.08] hover:bg-slate-200/70 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  <span>{btn.label}</span>
-                </button>
-              );
-            })}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold tracking-tight text-slate-900 dark:text-zinc-100">
+                  Teddy
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                  Linear Ask · Copilot
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                {canvasTitle}
+              </p>
+            </div>
           </div>
 
           <button
@@ -557,376 +583,507 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           </button>
         </div>
 
-        {/* ОСНОВНАЯ РАБОЧАЯ ЗОНА В 2 КОЛОНКИ (flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden) */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-          {/* 1) ЛЕВАЯ КОЛОНКА (lg:col-span-5 flex flex-col border-r overflow-hidden — Живой Диалог) */}
-          <div className="lg:col-span-5 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111319] overflow-hidden min-h-0">
-            <div
-              ref={chatScrollRef}
-              className="flex-1 overflow-y-auto p-5 space-y-4"
-            >
-              {dialogue.map((turn) => {
-                const isUser = turn.role === 'user';
-                return (
-                  <div
-                    key={turn.id}
-                    className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
+        {/* UNIFIED STREAMLINED WORKSPACE STREAM (NO HEAVY PARTITIONS) */}
+        <div
+          ref={feedScrollRef}
+          className="flex-1 overflow-y-auto px-6 py-5 space-y-4 min-h-0"
+        >
+          {/* Compact Contextual AI Status Bubble */}
+          {lastAssistantTurn && (
+            <div className="rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#181B26] px-4 py-3 flex items-start justify-between gap-3">
+              <div className="text-xs leading-relaxed text-slate-700 dark:text-zinc-200">
+                {lastAssistantTurn.text}
+              </div>
+              <span className="text-[10px] text-slate-400 dark:text-zinc-500 tabular-nums shrink-0 mt-0.5">
+                {lastAssistantTurn.timestamp}
+              </span>
+            </div>
+          )}
+
+          {appliedSuccessBanner && (
+            <div className="rounded-xl border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-900 dark:text-emerald-300 flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{appliedSuccessBanner}</span>
+            </div>
+          )}
+
+          {/* INLINE ACTION CARDS (LINEAR / RAYCAST STYLE) */}
+          {activeCanvasMode === 'contract' ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                  {isEn
+                    ? 'Select Deal for Official A4 Contract'
+                    : 'Выберите сделку CRM для автозаполнения договора А4'}
+                </div>
+                <select
+                  value={selectedContractLeadId}
+                  onChange={(e) => setSelectedContractLeadId(e.target.value)}
+                  className="h-9 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#181B26] px-3 text-xs font-medium text-slate-900 dark:text-zinc-100"
+                >
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.client_name || l.title} ({formatMoney(Number(l.amount || 0))})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="tc-a4-paper rounded-xl border border-slate-300 p-5 shadow-sm space-y-3.5 text-xs">
+                <div className="flex items-start justify-between border-b border-slate-300 pb-3">
+                  <div>
+                    <div className="text-sm font-bold uppercase tracking-tight">
+                      {isEn
+                        ? `COMMERCIAL CONTRACT #TC-${new Date().getFullYear()}-09`
+                        : `ДОГОВОР ПОСТАВКИ И РАБОТ № TC-${new Date().getFullYear()}-09`}
+                    </div>
+                    <div className="text-[11px] mt-0.5">
+                      {isEn ? 'City of Moscow' : 'г. Москва'} ·{' '}
+                      {new Date().toLocaleDateString(isEn ? 'en-US' : 'ru-RU')}
+                    </div>
+                  </div>
+                  <span className="tc-a4-badge px-2.5 py-1 rounded-md bg-slate-900 !text-white text-[11px] font-semibold">
+                    B2B A4
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <div className="text-[10px] font-semibold uppercase text-slate-600">
+                      {isEn ? 'Supplier / Contractor' : 'Исполнитель'}
+                    </div>
+                    <div className="font-semibold mt-0.5">{companyName}</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <div className="text-[10px] font-semibold uppercase text-slate-600">
+                      {isEn ? 'Client / Counterparty' : 'Заказчик'}
+                    </div>
+                    <div className="font-semibold mt-0.5">
+                      {selectedLeadForContract?.client_name ||
+                        selectedLeadForContract?.title ||
+                        'ООО «Северсталь Контур»'}
+                    </div>
+                    <div className="text-[11px] mt-0.5">
+                      {selectedLeadForContract?.contact || 'Дирекция закупок'}
+                    </div>
+                  </div>
+                </div>
+
+                <table className="w-full border-collapse border border-slate-300 text-xs">
+                  <thead>
+                    <tr>
+                      <th className="border border-slate-300 py-2 px-3 text-left">
+                        {isEn ? 'Item / Deliverable' : 'Наименование работ / поставки'}
+                      </th>
+                      <th className="border border-slate-300 py-2 px-3 text-right">
+                        {isEn ? 'Amount' : 'Сумма'}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="border border-slate-300 py-2 px-3">
+                        {selectedLeadForContract?.notes ||
+                          (isEn
+                            ? 'Enterprise license & implementation package'
+                            : 'Комплексная поставка и внедрение по спецификации')}
+                      </td>
+                      <td className="border border-slate-300 py-2 px-3 text-right font-semibold tabular-nums">
+                        {formatMoney(Number(selectedLeadForContract?.amount || 450000))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2.5 pt-1">
+                {selectedLeadForContract && onOpenLegalDocModal && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegalDocModal(selectedLeadForContract, 'contract')}
+                    className="h-10 px-4 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-[#181B26] text-slate-900 dark:text-zinc-100 text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
                   >
+                    <Printer className="w-4 h-4" />
+                    <span>{isEn ? 'Open Print A4' : 'Открыть печать А4'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const leadTitle =
+                      selectedLeadForContract?.client_name ||
+                      selectedLeadForContract?.title ||
+                      'Контрагент';
+                    setStagingRows([
+                      {
+                        id: `stg-doc-${Date.now()}`,
+                        checked: true,
+                        mode: 'create_task',
+                        title: `Согласовать и подписать договор: ${leadTitle}`,
+                        department: departments[2] || 'Финансы и Юр. отдел',
+                        assignedTo: currentUser?.id || nodes[0]?.id || '',
+                        priority: 'High',
+                        dueDate: getIsoDateOffset(2),
+                      },
+                    ]);
+                    setActiveCanvasMode('decompose');
+                  }}
+                  className="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer shadow-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>
+                    {isEn ? 'Create Approval Task' : 'Создать поручение на визирование'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  {isEn
+                    ? 'Proposed Action Cards (Click any item to edit inline)'
+                    : 'Интерактивные карточки поручений (кликните по любому полю для правки)'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleAddBlankRow}
+                  className="h-7 px-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#181B26] text-slate-700 dark:text-zinc-200 text-[11px] font-medium inline-flex items-center gap-1 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isEn ? 'Add Card' : 'Добавить поручение'}</span>
+                </button>
+              </div>
+
+              {/* LINEAR-STYLE SINGLE-ROW INLINE ACTION CARDS */}
+              <div className="space-y-2">
+                {stagingRows.map((row) => {
+                  const assigneeNode =
+                    nodes.find((n) => String(n.id) === String(row.assignedTo)) ||
+                    currentUser ||
+                    nodes[0];
+                  const prioMeta = getPriorityBadgeMeta(row.priority);
+                  const isAssigneeOpen = openAssigneePopoverRowId === row.id;
+                  const isDeptOpen = openDeptPopoverRowId === row.id;
+                  const isEditingTitle = editingTitleRowId === row.id;
+
+                  return (
                     <div
-                      className={`max-w-[90%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
-                        isUser
-                          ? 'bg-indigo-600 text-white rounded-br-xs shadow-2xs'
-                          : 'bg-slate-100 dark:bg-zinc-900 border border-slate-200/90 dark:border-white/[0.08] text-slate-900 dark:text-zinc-100 rounded-bl-xs'
+                      key={row.id}
+                      className={`group relative rounded-xl border transition px-3.5 py-2.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 ${
+                        row.checked
+                          ? 'border-slate-200/90 dark:border-white/[0.09] bg-white dark:bg-[#181B26] shadow-2xs'
+                          : 'border-slate-200/50 dark:border-white/[0.04] bg-slate-50/50 dark:bg-[#141720]/60 opacity-60'
                       }`}
                     >
-                      <div className="whitespace-pre-wrap break-words">{turn.text}</div>
-                      <div
-                        className={`text-[10px] mt-1.5 tabular-nums ${
-                          isUser ? 'text-indigo-100' : 'text-slate-500 dark:text-zinc-400'
-                        }`}
-                      >
-                        {turn.timestamp}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                      {/* Left: Checkbox + Inline-Editable Title */}
+                      <div className="flex items-center gap-2.5 flex-1 min-w-[200px]">
+                        <input
+                          type="checkbox"
+                          checked={row.checked}
+                          onChange={(e) =>
+                            handleUpdateRow(row.id, { checked: e.target.checked })
+                          }
+                          className="w-4 h-4 rounded accent-indigo-600 shrink-0 cursor-pointer"
+                        />
 
-            {/* Нижняя строка ввода сообщения (shrink-0 p-4 border-t) с контрастной кнопкой Отправить */}
-            <form
-              onSubmit={handleSendMessage}
-              className="shrink-0 p-4 border-t border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-[#14171F] flex items-center gap-2"
-            >
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder={
-                  isEn
-                    ? 'Describe a goal or task for decomposition...'
-                    : 'Опишите цель или задачу для расчета...'
-                }
-                className="flex-1 h-10 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-zinc-900 px-3.5 text-xs text-slate-900 dark:text-zinc-100 placeholder-slate-600 dark:placeholder-zinc-400 focus:border-indigo-600 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 shadow-xs transition cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{isEn ? 'Send' : 'Отправить'}</span>
-              </button>
-            </form>
-          </div>
-
-          {/* 2) ПРАВАЯ КОЛОНКА (lg:col-span-7 flex flex-col bg-slate-50/60 dark:bg-zinc-900/40 overflow-y-auto p-6 — Холст результатов и таблиц БД) */}
-          <div className="lg:col-span-7 flex flex-col bg-slate-50/60 dark:bg-zinc-900/40 overflow-y-auto p-6 min-h-0 justify-between gap-5">
-            {activeCanvasMode === 'contract' ? (
-              <div className="space-y-5 flex-1 flex flex-col justify-between">
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-white/[0.08] pb-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                        {canvasTitle}
-                      </h3>
-                      <p className="text-xs text-slate-700 dark:text-zinc-400 mt-0.5">
-                        {isEn
-                          ? 'Select a CRM deal to populate official B2B contract requisites'
-                          : 'Выберите сделку CRM для автозаполнения реквизитов договора'}
-                      </p>
-                    </div>
-
-                    <select
-                      value={selectedContractLeadId}
-                      onChange={(e) => setSelectedContractLeadId(e.target.value)}
-                      className="h-9 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-zinc-900 px-3 text-xs font-medium text-slate-900 dark:text-zinc-100"
-                    >
-                      {leads.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.company_name} ({formatMoney(Number(l.value_amount || 0))})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Готовый бланк договора на холсте */}
-                  <div className="tc-a4-paper rounded-xl border border-slate-300 p-6 shadow-sm space-y-4 text-xs">
-                    <div className="flex items-start justify-between border-b border-slate-300 pb-3">
-                      <div>
-                        <div className="text-sm font-bold uppercase tracking-tight">
-                          {isEn
-                            ? `COMMERCIAL CONTRACT #TC-${new Date().getFullYear()}-09`
-                            : `ДОГОВОР ПОСТАВКИ И РАБОТ № TC-${new Date().getFullYear()}-09`}
-                        </div>
-                        <div className="text-[11px] mt-0.5">
-                          {isEn ? 'City of Moscow' : 'г. Москва'} ·{' '}
-                          {new Date().toLocaleDateString(isEn ? 'en-US' : 'ru-RU')}
-                        </div>
-                      </div>
-                      <span className="tc-a4-badge px-2.5 py-1 rounded-md bg-slate-900 text-white text-[11px] font-semibold">
-                        B2B A4
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="rounded-lg border border-slate-200 p-3">
-                        <div className="text-[10px] font-semibold uppercase text-slate-600">
-                          {isEn ? 'Supplier / Contractor' : 'Исполнитель'}
-                        </div>
-                        <div className="font-semibold mt-0.5">{companyName}</div>
-                      </div>
-                      <div className="rounded-lg border border-slate-200 p-3">
-                        <div className="text-[10px] font-semibold uppercase text-slate-600">
-                          {isEn ? 'Client / Counterparty' : 'Заказчик'}
-                        </div>
-                        <div className="font-semibold mt-0.5">
-                          {selectedLeadForContract?.company_name || 'ООО «Северсталь Контур»'}
-                        </div>
-                        <div className="text-[11px] mt-0.5">
-                          {selectedLeadForContract?.contact_person || 'Дирекция закупок'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <table className="w-full border-collapse border border-slate-300 text-xs">
-                      <thead>
-                        <tr>
-                          <th className="border border-slate-300 py-2 px-3 text-left">
-                            {isEn ? 'Item / Deliverable' : 'Наименование работ / поставки'}
-                          </th>
-                          <th className="border border-slate-300 py-2 px-3 text-right">
-                            {isEn ? 'Amount' : 'Сумма'}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="border border-slate-300 py-2.5 px-3">
-                            {selectedLeadForContract?.notes ||
-                              (isEn
-                                ? 'Enterprise license & implementation package'
-                                : 'Комплексная поставка и внедрение по спецификации')}
-                          </td>
-                          <td className="border border-slate-300 py-2.5 px-3 text-right font-semibold tabular-nums">
-                            {formatMoney(Number(selectedLeadForContract?.value_amount || 450000))}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-200 dark:border-white/[0.08] flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-xs text-slate-700 dark:text-zinc-400">
-                    {isEn
-                      ? 'Ready for A4 printing or registering an approval task'
-                      : 'Готово к выгрузке на печать А4 или созданию задачи на визирование'}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {selectedLeadForContract && onOpenLegalDocModal && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenLegalDocModal(selectedLeadForContract, 'contract')}
-                        className="h-10 px-4 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
-                      >
-                        <Printer className="w-4 h-4" />
-                        <span>{isEn ? 'Open Print A4' : 'Открыть печать А4'}</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const leadTitle =
-                          selectedLeadForContract?.company_name || 'Контрагент';
-                        setStagingRows([
-                          {
-                            id: `stg-doc-${Date.now()}`,
-                            checked: true,
-                            mode: 'create_task',
-                            title: `Согласовать и подписать договор: ${leadTitle}`,
-                            department: departments[2] || 'Финансы и Юр. отдел',
-                            assignedTo: currentUser?.id || nodes[0]?.id || '',
-                            priority: 'high',
-                            dueDate: getIsoDateOffset(2),
-                          },
-                        ]);
-                        setActiveCanvasMode('decompose');
-                      }}
-                      className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{isEn ? 'Apply to Database' : 'Применить в базу данных'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 flex-1 flex flex-col justify-between">
-                <div className="space-y-4">
-                  {/* Заголовок холста + кнопка Добавить строку */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-white/[0.08] pb-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                        {canvasTitle}
-                      </h3>
-                      <p className="text-xs text-slate-700 dark:text-zinc-400 mt-0.5">
-                        {isEn
-                          ? 'Review and edit rows directly before committing to Supabase'
-                          : 'Отредактируйте строки таблицы перед пакетной записью в базу данных'}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAddBlankRow}
-                      className="h-8 px-3 rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 text-xs font-medium inline-flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-zinc-700 transition cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Add Row' : 'Добавить задачу'}</span>
-                    </button>
-                  </div>
-
-                  {appliedSuccessBanner && (
-                    <div className="rounded-xl border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-2.5 text-xs font-medium text-emerald-900 dark:text-emerald-300 flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span>{appliedSuccessBanner}</span>
-                    </div>
-                  )}
-
-                  {/* Просторные карточки-строки таблицы задач без обрезания селектов */}
-                  <div className="space-y-2.5">
-                    {stagingRows.map((row) => (
-                      <div
-                        key={row.id}
-                        className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-[#151821] p-3.5 shadow-2xs space-y-3"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <input
-                            type="checkbox"
-                            checked={row.checked}
-                            onChange={(e) =>
-                              handleUpdateRow(row.id, { checked: e.target.checked })
-                            }
-                            className="w-4 h-4 rounded accent-indigo-600 shrink-0 cursor-pointer"
-                          />
+                        {isEditingTitle ? (
                           <input
                             type="text"
+                            autoFocus
                             value={row.title}
                             onChange={(e) =>
                               handleUpdateRow(row.id, { title: e.target.value })
                             }
-                            className="flex-1 h-9 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-zinc-900 px-3 text-xs font-medium text-slate-900 dark:text-zinc-100 focus:border-indigo-600 focus:outline-none"
+                            onBlur={() => setEditingTitleRowId(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === 'Escape') {
+                                setEditingTitleRowId(null);
+                              }
+                            }}
+                            className="flex-1 h-7 rounded-md border border-indigo-500 bg-white dark:bg-zinc-900 px-2 text-xs font-medium text-slate-900 dark:text-zinc-100"
                           />
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => handleDeleteRow(row.id)}
-                            title={isEn ? 'Remove row' : 'Удалить строку'}
-                            className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition shrink-0 cursor-pointer"
+                            onClick={() => setEditingTitleRowId(row.id)}
+                            title={
+                              isEn ? 'Click to edit task title' : 'Нажмите для редактирования текста'
+                            }
+                            className="flex-1 text-left text-xs font-medium text-slate-900 dark:text-zinc-100 hover:text-indigo-600 dark:hover:text-indigo-400 truncate cursor-text"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {row.title}
                           </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pl-6">
-                          {/* Ответственный сотрудник */}
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 dark:text-zinc-400 mb-1">
-                              {isEn ? 'Assignee' : 'Исполнитель'}
-                            </label>
-                            <select
-                              value={row.assignedTo}
-                              onChange={(e) =>
-                                handleUpdateRow(row.id, { assignedTo: e.target.value })
-                              }
-                              className="w-full h-9 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-zinc-900 px-2.5 text-xs text-slate-900 dark:text-zinc-100"
-                            >
-                              {nodes.map((n) => (
-                                <option key={n.id} value={n.id}>
-                                  {n.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Приоритет — широкая ячейка min-w-[130px] без обрезания слова «Высокий» */}
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 dark:text-zinc-400 mb-1">
-                              {isEn ? 'Priority' : 'Приоритет'}
-                            </label>
-                            <select
-                              value={row.priority}
-                              onChange={(e) =>
-                                handleUpdateRow(row.id, {
-                                  priority: e.target.value as TaskPriority,
-                                })
-                              }
-                              className="w-full min-w-[130px] h-9 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-zinc-900 px-2.5 pr-7 text-xs font-medium text-slate-900 dark:text-zinc-100"
-                            >
-                              <option value="high">
-                                {isEn ? 'High Priority' : 'Высокий'}
-                              </option>
-                              <option value="medium">
-                                {isEn ? 'Medium Priority' : 'Средний'}
-                              </option>
-                              <option value="low">
-                                {isEn ? 'Low Priority' : 'Низкий'}
-                              </option>
-                            </select>
-                          </div>
-
-                          {/* Дедлайн — чистый шрифт Inter tabular-nums */}
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 dark:text-zinc-400 mb-1">
-                              {isEn ? 'Due Date (SLA)' : 'Срок исполнения'}
-                            </label>
-                            <input
-                              type="date"
-                              value={row.dueDate}
-                              onChange={(e) =>
-                                handleUpdateRow(row.id, { dueDate: e.target.value })
-                              }
-                              className="w-full h-9 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-zinc-900 px-2.5 text-xs font-sans tabular-nums text-slate-900 dark:text-zinc-100"
-                            />
-                          </div>
-                        </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Нижний бар холста с контрастной кнопкой «Применить в базу данных» */}
-                <div className="pt-4 border-t border-slate-200 dark:border-white/[0.08] flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs font-medium text-slate-700 dark:text-zinc-300 tabular-nums">
-                    {isEn
-                      ? `Selected for database commit: ${checkedCount} of ${stagingRows.length}`
-                      : `Выбрано к записи в БД: ${checkedCount} из ${stagingRows.length}`}
-                  </div>
+                      {/* Right: Department Pill + Assignee Avatar Popover + Priority Pill + Date + Delete */}
+                      <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap shrink-0">
+                        {/* Department Pill with Popover */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenAssigneePopoverRowId(null);
+                              setOpenDeptPopoverRowId(isDeptOpen ? null : row.id);
+                            }}
+                            className="h-7 px-2.5 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/80 text-[11px] font-medium text-slate-700 dark:text-zinc-300 inline-flex items-center gap-1 hover:border-slate-300 dark:hover:border-white/20 transition cursor-pointer max-w-[135px]"
+                          >
+                            <span className="truncate">{row.department}</span>
+                            <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+                          </button>
 
-                  <button
-                    type="button"
-                    disabled={isApplyingDb || checkedCount === 0}
-                    onClick={() => void handleCommitToDatabase()}
-                    className="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold inline-flex items-center gap-2 shadow-sm transition cursor-pointer disabled:opacity-50"
-                  >
-                    {isApplyingDb ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4" />
-                    )}
-                    <span>
-                      {isApplyingDb
-                        ? isEn
-                          ? 'Committing to DB...'
-                          : 'Запись в базу данных...'
-                        : isEn
-                        ? 'Apply to Database'
-                        : 'Применить в базу данных'}
-                    </span>
-                  </button>
-                </div>
+                          {isDeptOpen && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute right-0 top-8 z-30 w-48 rounded-xl border border-slate-200 dark:border-white/12 bg-white dark:bg-[#181B26] shadow-xl p-1.5 space-y-0.5"
+                            >
+                              {departments.map((dept) => (
+                                <button
+                                  key={dept}
+                                  type="button"
+                                  onClick={() => {
+                                    handleUpdateRow(row.id, { department: dept });
+                                    setOpenDeptPopoverRowId(null);
+                                  }}
+                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between cursor-pointer ${
+                                    row.department === dept
+                                      ? 'bg-indigo-600 !text-white font-semibold'
+                                      : 'text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                                  }`}
+                                >
+                                  <span className="truncate">{dept}</span>
+                                  {row.department === dept && <Check className="w-3.5 h-3.5 shrink-0" />}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Assignee Avatar + Name Chip with Popover */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenDeptPopoverRowId(null);
+                              setOpenAssigneePopoverRowId(isAssigneeOpen ? null : row.id);
+                            }}
+                            className="h-7 pl-1.5 pr-2.5 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/80 text-[11px] font-medium text-slate-800 dark:text-zinc-200 inline-flex items-center gap-1.5 hover:border-slate-300 dark:hover:border-white/20 transition cursor-pointer max-w-[155px]"
+                          >
+                            <UserAvatar
+                              name={assigneeNode?.name || 'Сотрудник'}
+                              avatarUrl={assigneeNode?.avatar_url}
+                              size="xs"
+                            />
+                            <span className="truncate">
+                              {assigneeNode?.name || 'Назначить'}
+                            </span>
+                            <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+                          </button>
+
+                          {isAssigneeOpen && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute right-0 top-8 z-30 w-56 max-h-56 overflow-y-auto rounded-xl border border-slate-200 dark:border-white/12 bg-white dark:bg-[#181B26] shadow-xl p-1.5 space-y-0.5"
+                            >
+                              {nodes.map((emp) => {
+                                const isSel = String(emp.id) === String(row.assignedTo);
+                                return (
+                                  <button
+                                    key={emp.id}
+                                    type="button"
+                                    onClick={() => {
+                                      handleUpdateRow(row.id, {
+                                        assignedTo: emp.id,
+                                        ...(emp.department ? { department: emp.department } : {}),
+                                      });
+                                      setOpenAssigneePopoverRowId(null);
+                                    }}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between gap-2 cursor-pointer ${
+                                      isSel
+                                        ? 'bg-indigo-600 !text-white font-semibold'
+                                        : 'text-slate-800 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <UserAvatar
+                                        name={emp.name}
+                                        avatarUrl={emp.avatar_url}
+                                        size="xs"
+                                      />
+                                      <div className="min-w-0">
+                                        <div className="truncate">{emp.name}</div>
+                                        <div
+                                          className={`text-[10px] truncate ${
+                                            isSel
+                                              ? '!text-indigo-100'
+                                              : 'text-slate-500 dark:text-zinc-400'
+                                          }`}
+                                        >
+                                          {emp.role_type}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {isSel && <Check className="w-3.5 h-3.5 shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Priority Pill (cycles on click) */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateRow(row.id, {
+                              priority: cyclePriority(row.priority),
+                            })
+                          }
+                          title={
+                            isEn ? 'Click to switch priority' : 'Нажмите для смены приоритета'
+                          }
+                          className={`h-7 px-2.5 rounded-lg border text-[11px] font-semibold transition cursor-pointer ${prioMeta.className}`}
+                        >
+                          {prioMeta.label}
+                        </button>
+
+                        {/* Compact Date Input Pill */}
+                        <label className="h-7 px-2 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-900/80 text-[11px] font-medium text-slate-700 dark:text-zinc-300 inline-flex items-center gap-1 cursor-pointer">
+                          <Calendar className="w-3 h-3 opacity-65 shrink-0" />
+                          <input
+                            type="date"
+                            value={row.dueDate}
+                            onChange={(e) =>
+                              handleUpdateRow(row.id, { dueDate: e.target.value })
+                            }
+                            className="bg-transparent !border-0 text-[11px] tabular-nums text-slate-800 dark:text-zinc-200 focus:outline-none w-[92px] cursor-pointer"
+                          />
+                        </label>
+
+                        {/* Remove Row */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRow(row.id)}
+                          title={isEn ? 'Remove card' : 'Удалить карточку'}
+                          className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition shrink-0 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            )}
+
+              {/* Primary CTA Button at bottom of Inline Action Cards */}
+              <div className="pt-2 flex items-center justify-between gap-3">
+                <span className="text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
+                  {isEn
+                    ? `Ready for instant commit: ${checkedCount} of ${stagingRows.length}`
+                    : `Выбрано карточек к созданию: ${checkedCount} из ${stagingRows.length}`}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={isApplyingDb || checkedCount === 0}
+                  onClick={() => void handleCommitToDatabase()}
+                  className="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white text-xs font-semibold inline-flex items-center gap-2 shadow-sm transition cursor-pointer disabled:opacity-50"
+                >
+                  {isApplyingDb ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  <span>
+                    {isApplyingDb
+                      ? isEn
+                        ? 'Creating tasks...'
+                        : 'Запись поручений в БД...'
+                      : isEn
+                      ? `Create Selected Tasks (${checkedCount})`
+                      : `Создать выбранные поручения (${checkedCount})`}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* BOTTOM FLOATING COMMAND-DOCK (RAYCAST / CLAUDE STYLE) */}
+        <div className="shrink-0 px-6 pb-5 pt-3 border-t border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-[#0E1017]/90 space-y-2.5">
+          {/* Quick Command Chips right above the floating capsule */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {[
+              {
+                id: 'decompose' as TeddyCanvasMode,
+                label: isEn ? 'Break goal into tasks' : 'Разбить цель на задачи',
+                icon: Layers,
+              },
+              {
+                id: 'deals_audit' as TeddyCanvasMode,
+                label: isEn ? 'Check stalled deals' : 'Проверить зависшие сделки',
+                icon: Briefcase,
+              },
+              {
+                id: 'rebalance' as TeddyCanvasMode,
+                label: isEn ? 'Rebalance workload' : 'Сбалансировать нагрузку',
+                icon: SlidersHorizontal,
+              },
+              {
+                id: 'contract' as TeddyCanvasMode,
+                label: isEn ? 'Prepare A4 contract' : 'Подготовить договор А4',
+                icon: FileText,
+              },
+            ].map((chip) => {
+              const Icon = chip.icon;
+              const isActive = activeCanvasMode === chip.id;
+              return (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => triggerQuickAction(chip.id)}
+                  className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-full text-[11px] whitespace-nowrap transition cursor-pointer border ${
+                    isActive
+                      ? 'bg-indigo-600 !text-white border-indigo-600 font-semibold shadow-2xs'
+                      : theme === 'light'
+                      ? 'bg-white text-slate-700 border-slate-200/90 font-medium hover:bg-slate-100'
+                      : 'bg-[#181B26] text-zinc-300 border-white/[0.08] font-medium hover:bg-zinc-800'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span>{chip.label}</span>
+                </button>
+              );
+            })}
           </div>
+
+          {/* Floating Capsule Input Bar */}
+          <form
+            onSubmit={handleSendMessage}
+            className="flex items-center gap-2 rounded-2xl border border-slate-300/90 dark:border-white/12 bg-white dark:bg-[#181B26] px-3.5 py-1.5 shadow-sm focus-within:border-indigo-500 transition"
+          >
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={
+                isEn
+                  ? 'Ask Teddy to break down a goal, audit deals, or prepare a contract...'
+                  : 'Опишите цель для декомпозиции, сделку или команду для Teddy...'
+              }
+              className="tc-composer-input !bg-transparent flex-1 h-8 text-xs text-slate-900 dark:text-zinc-100 placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="h-8 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 shadow-2xs transition cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isEn ? 'Run' : 'Выполнить'}</span>
+            </button>
+          </form>
         </div>
       </div>
     </div>

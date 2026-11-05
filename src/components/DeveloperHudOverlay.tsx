@@ -727,16 +727,36 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                 key={tb.id}
                 type="button"
                 onClick={() => setActiveTab(tb.id)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition cursor-pointer ${
                   isActive
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-black font-semibold'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.05]'
+                    ? theme === 'light'
+                      ? 'bg-slate-900 !text-white font-semibold shadow-2xs'
+                      : 'bg-white !text-slate-950 font-semibold shadow-2xs'
+                    : 'text-slate-600 dark:text-zinc-400 font-medium hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.05]'
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                <span>{tb.label}</span>
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${
+                    isActive
+                      ? theme === 'light'
+                        ? '!text-white'
+                        : '!text-slate-950'
+                      : ''
+                  }`}
+                />
+                <span
+                  className={
+                    isActive
+                      ? theme === 'light'
+                        ? '!text-white font-semibold'
+                        : '!text-slate-950 font-semibold'
+                      : ''
+                  }
+                >
+                  {tb.label}
+                </span>
                 {typeof tb.badge === 'number' && tb.badge > 0 && (
-                  <span className="px-1.5 py-0.2 rounded bg-rose-500 text-white text-[10px] font-semibold tabular-nums">
+                  <span className="px-1.5 py-0.2 rounded bg-rose-500 !text-white text-[10px] font-semibold tabular-nums">
                     {tb.badge}
                   </span>
                 )}
@@ -760,7 +780,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                     snifferBuffer.length = 0;
                     setLogs([]);
                   }}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 text-[11px] text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800"
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 text-[11px] text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
                 >
                   Очистить лог
                 </button>
@@ -839,7 +859,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                   <button
                     type="button"
                     onClick={() => runDomXRayScan(false)}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 !text-white font-semibold cursor-pointer"
                   >
                     Сканировать экран
                   </button>
@@ -852,7 +872,11 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                         showToast('Контрастность и 1.5px иконки автоматически скорректированы');
                       }
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 text-white dark:bg-white dark:text-black font-semibold cursor-pointer"
+                    className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-slate-900 !text-white'
+                        : 'bg-white !text-slate-950'
+                    }`}
                   >
                     Авто-исправить контраст на лету
                   </button>
@@ -907,7 +931,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                 <button
                   type="button"
                   onClick={() => void handleCopyAiStudioPrompt()}
-                  className="px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-black font-semibold inline-flex items-center gap-2 cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 !text-white font-semibold inline-flex items-center gap-2 cursor-pointer"
                 >
                   {copiedPrompt ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   <span>
@@ -961,7 +985,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                         showToast('UI-кэш сброшен без завершения сессии пользователя');
                       }
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 text-white dark:bg-white dark:text-black font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 !text-white font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                     <span>Безопасный сброс UI-кэша без разлогина</span>
@@ -1040,7 +1064,9 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                     }
                     className={`h-9 rounded-xl border text-xs font-semibold transition cursor-pointer ${
                       currentEffLevel === lvl
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-black border-slate-900 dark:border-white'
+                        ? theme === 'light'
+                          ? 'bg-slate-900 !text-white border-slate-900'
+                          : 'bg-white !text-slate-950 border-white'
                         : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400'
                     }`}
                   >
@@ -1140,7 +1166,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
               <button
                 type="submit"
                 disabled={isSendingWebhook}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-black font-semibold inline-flex items-center gap-2 cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-indigo-600 !text-white font-semibold inline-flex items-center gap-2 cursor-pointer"
               >
                 {isSendingWebhook ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1180,7 +1206,7 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                     type="button"
                     disabled={isRunningE2E}
                     onClick={() => void handleRunE2ESuite()}
-                    className="px-3.5 py-1.5 rounded-lg bg-slate-900 text-white dark:bg-white dark:text-black font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-lg bg-indigo-600 !text-white font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     {isRunningE2E ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
