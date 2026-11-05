@@ -151,10 +151,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm shrink-0">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600 !text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm shrink-0">
                 TC
               </div>
-              <span className="text-sm font-semibold text-white tracking-tight truncate">
+              <span className="text-sm font-semibold text-slate-900 dark:text-white tracking-tight truncate">
                 TedCloud
               </span>
             </div>
@@ -270,16 +270,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {!isSidebarCollapsed && (
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <p className="text-xs font-semibold text-white truncate group-hover:text-indigo-200 transition-colors">
+                  <p className="text-xs font-semibold text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-200 transition-colors">
                     {currentProfile.name}
                   </p>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                 </div>
-                <p className="text-[10px] text-[#8E8E93] truncate">
+                <p className="text-[10px] text-slate-600 dark:text-[#8E8E93] truncate">
                   {formatRole(currentProfile.role_type)}
                 </p>
-                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-400">
-                  <Shield className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-500 dark:text-zinc-400">
+                  <Shield className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                   <span className="truncate">{t(`accessShort.${accessLevel}`)}</span>
                 </div>
               </div>
@@ -328,16 +328,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <div className="flex items-center justify-between gap-1 pt-1 px-0.5">
             <div
-              className="inline-flex items-center rounded-lg bg-white/[0.03] border border-white/[0.06] p-0.5"
+              className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/[0.06] p-0.5"
               aria-label="Language switcher"
             >
               <button
                 type="button"
                 onClick={() => setLanguage('ru')}
-                className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
                   language === 'ru'
-                    ? 'bg-white/[0.1] text-white'
-                    : 'text-[#8E8E93] hover:text-white'
+                    ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                    : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 RU
@@ -345,10 +345,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setLanguage('en')}
-                className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
                   language === 'en'
-                    ? 'bg-white/[0.1] text-white'
-                    : 'text-[#8E8E93] hover:text-white'
+                    ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                    : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 EN

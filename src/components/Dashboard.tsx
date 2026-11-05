@@ -2066,10 +2066,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <span
         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium tabular-nums border whitespace-nowrap ${
           isOverdue
-            ? 'bg-red-500/15 text-red-300 border-red-500/30'
+            ? 'bg-red-500/15 text-red-600 dark:text-red-300 border-red-500/30'
             : isToday
-            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-            : 'bg-zinc-900/90 text-zinc-400 border-white/[0.08]'
+            ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+            : 'bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-zinc-800 dark:text-zinc-200 dark:border-white/10'
         }`}
       >
         <Calendar className="w-3 h-3 shrink-0" />
@@ -2339,7 +2339,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             } flex-col sm:flex-row sm:items-center justify-between gap-3`}
           >
             <div>
-              <h1 className="text-lg font-semibold text-white tracking-[-0.02em]">
+              <h1 className="text-lg font-semibold text-slate-900 dark:text-white tracking-[-0.02em]">
                 {activeSection === 'overview' && t('header.overviewTitle')}
                 {activeSection === 'tasks' && t('header.tasksTitle')}
                 {activeSection === 'crm' && t('header.crmTitle')}
@@ -2354,14 +2354,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
               {/* Switcher: Стандартный вид / Карта связей (Teamwork Graph) on Overview */}
               {activeSection === 'overview' && (
-                <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#141418] p-0.5">
+                <div className="inline-flex items-center rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#141418] p-0.5">
                   <button
                     type="button"
                     onClick={() => setOverviewViewMode('standard')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       overviewViewMode === 'standard'
-                        ? 'bg-zinc-800 text-white border border-white/10'
-                        : 'text-[#8E8E93] hover:text-white'
+                        ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                        : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     <LayoutList className="w-3.5 h-3.5" />
@@ -2372,11 +2372,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     onClick={() => setOverviewViewMode('graph')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       overviewViewMode === 'graph'
-                        ? 'bg-zinc-800 text-white border border-white/10'
-                        : 'text-[#8E8E93] hover:text-white'
+                        ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                        : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <Network className="w-3.5 h-3.5 text-indigo-400" />
+                    <Network className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
                     <span>{isEn ? 'Teamwork Graph' : 'Карта связей (Teamwork Graph)'}</span>
                   </button>
                 </div>
@@ -2384,14 +2384,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Switcher: Таблица штата / Карта связей (Teamwork Graph) on Team */}
               {activeSection === 'team' && perms.team_manage && (
-                <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#141418] p-0.5">
+                <div className="inline-flex items-center rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#141418] p-0.5">
                   <button
                     type="button"
                     onClick={() => setTeamViewMode('table')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       teamViewMode === 'table'
-                        ? 'bg-zinc-800 text-white border border-white/10'
-                        : 'text-[#8E8E93] hover:text-white'
+                        ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                        : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     <Users className="w-3.5 h-3.5" />
@@ -2402,11 +2402,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     onClick={() => setTeamViewMode('graph')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       teamViewMode === 'graph'
-                        ? 'bg-zinc-800 text-white border border-white/10'
-                        : 'text-[#8E8E93] hover:text-white'
+                        ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                        : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <Network className="w-3.5 h-3.5 text-indigo-400" />
+                    <Network className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
                     <span>{isEn ? 'Teamwork Graph' : 'Карта связей (Teamwork Graph)'}</span>
                   </button>
                 </div>
@@ -2414,17 +2414,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Switcher: Мессенджер и Каналы / Реестр документов и Регламенты on Communications */}
               {activeSection === 'communications' && (
-                <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#141418] p-0.5">
+                <div className="inline-flex items-center rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#141418] p-0.5">
                   <button
                     type="button"
                     onClick={() => setCommViewMode('messenger')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       commViewMode === 'messenger'
-                        ? 'bg-zinc-800 text-white border border-white/10'
-                        : 'text-[#8E8E93] hover:text-white'
+                        ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                        : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
                     <span>{isEn ? 'Messenger & Channels' : 'Мессенджер и Каналы'}</span>
                   </button>
                   <button
@@ -2432,11 +2432,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     onClick={() => setCommViewMode('vault')}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       commViewMode === 'vault'
-                        ? 'bg-zinc-800 text-white border border-white/10'
-                        : 'text-[#8E8E93] hover:text-white'
+                        ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
+                        : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                    <FileText className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
                     <span>
                       {isEn
                         ? 'Document Vault & Playbooks'
@@ -2537,14 +2537,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <div>
                             <div className="flex items-center justify-between text-[#8E8E93] mb-2">
                               <span className="text-xs font-medium">{t('kpi.totalTasks')}</span>
-                              <Clock className="w-4 h-4 text-indigo-400" />
+                              <Clock className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                             </div>
                             <div className="flex items-baseline justify-between gap-2">
-                              <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                              <div className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight tabular-nums">
                                 {kpis.activeTasksCount}
                               </div>
                               {highPriorityOpenCount > 0 && (
-                                <span className="text-[11px] text-red-400 font-medium whitespace-nowrap">
+                                <span className="text-[11px] text-red-600 dark:text-red-400 font-medium whitespace-nowrap">
                                   {highPriorityOpenCount} {t('kpi.highPriority')}
                                 </span>
                               )}
@@ -2557,7 +2557,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               </span>
                               <span>{taskCompletionPct}%</span>
                             </div>
-                            <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                            <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-zinc-800/80 overflow-hidden">
                               <div
                                 className="h-full bg-indigo-500 rounded-full transition-all duration-300"
                                 style={{ width: `${Math.max(4, taskCompletionPct)}%` }}
@@ -2571,13 +2571,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <div>
                             <div className="flex items-center justify-between text-[#8E8E93] mb-2">
                               <span className="text-xs font-medium">{t('kpi.orgStructure')}</span>
-                              <Users className="w-4 h-4 text-emerald-400" />
+                              <Users className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                             </div>
                             <div className="flex items-baseline justify-between gap-2">
-                              <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                              <div className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight tabular-nums">
                                 {safeNodes.length}
                               </div>
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-medium text-emerald-400 tabular-nums">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
                                 <Send className="w-2.5 h-2.5" />
                                 <span>{tgConnectedPct}% TG</span>
                               </span>
@@ -2590,7 +2590,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               </span>
                               <span>{companyDepartments.length} {isEn ? 'depts' : 'отд.'}</span>
                             </div>
-                            <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                            <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-zinc-800/80 overflow-hidden">
                               <div
                                 className="h-full bg-emerald-500 rounded-full transition-all duration-300"
                                 style={{ width: `${Math.max(4, tgConnectedPct)}%` }}
@@ -2608,9 +2608,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <span className="text-xs font-medium">
                                     {t('kpi.conversionRate')}
                                   </span>
-                                  <Percent className="w-4 h-4 text-indigo-400" />
+                                  <Percent className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                                 </div>
-                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                <div className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight tabular-nums">
                                   {kpis.conversionRatePercent}%
                                 </div>
                               </div>
@@ -2626,7 +2626,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </span>
                                   <span>{kpis.conversionRatePercent}%</span>
                                 </div>
-                                <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                                <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-zinc-800/80 overflow-hidden">
                                   <div
                                     className="h-full bg-indigo-500 rounded-full transition-all duration-300"
                                     style={{
@@ -2644,20 +2644,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <span className="text-xs font-medium">
                                     {t('kpi.pipelineVolume')}
                                   </span>
-                                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                                  <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                                 </div>
-                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums truncate">
+                                <div className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight tabular-nums truncate">
                                   {formatMoney(totalPipelineValue)}
                                 </div>
                               </div>
                               <div className="space-y-1.5">
-                                <div className="flex items-center justify-between text-[11px] text-emerald-400/90 tabular-nums">
+                                <div className="flex items-center justify-between text-[11px] text-emerald-600 dark:text-emerald-400/90 tabular-nums">
                                   <span className="truncate">
                                     {t('kpi.closedWon')}: {formatMoney(wonPipelineValue)}
                                   </span>
                                   <span>{wonSharePct}%</span>
                                 </div>
-                                <div className="h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                                <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-zinc-800/80 overflow-hidden">
                                   <div
                                     className="h-full bg-emerald-500 rounded-full transition-all duration-300"
                                     style={{ width: `${Math.max(6, wonSharePct)}%` }}
@@ -2674,9 +2674,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <span className="text-xs font-medium">
                                     {isEn ? 'Urgent Assignments' : 'Срочные поручения'}
                                   </span>
-                                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                                  <AlertCircle className="w-4 h-4 text-amber-500 dark:text-amber-400" />
                                 </div>
-                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                <div className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight tabular-nums">
                                   {highPriorityOpenCount}
                                 </div>
                               </div>
@@ -2695,13 +2695,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <span className="text-xs font-medium">
                                     {isEn ? 'Corporate Feed & Messages' : 'Инфополе и сообщения'}
                                   </span>
-                                  <MessageSquare className="w-4 h-4 text-emerald-400" />
+                                  <MessageSquare className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                                 </div>
-                                <div className="text-2xl font-semibold text-white tracking-tight tabular-nums">
+                                <div className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight tabular-nums">
                                   {visibleMessages.length}
                                 </div>
                               </div>
-                              <div className="text-[11px] text-emerald-400/90">
+                              <div className="text-[11px] text-emerald-600 dark:text-emerald-400/90">
                                 <button
                                   type="button"
                                   onClick={() => setActiveSection('communications')}
@@ -2936,7 +2936,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       className={`text-sm font-medium truncate ${
                                         task.status === 'Done'
                                           ? 'text-[#71717A] line-through'
-                                          : 'text-white'
+                                          : 'text-slate-900 dark:text-white'
                                       }`}
                                     >
                                       {task.title}
@@ -2946,7 +2946,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       {renderTaskStatusBadge(task.status)}
                                       {renderDueDateBadge(task.due_date, task.status)}
                                       {task.department && (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-[#27272A] text-[11px] text-[#D4D4D8]">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/80 dark:bg-zinc-800 dark:border-white/10 dark:text-zinc-200 text-[11px]">
                                           {formatRole(task.department)}
                                         </span>
                                       )}
@@ -2960,26 +2960,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                               [task.id]: !prev[task.id],
                                             }));
                                           }}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-[11px] tabular-nums text-zinc-200 transition-colors"
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/80 hover:bg-slate-200/70 dark:bg-zinc-800 dark:text-zinc-200 dark:border-white/10 dark:hover:bg-zinc-700 text-[11px] tabular-nums transition-colors"
                                           title={
                                             isEn
                                               ? 'Toggle AI subtask checklist'
                                               : 'Развернуть чек-лист подзадач'
                                           }
                                         >
-                                          <ListChecks className="w-3 h-3 text-indigo-400" />
+                                          <ListChecks className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                                           <span>
                                             {doneSubtasks}/{checklist.length}
                                           </span>
                                           {isChecklistExpanded ? (
-                                            <ChevronUp className="w-3 h-3 text-zinc-400" />
+                                            <ChevronUp className="w-3 h-3 text-slate-500 dark:text-zinc-400" />
                                           ) : (
-                                            <ChevronDown className="w-3 h-3 text-zinc-400" />
+                                            <ChevronDown className="w-3 h-3 text-slate-500 dark:text-zinc-400" />
                                           )}
                                         </button>
                                       )}
                                       {assignee ? (
-                                        <span className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA]">
+                                        <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-[#A1A1AA]">
                                           <UserAvatar
                                             name={assignee.name}
                                             avatarUrl={assignee.avatar_url}
@@ -3011,12 +3011,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             ? 'Decompose task into AI subtask checklist'
                                             : 'ИИ-декомпозиция задачи на чек-лист подзадач'
                                         }
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-medium text-zinc-200 transition-colors whitespace-nowrap"
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-200/80 hover:bg-slate-200/70 dark:bg-zinc-800 dark:text-zinc-200 dark:border-white/10 dark:hover:bg-zinc-700 text-[11px] font-medium transition-colors whitespace-nowrap"
                                       >
                                         {isDecomposing ? (
                                           <Loader2 className="w-3 h-3 animate-spin" />
                                         ) : (
-                                          <Cpu className="w-3 h-3 text-indigo-400" />
+                                          <Cpu className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                                         )}
                                         <span>{isEn ? 'AI Subtasks' : 'ИИ-декомпозиция'}</span>
                                       </button>
@@ -3030,7 +3030,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                           status: e.target.value as TaskStatus,
                                         })
                                       }
-                                      className="rounded-md border border-[#262626] bg-[#18181B] px-2.5 py-1 text-xs text-[#D4D4D8] focus:border-[#52525B] focus:outline-none disabled:opacity-50"
+                                      className="rounded-md border border-slate-200 dark:border-[#262626] bg-white dark:bg-[#18181B] px-2.5 py-1 text-xs text-slate-800 dark:text-[#D4D4D8] focus:border-indigo-500 dark:focus:border-[#52525B] focus:outline-none disabled:opacity-50"
                                     >
                                       <option value="Todo">{t('status.Todo')}</option>
                                       <option value="In Progress">
@@ -3060,7 +3060,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                           className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
                                             subItem.done
                                               ? 'bg-emerald-500 border-emerald-500 text-black'
-                                              : 'border-zinc-600'
+                                              : 'border-slate-300 dark:border-zinc-600'
                                           }`}
                                         >
                                           {subItem.done && <Check className="w-2.5 h-2.5" />}
@@ -3069,7 +3069,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                           className={
                                             subItem.done
                                               ? 'text-[#71717A] line-through'
-                                              : 'text-zinc-200'
+                                              : 'text-slate-800 dark:text-zinc-200'
                                           }
                                         >
                                           {subItem.title}
@@ -3100,15 +3100,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <div className="rounded-xl border border-white/[0.08] bg-[#111114] shadow-xl p-5 space-y-4">
                           <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
                             <div className="flex items-center gap-2">
-                              <Briefcase className="w-4 h-4 text-emerald-400" />
-                              <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                              <Briefcase className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-900 dark:text-white">
                                 {isEn ? 'CRM Pipeline Breakdown' : 'Структура воронки CRM'}
                               </h3>
                             </div>
                             <button
                               type="button"
                               onClick={() => setActiveSection('crm')}
-                              className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                              className="text-xs font-medium text-slate-600 dark:text-[#A1A1AA] hover:text-slate-900 dark:hover:text-white transition-colors"
                             >
                               {isEn ? 'Open CRM →' : 'Воронка →'}
                             </button>
@@ -3150,13 +3150,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 <div key={row.stage} className="space-y-1.5">
                                   <div className="flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
-                                      <span className="font-medium text-white">{row.label}</span>
+                                      <span className="font-medium text-slate-900 dark:text-white">
+                                        {row.label}
+                                      </span>
                                       <span className="text-[11px] tabular-nums text-[#71717A]">
                                         ({stageLeads.length})
                                       </span>
                                     </div>
                                     <div className="flex items-center gap-2 tabular-nums">
-                                      <span className="font-semibold text-white">
+                                      <span className="font-semibold text-slate-900 dark:text-white">
                                         {formatMoney(stageSum)}
                                       </span>
                                       <span className="text-[11px] text-[#8E8E93] w-9 text-right">
@@ -3164,7 +3166,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       </span>
                                     </div>
                                   </div>
-                                  <div className="h-2 w-full rounded-full bg-zinc-800/80 overflow-hidden">
+                                  <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-zinc-800/80 overflow-hidden">
                                     <div
                                       className={`h-full ${row.barColor} rounded-full transition-all duration-300`}
                                       style={{ width: `${Math.max(4, sharePct)}%` }}
@@ -3181,8 +3183,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div className="rounded-xl border border-white/[0.08] bg-[#111114] shadow-xl p-5 space-y-4">
                         <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
                           <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-indigo-400" />
-                            <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
+                            <Users className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-900 dark:text-white">
                               {isEn
                                 ? 'Team Workload & Organization Pulse'
                                 : 'Загрузка подразделений и пульс команды'}
@@ -3192,7 +3194,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => setActiveSection('team')}
-                              className="text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                              className="text-xs font-medium text-slate-600 dark:text-[#A1A1AA] hover:text-slate-900 dark:hover:text-white transition-colors"
                             >
                               {isEn ? 'Manage →' : 'Штат →'}
                             </button>
@@ -3230,7 +3232,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     size="sm"
                                   />
                                   <div className="min-w-0">
-                                    <div className="text-xs font-semibold text-white truncate">
+                                    <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                                       {member.name}
                                     </div>
                                     <div className="text-[11px] text-[#8E8E93] truncate">
@@ -3244,7 +3246,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span
-                                    className="inline-flex items-center px-2 py-0.5 rounded bg-[#18181B] border border-white/[0.08] text-[11px] font-medium tabular-nums text-white"
+                                    className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/80 dark:bg-zinc-800 dark:border-white/10 dark:text-zinc-200 text-[11px] font-medium tabular-nums"
                                     title={isEn ? 'Active tasks' : 'Активных задач'}
                                   >
                                     {memberActiveTasks} {isEn ? 'tasks' : 'задач'}
@@ -3252,8 +3254,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <span
                                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${
                                       hasTg
-                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                                        : 'bg-zinc-900 border-white/[0.07] text-[#71717A]'
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                                        : 'bg-slate-100 text-slate-600 border-slate-200/80 dark:bg-zinc-900 dark:border-white/[0.07] dark:text-[#71717A]'
                                     }`}
                                   >
                                     <span

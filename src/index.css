@@ -245,6 +245,7 @@ body.theme-light,
 }
 
 /* Primary text in Light Mode -> #0F172A */
+.theme-light .text-white:not(.bg-indigo-600):not(.bg-slate-900):not(.bg-emerald-600):not(.bg-rose-600):not(.tc-btn-primary):not(.tc-bubble-outgoing):not(.tc-pricing-featured),
 .theme-light .text-zinc-100,
 .theme-light .text-zinc-200,
 .theme-light .text-zinc-300,

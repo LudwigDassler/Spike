@@ -75,7 +75,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           {companyName}
         </span>
         <span className="text-zinc-700 hidden sm:inline">/</span>
-        <span className="font-semibold text-white tracking-tight whitespace-nowrap hidden sm:inline">
+        <span className="font-semibold text-slate-900 dark:text-white tracking-tight whitespace-nowrap hidden sm:inline">
           {sectionLabel}
         </span>
       </div>
@@ -86,14 +86,14 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onOpenCommandBar}
             aria-label={isEn ? 'Search (Cmd+K)' : 'Поиск (Cmd+K)'}
-            className="sm:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-[#111114] text-zinc-400 hover:text-white transition-colors shrink-0"
+            className="sm:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111114] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
           >
             <Search className="w-3.5 h-3.5" />
           </button>
         )}
 
         <div className="relative hidden sm:flex items-center">
-          <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
@@ -105,14 +105,14 @@ export const TopBar: React.FC<TopBarProps> = ({
             }}
             placeholder={effectivePlaceholder}
             aria-label={effectivePlaceholder}
-            className="w-40 md:w-56 lg:w-64 rounded-lg border border-white/[0.08] bg-[#111114] pl-8 pr-14 py-1.5 text-xs text-white placeholder-zinc-500 focus:border-white/25 focus:outline-none transition-colors"
+            className="w-40 md:w-56 lg:w-64 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111114] pl-8 pr-14 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:border-indigo-500 dark:focus:border-white/25 focus:outline-none transition-colors"
           />
           {searchQuery ? (
             <button
               type="button"
               onClick={() => onSearchChange('')}
               aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white"
             >
               <X className="w-3 h-3" />
             </button>
@@ -126,7 +126,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     ? 'Global Omnisearch & Command Bar (Cmd+K)'
                     : 'Глобальный поиск и командный бар (Cmd+K / Ctrl+K)'
                 }
-                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-[10px] font-medium text-zinc-400 hover:text-white transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 hover:text-slate-900 dark:bg-zinc-800 dark:text-zinc-400 dark:border-white/10 dark:hover:text-white text-[10px] font-medium transition-colors"
               >
                 <Command className="w-2.5 h-2.5" />
                 <span>K</span>
@@ -150,12 +150,12 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onOpenAiCopilot}
             aria-label="Teddy"
-            className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-indigo-500/30 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors whitespace-nowrap shadow-xs shrink-0 cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-indigo-600 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold !text-white transition-colors whitespace-nowrap shadow-xs shrink-0 cursor-pointer"
           >
-            <div className="w-5 h-5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-              <Bot className="w-3.5 h-3.5" />
+            <div className="w-5 h-5 rounded-md bg-white/15 !text-white flex items-center justify-center shrink-0">
+              <Bot className="w-3.5 h-3.5 !text-white" />
             </div>
-            <span className="hidden md:inline">Teddy</span>
+            <span className="hidden md:inline !text-white">Teddy</span>
           </button>
         )}
 
@@ -165,7 +165,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={toggleTheme}
           aria-label={theme === 'light' ? t('theme.dark') : t('theme.light')}
           title={theme === 'light' ? t('theme.dark') : t('theme.light')}
-          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-[#111114] hover:bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors shrink-0"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111114] hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
         >
           {theme === 'light' ? (
             <Moon className="w-3.5 h-3.5" />
@@ -180,9 +180,13 @@ export const TopBar: React.FC<TopBarProps> = ({
           disabled={isSyncing}
           aria-label={t('topbar.sync')}
           title={t('topbar.sync')}
-          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-[#111114] hover:bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors disabled:opacity-50 shrink-0"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111114] hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-50 shrink-0"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-white' : ''}`} />
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${
+              isSyncing ? 'animate-spin text-indigo-600 dark:text-white' : ''
+            }`}
+          />
         </button>
       </div>
     </header>

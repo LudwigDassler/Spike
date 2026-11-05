@@ -127,16 +127,35 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [menuOpen]);
 
+  const isOver16Hours = elapsedSec > 16 * 3600;
+
   const formatTimer = (totalSec: number) => {
     const hrs = Math.floor(totalSec / 3600);
     const mins = Math.floor((totalSec % 3600) / 60);
     const secs = totalSec % 60;
     const mm = String(mins).padStart(2, '0');
     const ss = String(secs).padStart(2, '0');
+    if (hrs > 16) {
+      return isEn ? '>16h' : '>16 ч';
+    }
     if (hrs > 0) {
       return `${String(hrs).padStart(2, '0')}:${mm}:${ss}`;
     }
     return `${mm}:${ss}`;
+  };
+
+  const handleQuickResetStaleShift = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShiftState({ status: 'idle', startedAt: null });
+    setMenuOpen(false);
+    if (onSyncShiftState) {
+      await onSyncShiftState('offline', null);
+    }
+    showToast?.(
+      isEn
+        ? 'Stale shift (>16h) reset · Ready to start new shift'
+        : 'Зависшая смена (>16 ч) сброшена · Можно открыть новую смену'
+    );
   };
 
   // Sync with DB shift_status if changed remotely
@@ -275,19 +294,19 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
   }
 
   return (
-    <div className="relative shrink-0" ref={menuRef}>
+    <div className="relative shrink-0 inline-flex items-center gap-1" ref={menuRef}>
       <button
         type="button"
         onClick={() => setMenuOpen((prev) => !prev)}
         className={`inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap tabular-nums ${
           shiftState.status === 'break'
-            ? 'border-amber-500/35 bg-amber-500/10 text-amber-300'
-            : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+            ? 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300'
+            : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
         }`}
       >
         <span
           className={`w-2 h-2 rounded-full shrink-0 ${
-            shiftState.status === 'break' ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'
+            shiftState.status === 'break' ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'
           }`}
         />
         <span className="hidden md:inline">
@@ -303,13 +322,29 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
         <span className="font-semibold tabular-nums">{formatTimer(elapsedSec)}</span>
       </button>
 
+      {isOver16Hours && (
+        <button
+          type="button"
+          onClick={(e) => void handleQuickResetStaleShift(e)}
+          title={
+            isEn
+              ? 'Shift open for >16 hours — Click to reset/end immediately'
+              : 'Смена открыта более 16 часов — Нажмите для мгновенного сброса'
+          }
+          className="inline-flex items-center gap-1 h-8 px-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 hover:bg-rose-500/15 text-slate-700 hover:text-rose-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:text-rose-300 text-[11px] font-medium transition-colors whitespace-nowrap"
+        >
+          <Square className="w-3 h-3 text-rose-500 shrink-0" />
+          <span className="hidden lg:inline">{isEn ? 'Reset' : 'Сбросить'}</span>
+        </button>
+      )}
+
       {menuOpen && (
-        <div className="absolute right-0 mt-1.5 w-60 rounded-xl border border-white/10 bg-[#121216] shadow-2xl p-1.5 z-50 space-y-1">
-          <div className="px-2.5 py-1.5 border-b border-white/[0.06]">
-            <div className="text-[11px] font-semibold text-white">
+        <div className="absolute right-0 top-full mt-1.5 w-60 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#121216] shadow-2xl p-1.5 z-50 space-y-1">
+          <div className="px-2.5 py-1.5 border-b border-slate-100 dark:border-white/[0.06]">
+            <div className="text-[11px] font-semibold text-slate-900 dark:text-white">
               {currentProfile?.name || (isEn ? 'Active Shift' : 'Активная смена')}
             </div>
-            <div className="text-[10px] text-zinc-400 tabular-nums">
+            <div className="text-[10px] text-slate-500 dark:text-zinc-400 tabular-nums">
               {isEn ? 'Elapsed time:' : 'Время на линии:'} {formatTimer(elapsedSec)}
             </div>
           </div>
@@ -317,9 +352,9 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
           <button
             type="button"
             onClick={handleToggleBreak}
-            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-zinc-200 hover:bg-white/[0.06] transition-colors text-left"
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors text-left"
           >
-            <Pause className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <Pause className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
             <span>
               {shiftState.status === 'break'
                 ? isEn
@@ -334,9 +369,9 @@ export const WorkdayShiftWidget: React.FC<WorkdayShiftWidgetProps> = ({
           <button
             type="button"
             onClick={() => void handleFinishShift()}
-            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-emerald-300 hover:bg-emerald-500/15 transition-colors text-left font-medium"
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15 transition-colors text-left font-medium"
           >
-            <Square className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <Square className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
             <span>
               {isEn ? 'End Shift with Auto-Report' : 'Завершить смену с авто-отчетом'}
             </span>
@@ -1580,10 +1615,10 @@ export const ExecutiveUnitEconomicsRadar: React.FC<ExecutiveUnitEconomicsRadarPr
           <div className="text-[11px] text-zinc-400">
             {isEn ? 'Pipeline per Employee' : 'Выручка на сотрудника'}
           </div>
-          <div className="text-base font-bold text-white tabular-nums">
+          <div className="text-base font-bold text-slate-900 dark:text-white tabular-nums">
             {formatMoney(metrics.revenuePerEmployee)}
           </div>
-          <div className="text-[11px] text-emerald-400">
+          <div className="text-[11px] text-emerald-600 dark:text-emerald-400">
             {isEn ? `Across ${nodes.length} staff members` : `Штат: ${nodes.length} сотр.`}
           </div>
         </div>
@@ -1595,7 +1630,7 @@ export const ExecutiveUnitEconomicsRadar: React.FC<ExecutiveUnitEconomicsRadarPr
           <div className="text-[11px] text-zinc-400">
             {isEn ? 'SLA Deadline Compliance' : 'Соблюдение дедлайнов (SLA)'}
           </div>
-          <div className="text-base font-bold text-white tabular-nums">
+          <div className="text-base font-bold text-slate-900 dark:text-white tabular-nums">
             {metrics.slaCompliance}%
           </div>
           <div className="text-[11px] text-zinc-400 tabular-nums">
@@ -1618,7 +1653,9 @@ export const ExecutiveUnitEconomicsRadar: React.FC<ExecutiveUnitEconomicsRadarPr
           </div>
           <div
             className={`text-base font-bold tabular-nums ${
-              metrics.stalledDealsCount > 0 ? 'text-amber-300' : 'text-emerald-300'
+              metrics.stalledDealsCount > 0
+                ? 'text-amber-600 dark:text-amber-300'
+                : 'text-emerald-600 dark:text-emerald-300'
             }`}
           >
             {metrics.stalledDealsCount}
@@ -1638,7 +1675,7 @@ export const ExecutiveUnitEconomicsRadar: React.FC<ExecutiveUnitEconomicsRadarPr
           <div className="text-[11px] text-zinc-400">
             {isEn ? 'Workload Balance (5+ Tasks)' : 'Индикатор перегруза (5+ задач)'}
           </div>
-          <div className="text-base font-bold text-white tabular-nums">
+          <div className="text-base font-bold text-slate-900 dark:text-white tabular-nums">
             {metrics.overloadedCount}{' '}
             <span className="text-xs font-normal text-zinc-400">
               {isEn ? 'employees' : 'сотр.'}
@@ -1699,7 +1736,7 @@ export const DashboardShiftsOverviewWidget: React.FC<DashboardShiftsOverviewWidg
         1,
         Math.round((Date.now() - new Date(n.shift_started_at).getTime()) / 60000)
       );
-      return acc + (Number.isFinite(diff) ? diff : 15);
+      return acc + (Number.isFinite(diff) ? Math.min(diff, 16 * 60) : 15);
     }, 0);
     return ((completedMins + activeMins) / 60).toFixed(1);
   }, [workShifts, onlineNodes, breakNodes]);
@@ -1717,15 +1754,15 @@ export const DashboardShiftsOverviewWidget: React.FC<DashboardShiftsOverviewWidg
     <div className="rounded-xl border border-white/[0.07] bg-[#121215] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
       <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
-          <h3 className="text-sm font-semibold text-white tracking-tight truncate">
+          <Clock className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white tracking-tight truncate">
             {isEn ? 'Active Shifts & Attendance Today' : 'Активные смены и табель сегодня'}
           </h3>
         </div>
         <button
           type="button"
           onClick={onOpenShiftsSection}
-          className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors shrink-0"
+          className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium transition-colors shrink-0"
         >
           <span>{isEn ? 'Open Roster' : 'Табель смен'}</span>
           <ArrowRight className="w-3.5 h-3.5" />
@@ -1738,7 +1775,7 @@ export const DashboardShiftsOverviewWidget: React.FC<DashboardShiftsOverviewWidg
           <div className="text-[11px] text-[#8E8E93]">
             {isEn ? 'Online Now' : 'На линии'}
           </div>
-          <div className="text-sm font-bold text-emerald-400 tabular-nums mt-0.5 flex items-center gap-1.5">
+          <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>{onlineNodes.length}</span>
           </div>
@@ -1747,7 +1784,7 @@ export const DashboardShiftsOverviewWidget: React.FC<DashboardShiftsOverviewWidg
           <div className="text-[11px] text-[#8E8E93]">
             {isEn ? 'On Break' : 'На перерыве'}
           </div>
-          <div className="text-sm font-bold text-amber-400 tabular-nums mt-0.5">
+          <div className="text-sm font-bold text-amber-600 dark:text-amber-400 tabular-nums mt-0.5">
             {breakNodes.length}
           </div>
         </div>
@@ -1755,7 +1792,7 @@ export const DashboardShiftsOverviewWidget: React.FC<DashboardShiftsOverviewWidg
           <div className="text-[11px] text-[#8E8E93]">
             {isEn ? 'Hours Today' : 'Часов за день'}
           </div>
-          <div className="text-sm font-bold text-white tabular-nums mt-0.5">
+          <div className="text-sm font-bold text-slate-900 dark:text-white tabular-nums mt-0.5">
             {totalHoursToday} {isEn ? 'h' : 'ч'}
           </div>
         </div>
@@ -1781,7 +1818,9 @@ export const DashboardShiftsOverviewWidget: React.FC<DashboardShiftsOverviewWidg
               <div className="flex items-center gap-2.5 min-w-0">
                 <UserAvatar name={emp.name} avatarUrl={emp.avatar_url} size="sm" />
                 <div className="min-w-0">
-                  <div className="text-xs font-medium text-white truncate">{emp.name}</div>
+                  <div className="text-xs font-medium text-slate-900 dark:text-white truncate">
+                    {emp.name}
+                  </div>
                   <div className="text-[11px] text-[#8E8E93] truncate">
                     {formatRole(emp.role_type)}
                     {emp.department ? ` · ${formatRole(emp.department)}` : ''}
