@@ -1,69 +1,81 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutGrid,
   CheckSquare,
   Briefcase,
-  MessageSquare,
   Users,
+  MessageSquare,
   Settings,
   LogOut,
   Shield,
-  UserCircle2,
   Sun,
   Moon,
   Clock,
+  UserCircle2,
   PanelLeftClose,
   PanelLeftOpen,
-  Layers,
 } from 'lucide-react';
 import {
+  Company,
   DashboardSection,
   OrganizationNode,
   normalizeEmployeePermissions,
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 import { UserAvatar } from './UserAvatar';
+import { TeddyPrismIcon } from './TedCloudAiDrawer';
 
-export type NavSection = DashboardSection;
+export type { DashboardSection };
 
 export interface SidebarProps {
   activeSection: DashboardSection;
   onSelectSection: (section: DashboardSection) => void;
-  currentProfile: OrganizationNode | null;
   counts: {
-    tasks: number;
     nodes: number;
+    tasks: number;
     leads: number;
     messages?: number;
   };
+  currentProfile?: OrganizationNode | null;
+  company?: Company | null;
+  allCompanies?: Company[];
+  onSwitchCompany?: (company: Company) => void;
+  onOpenRegisterCompany?: () => void;
   onRequestSignOut?: () => void;
+  onOpenAiCopilot?: () => void;
+  isMobileDrawerOpen?: boolean;
+  onCloseMobileDrawer?: () => void;
 }
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'tedcloud_sidebar_collapsed_v1';
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeSection,
   onSelectSection,
-  currentProfile,
   counts,
+  currentProfile,
   onRequestSignOut,
 }) => {
   const { language, setLanguage, theme, toggleTheme, t, formatRole } = useLocale();
   const isEn = language === 'en';
+  const isLight = theme === 'light';
+
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('tedcloud_sidebar_collapsed') === 'true';
+      return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
     } catch {
       return false;
     }
   });
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, isSidebarCollapsed ? '1' : '0');
+    } catch {}
+  }, [isSidebarCollapsed]);
+
   const toggleSidebarCollapsed = () => {
-    setIsSidebarCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('tedcloud_sidebar_collapsed', String(next));
-      } catch {}
-      return next;
-    });
+    setIsSidebarCollapsed((prev) => !prev);
   };
 
   const normalized = normalizeEmployeePermissions(
@@ -141,22 +153,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside
       className={`hidden lg:flex ${
         isSidebarCollapsed ? 'w-[60px]' : 'w-56'
-      } shrink-0 bg-[#0b0d13] border-r border-white/[0.06] flex-col justify-between min-h-screen select-none overflow-hidden transition-all duration-200`}
+      } shrink-0 bg-white dark:bg-[#0b0d13] border-r border-slate-200/90 dark:border-white/[0.06] flex-col justify-between min-h-screen select-none overflow-hidden transition-all duration-200`}
     >
       <div>
         <div
           className={`h-14 ${
             isSidebarCollapsed ? 'px-2 justify-center' : 'px-3.5 justify-between'
-          } flex items-center border-b border-white/[0.05]`}
+          } flex items-center border-b border-slate-200/80 dark:border-white/[0.05]`}
         >
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-indigo-600 !text-white flex items-center justify-center font-bold text-xs tracking-tight shadow-sm shrink-0">
-                TC
+              <div className="w-7 h-7 rounded-lg bg-slate-900 text-white border border-slate-800 dark:bg-white/[0.08] dark:text-white dark:border-white/[0.14] flex items-center justify-center shadow-2xs shrink-0">
+                <TeddyPrismIcon className="w-4 h-4" />
               </div>
-              <span className="text-sm font-semibold text-slate-900 dark:text-white tracking-tight truncate">
-                TedCloud
-              </span>
+              <div className="min-w-0 flex items-baseline gap-1.5">
+                <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                  TedCloud
+                </span>
+                <span className="text-[10px] font-semibold text-slate-500 dark:text-zinc-400 tracking-tight">
+                  os
+                </span>
+              </div>
             </div>
           )}
 
@@ -173,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 : 'Свернуть боковую панель'
             }
             aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-[#8E8E93] hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+            className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200/80 border border-slate-200/90 text-slate-600 hover:text-slate-900 dark:bg-white/[0.03] dark:hover:bg-white/[0.08] dark:border-white/[0.06] dark:text-[#8E8E93] dark:hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
           >
             {isSidebarCollapsed ? (
               <PanelLeftOpen className="w-3.5 h-3.5" />
@@ -185,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <nav className={`${isSidebarCollapsed ? 'px-2' : 'px-2.5'} pt-2.5 pb-2 space-y-1`}>
           {!isSidebarCollapsed && (
-            <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6E6E77] truncate">
+            <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 truncate">
               {t('nav.workspaceSection')}
             </div>
           )}
@@ -193,7 +210,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const Icon = item.icon;
             const isActive = activeSection === item.id;
             const hasPositiveBadge = typeof item.badge === 'number' && item.badge > 0;
-            const isLight = theme === 'light';
 
             return (
               <button
@@ -212,7 +228,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     ? isLight
                       ? 'tc-nav-active-light bg-indigo-600/[0.09] text-indigo-700 font-semibold border border-indigo-500/20 shadow-2xs rounded-xl'
                       : 'bg-indigo-500/15 text-white font-semibold border border-indigo-500/25 rounded-xl'
-                    : 'rounded-xl text-[#8E8E93] font-medium hover:text-zinc-200 hover:bg-white/[0.04]'
+                    : 'rounded-xl text-slate-600 dark:text-[#A1A1AA] font-medium hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100/80 dark:hover:bg-white/[0.04]'
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -222,7 +238,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ? isLight
                           ? 'tc-nav-active-icon text-indigo-600'
                           : 'tc-nav-active-icon text-indigo-400'
-                        : 'text-[#71717A]'
+                        : 'text-slate-500 dark:text-[#71717A]'
                     }`}
                   />
                   {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
@@ -234,7 +250,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ? isLight
                           ? 'bg-indigo-600/15 text-indigo-700'
                           : 'bg-indigo-500/25 text-indigo-200'
-                        : 'text-[#71717A]'
+                        : 'text-slate-600 dark:text-[#8E8E93]'
                     }`}
                   >
                     {item.badge}
@@ -249,8 +265,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      <div className="p-2.5 pb-3 shrink-0 space-y-2 border-t border-white/[0.05]">
-
+      <div className="p-2.5 pb-3 shrink-0 space-y-2 border-t border-slate-200/80 dark:border-white/[0.05]">
         {currentProfile ? (
           <button
             type="button"
@@ -259,7 +274,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className={`w-full text-left rounded-xl ${
               isSidebarCollapsed ? 'p-1.5 justify-center' : 'p-2'
             } transition-colors flex items-center gap-2.5 group cursor-pointer ${
-              activeSection === 'profile' ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'
+              activeSection === 'profile'
+                ? 'bg-slate-100 dark:bg-white/[0.06]'
+                : 'hover:bg-slate-100/80 dark:hover:bg-white/[0.04]'
             }`}
           >
             <UserAvatar
@@ -273,12 +290,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <p className="text-xs font-semibold text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-200 transition-colors">
                     {currentProfile.name}
                   </p>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
                 </div>
-                <p className="text-[10px] text-slate-600 dark:text-[#8E8E93] truncate">
+                <p className="text-[10px] font-medium text-slate-600 dark:text-[#8E8E93] truncate">
                   {formatRole(currentProfile.role_type)}
                 </p>
-                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-500 dark:text-zinc-400">
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] font-medium text-slate-600 dark:text-zinc-400">
                   <Shield className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                   <span className="truncate">{t(`accessShort.${accessLevel}`)}</span>
                 </div>
@@ -287,7 +304,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         ) : (
           !isSidebarCollapsed && (
-            <div className="px-2 py-1.5 text-xs text-[#8E8E93]">{t('profile.guestMode')}</div>
+            <div className="px-2 py-1.5 text-xs text-slate-600 dark:text-[#8E8E93]">
+              {t('profile.guestMode')}
+            </div>
           )
         )}
 
@@ -306,7 +325,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ? 'Switch to Dark Mode'
                   : 'Включить темную тему'
               }
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-[#A1A1AA] hover:text-white transition-colors"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 hover:text-slate-900 dark:bg-white/[0.03] dark:hover:bg-white/[0.08] dark:border-white/[0.06] dark:text-[#A1A1AA] dark:hover:text-white transition-colors cursor-pointer"
             >
               {theme === 'dark' ? (
                 <Sun className="w-3.5 h-3.5 text-amber-400" />
@@ -319,7 +338,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="button"
                 onClick={onRequestSignOut}
                 title={isEn ? 'Sign Out' : 'Выйти'}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.03] hover:bg-red-500/10 border border-white/[0.06] hover:border-red-500/30 text-[#8E8E93] hover:text-red-400 transition-colors"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 hover:bg-rose-50 border border-slate-200/90 hover:border-rose-200 text-slate-700 hover:text-rose-600 dark:bg-white/[0.03] dark:hover:bg-red-500/10 dark:border-white/[0.06] dark:hover:border-red-500/30 dark:text-[#8E8E93] dark:hover:text-red-400 transition-colors cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
@@ -328,13 +347,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <div className="flex items-center justify-between gap-1 pt-1 px-0.5">
             <div
-              className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/[0.06] p-0.5"
+              className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-white/[0.03] border border-slate-200/90 dark:border-white/[0.06] p-0.5"
               aria-label="Language switcher"
             >
               <button
                 type="button"
                 onClick={() => setLanguage('ru')}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors cursor-pointer ${
                   language === 'ru'
                     ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
                     : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
@@ -345,7 +364,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setLanguage('en')}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors cursor-pointer ${
                   language === 'en'
                     ? 'bg-slate-900 !text-white dark:bg-white dark:!text-slate-950 shadow-2xs'
                     : 'text-slate-600 dark:text-[#8E8E93] hover:text-slate-900 dark:hover:text-white'
@@ -369,7 +388,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     : 'Включить темную тему'
                 }
                 aria-label="Toggle theme"
-                className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-[#A1A1AA] hover:text-white transition-colors"
+                className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 hover:text-slate-900 dark:bg-white/[0.03] dark:hover:bg-white/[0.08] dark:border-white/[0.06] dark:text-[#A1A1AA] dark:hover:text-white transition-colors cursor-pointer"
               >
                 {theme === 'dark' ? (
                   <Sun className="w-3.5 h-3.5 text-amber-400" />
@@ -384,7 +403,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={onRequestSignOut}
                   title={t('profile.switchAccount')}
                   aria-label={t('profile.switchAccount')}
-                  className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-white/[0.03] hover:bg-red-500/10 border border-white/[0.06] hover:border-red-500/30 text-[11px] font-medium text-[#8E8E93] hover:text-red-400 transition-colors"
+                  className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-slate-100 hover:bg-rose-50 border border-slate-200/90 hover:border-rose-200 text-[11px] font-semibold text-slate-700 hover:text-rose-600 dark:bg-white/[0.03] dark:hover:bg-red-500/10 dark:border-white/[0.06] dark:hover:border-red-500/30 dark:text-[#8E8E93] dark:hover:text-red-400 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span className="truncate max-w-[68px]">
@@ -399,4 +418,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
-

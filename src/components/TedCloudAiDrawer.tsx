@@ -2,21 +2,21 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   Loader2,
-  CheckCircle2,
   Plus,
   Check,
   Printer,
   Trash2,
-  Calendar,
-  ChevronDown,
   Mic,
   MicOff,
   CornerDownLeft,
   ArrowRight,
-  FileText,
   Briefcase,
-  Users,
   Clock,
+  FileText,
+  Layers,
+  Activity,
+  SlidersHorizontal,
+  CheckCircle2,
 } from 'lucide-react';
 import { CrmLeadRecord, OrganizationNode, TaskPriority, TaskRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
@@ -46,6 +46,10 @@ const ICON_SIZE_MAP: Record<NonNullable<TeddyAvatarProps['size']>, string> = {
   lg: 'w-5 h-5',
 };
 
+/**
+ * Neutral CloudCode-inspired architectural emblem:
+ * Geometric cloud-circuit silhouette with code/orchestration brackets and central node.
+ */
 export const TeddyPrismIcon: React.FC<TeddyAvatarProps> = ({
   size = 'sm',
   className = '',
@@ -57,49 +61,31 @@ export const TeddyPrismIcon: React.FC<TeddyAvatarProps> = ({
     className={className || SIZE_MAP[size] || 'w-4 h-4'}
     aria-hidden="true"
   >
+    {/* Outer CloudCode architectural cloud-frame */}
     <path
-      d="M1.5 13.8L7.3 11.3"
+      d="M6.5 18.5H17.2C19.57 18.5 21.5 16.57 21.5 14.2C21.5 12.08 19.96 10.32 17.93 9.96C17.25 6.84 14.48 4.5 11.15 4.5C7.34 4.5 4.25 7.59 4.25 11.4C4.25 11.69 4.27 11.98 4.31 12.26C2.98 12.88 2.05 14.23 2.05 15.8C2.05 17.29 3.26 18.5 4.75 18.5H6.5Z"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="1.65"
       strokeLinecap="round"
-    />
-    <path
-      d="M7.3 11.3L14.7 11.6"
-      stroke="currentColor"
-      strokeOpacity="0.45"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-    />
-    <path
-      d="M14.2 9.8L22.5 6.8"
-      stroke="#F59E0B"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-    <path
-      d="M14.8 11.2L22.5 10.3"
-      stroke="#10B981"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-    <path
-      d="M15.4 12.6L22.5 13.8"
-      stroke="#3B82F6"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-    <path
-      d="M16.0 14.0L22.5 17.3"
-      stroke="#8B5CF6"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-    <path
-      d="M11 3.5L19 18.5H3L11 3.5Z"
-      stroke="currentColor"
-      strokeWidth="1.5"
       strokeLinejoin="round"
     />
+    {/* Code & workflow brackets inside cloud core */}
+    <path
+      d="M9.4 10.3L7.4 12.3L9.4 14.3"
+      stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M14.6 10.3L16.6 12.3L14.6 14.3"
+      stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    {/* Central orchestration node */}
+    <circle cx="12" cy="12.3" r="1.25" fill="currentColor" />
   </svg>
 );
 
@@ -108,7 +94,7 @@ export const TeddyAvatar: React.FC<TeddyAvatarProps> = ({
   className = '',
 }) => (
   <div
-    className={`rounded-lg bg-slate-900 dark:bg-white/[0.06] border border-slate-800 dark:border-white/[0.12] text-white flex items-center justify-center shrink-0 shadow-xs ${SIZE_MAP[size]} ${className}`}
+    className={`rounded-lg bg-slate-900 text-white border border-slate-800 dark:bg-white/[0.08] dark:text-white dark:border-white/[0.14] flex items-center justify-center shrink-0 shadow-2xs ${SIZE_MAP[size]} ${className}`}
   >
     <TeddyPrismIcon className={ICON_SIZE_MAP[size]} />
   </div>
@@ -120,7 +106,13 @@ export interface StagingRowItem {
   id: string;
   checked: boolean;
   spectrum: SpectralStreamType;
-  mode: 'create_task' | 'reassign_task' | 'followup_lead' | 'create_lead' | 'prepare_contract' | 'telegram_broadcast';
+  mode:
+    | 'create_task'
+    | 'reassign_task'
+    | 'followup_lead'
+    | 'create_lead'
+    | 'prepare_contract'
+    | 'telegram_broadcast';
   title: string;
   department: string;
   assignedTo: string;
@@ -132,7 +124,7 @@ export interface StagingRowItem {
   clientName?: string;
 }
 
-type TeddyCanvasMode = 'decompose' | 'deals_audit' | 'rebalance' | 'contract';
+type CloudCodeCanvasMode = 'decompose' | 'deals_audit' | 'rebalance' | 'contract' | 'brief';
 
 export interface TedCloudAiDrawerProps {
   isOpen: boolean;
@@ -186,48 +178,37 @@ function parseRussianAmount(rawText: string): number | null {
   return null;
 }
 
-function getSpectrumBorderClass(spectrum: SpectralStreamType): string {
-  switch (spectrum) {
-    case 'amber':
-      return 'border-l-2 border-l-[#F59E0B]';
-    case 'emerald':
-      return 'border-l-2 border-l-[#10B981]';
-    case 'sapphire':
-      return 'border-l-2 border-l-[#3B82F6]';
-    case 'violet':
-      return 'border-l-2 border-l-[#8B5CF6]';
-  }
-}
-
-function getSpectrumBadgeMeta(spectrum: SpectralStreamType, isEn: boolean) {
-  switch (spectrum) {
-    case 'amber':
+function getModeTagMeta(mode: StagingRowItem['mode'], isEn: boolean) {
+  switch (mode) {
+    case 'reassign_task':
       return {
-        label: isEn ? 'Tasks & SLA' : 'Задачи и SLA',
-        dot: 'bg-[#F59E0B]',
-        text: 'text-amber-700 dark:text-amber-300',
-        bg: 'bg-amber-500/10 border-amber-500/25',
+        label: isEn ? 'SLA Rebalance' : 'Балансировка / Перенос',
+        badgeClass:
+          'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30',
       };
-    case 'emerald':
+    case 'followup_lead':
       return {
-        label: isEn ? 'Revenue & CRM' : 'Деньги и CRM',
-        dot: 'bg-[#10B981]',
-        text: 'text-emerald-700 dark:text-emerald-300',
-        bg: 'bg-emerald-500/10 border-emerald-500/25',
+        label: isEn ? 'CRM Follow-up' : 'Дожим сделки CRM',
+        badgeClass:
+          'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30',
       };
-    case 'sapphire':
+    case 'create_lead':
       return {
-        label: isEn ? 'A4 Documents' : 'Документы А4',
-        dot: 'bg-[#3B82F6]',
-        text: 'text-blue-700 dark:text-blue-300',
-        bg: 'bg-blue-500/10 border-blue-500/25',
+        label: isEn ? 'New CRM Deal' : 'Новая сделка CRM',
+        badgeClass:
+          'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30',
       };
-    case 'violet':
+    case 'prepare_contract':
       return {
-        label: isEn ? 'Team & Telegram' : 'Команда и TG',
-        dot: 'bg-[#8B5CF6]',
-        text: 'text-violet-700 dark:text-violet-300',
-        bg: 'bg-violet-500/10 border-violet-500/25',
+        label: isEn ? 'Document A4' : 'Документ А4',
+        badgeClass:
+          'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30',
+      };
+    default:
+      return {
+        label: isEn ? 'Task Step' : 'Этап / Поручение',
+        badgeClass:
+          'bg-slate-100 text-slate-700 border-slate-200/90 dark:bg-white/[0.06] dark:text-zinc-300 dark:border-white/10',
       };
   }
 }
@@ -251,24 +232,22 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const isEn = language === 'en';
 
   const [inputText, setInputText] = useState<string>('');
-  const [activeCanvasMode, setActiveCanvasMode] = useState<TeddyCanvasMode>('decompose');
+  const [activeCanvasMode, setActiveCanvasMode] = useState<CloudCodeCanvasMode>('decompose');
   const [stagingRows, setStagingRows] = useState<StagingRowItem[]>([]);
   const [selectedContractLeadId, setSelectedContractLeadId] = useState<string>(
     leads[0]?.id || ''
   );
   const [isApplyingDb, setIsApplyingDb] = useState<boolean>(false);
+  const [isQueryingAi, setIsQueryingAi] = useState<boolean>(false);
+  const [aiAnalysisSummary, setAiAnalysisSummary] = useState<string>('');
   const [appliedSuccessBanner, setAppliedSuccessBanner] = useState<string | null>(null);
   const [statusLine, setStatusLine] = useState<string>('');
-  const [openAssigneePopoverRowId, setOpenAssigneePopoverRowId] = useState<string | null>(null);
-  const [openDeptPopoverRowId, setOpenDeptPopoverRowId] = useState<string | null>(null);
-  const [editingTitleRowId, setEditingTitleRowId] = useState<string | null>(null);
   const [quotaState, setQuotaState] = useState(() => getAiQuotaState(companyId, planTier));
 
   useEffect(() => {
     setQuotaState(getAiQuotaState(companyId, planTier));
   }, [companyId, planTier, isOpen]);
 
-  // Voice Terminal State (Web Speech API)
   const [isListening, setIsListening] = useState<boolean>(false);
   const recognitionRef = useRef<any>(null);
   const spotlightInputRef = useRef<HTMLInputElement | null>(null);
@@ -281,7 +260,6 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     return Array.from(set);
   }, [nodes]);
 
-  // Real-time Executive Insights (3 Proactive Cards calculated from live tasks, leads, nodes)
   const executiveInsights = useMemo(() => {
     const openTasks = tasks.filter((t) => t.status !== 'Done');
     const todayIso = new Date().toISOString().slice(0, 10);
@@ -302,6 +280,10 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       staffLoads[staffLoads.length - 1] || { node: nodes[0] || currentUser, count: 0 };
 
     const activeLeads = leads.filter((l) => l.status !== 'Won' && l.status !== 'Lost');
+    const totalPipelineValue = activeLeads.reduce(
+      (acc, l) => acc + Number(l.amount ?? l.deal_value ?? 0),
+      0
+    );
     const topDeal =
       [...activeLeads].sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))[0] ||
       leads[0] ||
@@ -313,12 +295,14 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       busiest,
       leastBusy,
       topDeal,
+      totalPipelineValue,
+      activeLeadsCount: activeLeads.length,
     };
   }, [tasks, leads, nodes, currentUser]);
 
   const buildDecompositionRows = (goalTopic?: string): StagingRowItem[] => {
     const cleanTopic = (goalTopic || '').trim();
-    const prefix = cleanTopic ? `${cleanTopic}: ` : '';
+    const prefix = cleanTopic ? `${cleanTopic} — ` : '';
     const n0 = nodes[0]?.id || currentUser?.id || '';
     const n1 = nodes[1]?.id || n0;
     const n2 = nodes[2]?.id || n0;
@@ -329,7 +313,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         checked: true,
         spectrum: 'amber',
         mode: 'create_task',
-        title: `${prefix}${isEn ? 'Prepare commercial specification & SLA' : 'Подготовить ТЗ, смету и регламент SLA'}`,
+        title: `${prefix}${
+          isEn
+            ? 'Prepare commercial specification, estimate & SLA terms'
+            : 'Подготовить ТЗ, коммерческую смету и регламент SLA'
+        }`,
         department: departments[0] || 'Отдел продаж',
         assignedTo: n0,
         priority: 'High',
@@ -340,7 +328,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         checked: true,
         spectrum: 'emerald',
         mode: 'create_task',
-        title: `${prefix}${isEn ? 'Approve B2B contract & issue invoice' : 'Согласовать договор поставки и выставить счет'}`,
+        title: `${prefix}${
+          isEn
+            ? 'Approve supply contract & issue B2B invoice'
+            : 'Согласовать договор поставки и выставить счет контрагенту'
+        }`,
         department: departments[2] || 'Финансы и Юр. отдел',
         assignedTo: n1,
         priority: 'High',
@@ -351,7 +343,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         checked: true,
         spectrum: 'violet',
         mode: 'create_task',
-        title: `${prefix}${isEn ? 'Configure production pipeline & team handoff' : 'Настроить контур исполнения и передать в работу команде'}`,
+        title: `${prefix}${
+          isEn
+            ? 'Configure execution pipeline & assign engineering team'
+            : 'Настроить рабочий контур исполнения и передать в производство'
+        }`,
         department: departments[1] || 'Производство и ИТ',
         assignedTo: n2,
         priority: 'Medium',
@@ -372,8 +368,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           spectrum: 'emerald',
           mode: 'followup_lead',
           title: isEn
-            ? 'Follow up with key B2B client & send commercial proposal'
-            : 'Связаться с ЛПР по ключевой сделке и направить КП',
+            ? 'Contact key decision-maker & send commercial proposal'
+            : 'Связаться с ЛПР по приоритетной сделке и направить КП',
           department: departments[0] || 'Отдел продаж',
           assignedTo: currentUser?.id || nodes[0]?.id || '',
           priority: 'High',
@@ -391,7 +387,9 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         checked: true,
         spectrum: 'emerald',
         mode: 'followup_lead' as const,
-        title: `${isEn ? 'Follow-up:' : 'Дожим сделки:'} ${leadTitle} (${formatMoney(leadVal)})`,
+        title: `${isEn ? 'Follow-up & close stage:' : 'Контрольный дожим сделки:'} ${leadTitle} (${formatMoney(
+          leadVal
+        )})`,
         department: departments[0] || 'Отдел продаж',
         assignedTo: lead.assigned_to || currentUser?.id || nodes[0]?.id || '',
         priority: prio,
@@ -407,7 +405,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     const leastBusyNode = executiveInsights.leastBusy?.node || nodes[0] || currentUser;
 
     if (openTasks.length === 0) {
-      return buildDecompositionRows(isEn ? 'Sprint Rebalance' : 'Балансировка спринта');
+      return buildDecompositionRows(isEn ? 'Sprint Rebalance' : 'Оптимизация спринта');
     }
 
     return openTasks.slice(0, 4).map((t, idx) => ({
@@ -424,13 +422,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     }));
   };
 
-  // Multi-Intent Spotlight Natural Command Parser (Tasks + Deadlines + Deals + Contracts + Team)
   const parseComplexCommandToRows = (rawCommand: string): StagingRowItem[] => {
     const text = rawCommand.trim();
     const lower = text.toLowerCase();
     const results: StagingRowItem[] = [];
 
-    // 1. Target date detection ("на пятницу", "на понедельник", "завтра", etc.)
     let targetDueDate = getIsoDateOffset(2);
     if (lower.includes('пятниц') || lower.includes('friday')) {
       targetDueDate = getNextWeekdayIso(5);
@@ -446,7 +442,6 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       targetDueDate = getIsoDateOffset(1);
     }
 
-    // 2. Employee match (e.g., "Лытнева" -> matches "Лытнев Артем Олегович")
     const matchedEmployee = nodes.find((emp) => {
       const parts = (emp.name || '').toLowerCase().split(/\s+/).filter(Boolean);
       return parts.some((part) => {
@@ -456,7 +451,6 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       });
     });
 
-    // 3. Check if command asks to move/reschedule/reassign tasks
     if (
       lower.includes('перенес') ||
       lower.includes('сдвин') ||
@@ -473,7 +467,10 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         return true;
       });
 
-      if (targetTasks.length > 0 && (lower.includes('перенес') || lower.includes('сдвин') || matchedEmployee)) {
+      if (
+        targetTasks.length > 0 &&
+        (lower.includes('перенес') || lower.includes('сдвин') || matchedEmployee)
+      ) {
         targetTasks.slice(0, 3).forEach((t, idx) => {
           results.push({
             id: `stg-shift-${t.id}-${Date.now()}-${idx}`,
@@ -481,7 +478,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             spectrum: 'amber',
             mode: 'reassign_task',
             title: t.title,
-            department: t.department || matchedEmployee?.department || departments[0] || 'Отдел продаж',
+            department:
+              t.department || matchedEmployee?.department || departments[0] || 'Отдел продаж',
             assignedTo: matchedEmployee?.id || t.assigned_to || currentUser?.id || '',
             priority: (t.priority as TaskPriority) || 'High',
             dueDate: targetDueDate,
@@ -491,15 +489,19 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       }
     }
 
-    // 4. Check if command asks to create a CRM deal (e.g., "создай сделку Северсталь на 1.2 млн")
-    if (lower.includes('сделк') || lower.includes('лид') || lower.includes('deal') || lower.includes('контракт')) {
+    if (
+      lower.includes('сделк') ||
+      lower.includes('лид') ||
+      lower.includes('deal') ||
+      lower.includes('контракт')
+    ) {
       const parsedAmount = parseRussianAmount(text) || 1_200_000;
       let clientName = 'Северсталь';
-      const dealNameMatch = text.match(/(?:сделк[ауи]|клиент[а]?|контрагент[а]?|deal)\s+([А-Яа-яA-Za-z0-9«»"'\-]+(?:\s+[А-Яа-яA-Za-z0-9«»"'\-]+)?)/i);
+      const dealNameMatch = text.match(
+        /(?:сделк[ауи]|клиент[а]?|контрагент[а]?|deal)\s+([А-Яа-яA-Za-z0-9«»"'-]+(?:\s+[А-Яа-яA-Za-z0-9«»"'-]+)?)/i
+      );
       if (dealNameMatch && dealNameMatch[1]) {
-        clientName = dealNameMatch[1]
-          .replace(/\s+(?:на|суммой|за|по|в)\b.*$/i, '')
-          .trim();
+        clientName = dealNameMatch[1].replace(/\s+(?:на|суммой|за|по|в)\b.*$/i, '').trim();
       }
       results.push({
         id: `stg-newlead-${Date.now()}`,
@@ -508,7 +510,9 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         mode: 'create_lead',
         clientName,
         dealValue: parsedAmount,
-        title: `${isEn ? 'New CRM Deal:' : 'Создать сделку CRM:'} ${clientName} — ${formatMoney(parsedAmount)}`,
+        title: `${
+          isEn ? 'Create CRM Deal:' : 'Создать сделку CRM:'
+        } ${clientName} (${formatMoney(parsedAmount)})`,
         department: departments[0] || 'Отдел продаж',
         assignedTo: matchedEmployee?.id || currentUser?.id || nodes[0]?.id || '',
         priority: 'High',
@@ -516,12 +520,26 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       });
     }
 
-    // 5. Fallback: if no specific existing task shift or deal creation matched, decompose command into actionable spectral cards
     if (results.length === 0) {
       return buildDecompositionRows(text);
     }
 
     return results;
+  };
+
+  const buildDefaultExecutiveSummary = () => {
+    const busiestName = executiveInsights.busiest.node?.name || 'Руководитель';
+    const leastBusyName = executiveInsights.leastBusy.node?.name || 'Специалист';
+    const topDealTitle =
+      executiveInsights.topDeal?.client_name ||
+      executiveInsights.topDeal?.title ||
+      'Северсталь Логистика';
+    const topDealVal = formatMoney(Number(executiveInsights.topDeal?.amount || 1500000));
+
+    if (isEn) {
+      return `Workspace telemetry (${companyName}): ${executiveInsights.openTasksCount} active tasks (${executiveInsights.overdueCount} overdue), ${executiveInsights.activeLeadsCount} open CRM deals totaling ${formatMoney(executiveInsights.totalPipelineValue)}. Highest load: ${busiestName} (${executiveInsights.busiest.count} tasks); available capacity: ${leastBusyName} (${executiveInsights.leastBusy.count} tasks). Priority revenue focus: ${topDealTitle} (${topDealVal}).`;
+    }
+    return `Анализ контура «${companyName}»: в работе ${executiveInsights.openTasksCount} задач (просрочено: ${executiveInsights.overdueCount}), активный портфель CRM — ${executiveInsights.activeLeadsCount} сделок на сумму ${formatMoney(executiveInsights.totalPipelineValue)}. Пиковая нагрузка у сотрудника ${busiestName} (${executiveInsights.busiest.count} задач), свободный ресурс — ${leastBusyName} (${executiveInsights.leastBusy.count} в работе). Приоритетный контрагент для закрытия счета: ${topDealTitle} (${topDealVal}).`;
   };
 
   useEffect(() => {
@@ -541,9 +559,12 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       setActiveCanvasMode('decompose');
       setStatusLine(
         isEn
-          ? `Optical Prism ready · ${tasks.length} tasks, ${leads.length} deals, ${nodes.length} employees`
-          : `Оптический контур активен · Задач: ${tasks.length}, сделок: ${leads.length}, штат: ${nodes.length}`
+          ? `${tasks.length} tasks · ${leads.length} deals · ${nodes.length} members`
+          : `Задач: ${tasks.length} · Сделок: ${leads.length} · Штат: ${nodes.length}`
       );
+    }
+    if (!aiAnalysisSummary) {
+      setAiAnalysisSummary(buildDefaultExecutiveSummary());
     }
     if (!selectedContractLeadId && leads[0]?.id) {
       setSelectedContractLeadId(leads[0].id);
@@ -553,7 +574,44 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     }, 60);
   }, [isOpen]);
 
-  // Voice Terminal Handler (Web Speech API + Graceful Dictation Fallback)
+  const handleRunLiveServerAiBrief = async (customPrompt?: string) => {
+    setIsQueryingAi(true);
+    try {
+      const promptToUse =
+        customPrompt?.trim() ||
+        (isEn
+          ? 'Provide a concise executive audit of bottlenecks, overdue tasks, and priority CRM deals.'
+          : 'Сформируй краткую управленческую сводку по узким местам, срокам задач и ключевым сделкам CRM.');
+      const res = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ai_assistant',
+          company_id: companyId,
+          prompt: promptToUse,
+          context: {
+            companyName,
+            userName: currentUser?.name,
+            userRole: currentUser?.role_type,
+            tasksCount: tasks.length,
+            leadsCount: leads.length,
+            teamCount: nodes.length,
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.reply) {
+        setAiAnalysisSummary(String(data.reply).trim());
+      } else {
+        setAiAnalysisSummary(buildDefaultExecutiveSummary());
+      }
+    } catch {
+      setAiAnalysisSummary(buildDefaultExecutiveSummary());
+    } finally {
+      setIsQueryingAi(false);
+    }
+  };
+
   const handleToggleVoiceRecognition = () => {
     if (isListening) {
       if (recognitionRef.current) {
@@ -581,8 +639,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         setActiveCanvasMode('decompose');
         setStatusLine(
           isEn
-            ? `Voice command refracted into ${rows.length} action cards`
-            : `Голосовой импульс преломлен в пакет из ${rows.length} действий`
+            ? `Voice command parsed into ${rows.length} actions`
+            : `Голосовая команда разобрана в пакет из ${rows.length} действий`
         );
       }, 900);
       return;
@@ -611,8 +669,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             setActiveCanvasMode('decompose');
             setStatusLine(
               isEn
-                ? `Voice command refracted into ${rows.length} action cards`
-                : `Голосовая команда преломлена в пакет из ${rows.length} действий`
+                ? `Voice command parsed into ${rows.length} actions`
+                : `Голосовая команда разобрана в пакет из ${rows.length} действий`
             );
           }
         }
@@ -635,7 +693,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const triggerQuickAction = (mode: TeddyCanvasMode, customTopic?: string) => {
+  const triggerQuickAction = (mode: CloudCodeCanvasMode, customTopic?: string) => {
     const currentQuota = getAiQuotaState(companyId, planTier);
     if (currentQuota.isExhausted) {
       const msg = isEn
@@ -647,10 +705,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     }
     const nextQuota = incrementAiQuotaUsage(companyId, planTier, 1);
     setQuotaState(nextQuota);
-
     setAppliedSuccessBanner(null);
-    setOpenAssigneePopoverRowId(null);
-    setOpenDeptPopoverRowId(null);
 
     if (mode === 'decompose') {
       const rows = customTopic
@@ -660,19 +715,22 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       setActiveCanvasMode('decompose');
       setStatusLine(
         customTopic
-          ? `${isEn ? 'Refracted command:' : 'Преломление команды:'} «${customTopic}» (${rows.length})`
+          ? `${isEn ? 'Command plan:' : 'План по запросу:'} «${customTopic}» (${rows.length})`
           : isEn
-          ? `Prepared ${rows.length} action cards`
-          : `Сформировано карточек прямого действия: ${rows.length}`
+          ? `Prepared ${rows.length} structured steps`
+          : `Сформировано этапов в плане: ${rows.length}`
       );
+      if (customTopic) {
+        void handleRunLiveServerAiBrief(customTopic);
+      }
     } else if (mode === 'deals_audit') {
       const rows = buildDealsAuditRows();
       setStagingRows(rows);
       setActiveCanvasMode('deals_audit');
       setStatusLine(
         isEn
-          ? `Emerald Spectrum · ${rows.length} CRM follow-up actions ready`
-          : `Изумрудный спектр · Сформировано ${rows.length} поручения на дожим сделок CRM`
+          ? `${rows.length} CRM follow-up tasks prepared`
+          : `Подготовлено поручений на дожим сделок CRM: ${rows.length}`
       );
     } else if (mode === 'rebalance') {
       const rows = buildRebalanceRows();
@@ -680,8 +738,8 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       setActiveCanvasMode('rebalance');
       setStatusLine(
         isEn
-          ? `Violet Spectrum · Workload balanced across ${nodes.length} employees`
-          : `Фиолетовый спектр · Оптимальное перераспределение ${rows.length} задач по штату`
+          ? `Workload balanced across ${nodes.length} employees`
+          : `Оптимизировано распределение ${rows.length} задач по штату`
       );
     } else if (mode === 'contract') {
       const targetLead =
@@ -692,9 +750,12 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       setActiveCanvasMode('contract');
       setStatusLine(
         isEn
-          ? 'Sapphire Spectrum · Express A4 Contract & Invoice Generator'
-          : 'Сапфировый спектр · Экспресс-генератор договора и счета А4'
+          ? 'Express A4 Contract & Invoice Generator'
+          : 'Генератор договора, счета и акта А4'
       );
+    } else if (mode === 'brief') {
+      setActiveCanvasMode('brief');
+      void handleRunLiveServerAiBrief(customTopic);
     }
   };
 
@@ -710,7 +771,10 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
 
     const lower = trimmed.toLowerCase();
     if (
-      (lower.includes('договор') || lower.includes('счет') || lower.includes('акт') || lower.includes('contract')) &&
+      (lower.includes('договор') ||
+        lower.includes('счет') ||
+        lower.includes('акт') ||
+        lower.includes('contract')) &&
       !lower.includes('сделк') &&
       !lower.includes('перенес')
     ) {
@@ -745,7 +809,6 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       dueDate: getIsoDateOffset(3),
     };
     setStagingRows((prev) => [...prev, newRow]);
-    setEditingTitleRowId(newId);
   };
 
   const cyclePriority = (current: TaskPriority): TaskPriority => {
@@ -761,20 +824,20 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       return {
         label: isEn ? 'High' : 'Высокий',
         className:
-          'bg-rose-500/10 text-rose-600 dark:text-rose-300 border-rose-500/25 hover:bg-rose-500/20',
+          'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/30 dark:hover:bg-rose-500/25',
       };
     }
     if (norm === 'low') {
       return {
         label: isEn ? 'Low' : 'Низкий',
         className:
-          'bg-slate-500/10 text-slate-600 dark:text-zinc-300 border-slate-400/25 hover:bg-slate-500/20',
+          'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/70 dark:bg-white/[0.06] dark:text-zinc-300 dark:border-white/10 dark:hover:bg-white/10',
       };
     }
     return {
       label: isEn ? 'Medium' : 'Средний',
       className:
-        'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25 hover:bg-amber-500/20',
+        'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30 dark:hover:bg-amber-500/25',
     };
   };
 
@@ -815,7 +878,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
             department: item.department || 'Отдел продаж',
             assigned_to: item.assignedTo || currentUser?.id || null,
             owner_node_id: item.assignedTo || currentUser?.id || null,
-            notes: `Создано через оптический терминал Teddy`,
+            notes: `Создано через CloudCode AI Console`,
           };
           await fetch('/api/db', {
             method: 'POST',
@@ -850,7 +913,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
           const payloadRecord = {
             company_id: companyId,
             title: item.title.trim(),
-            description: `Создано через оптический терминал Teddy`,
+            description: `Создано через CloudCode AI Console`,
             status: 'Todo' as const,
             priority: item.priority,
             department: item.department,
@@ -899,14 +962,14 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
         );
 
       const msg = isEn
-        ? `Batch executed (${summaryParts.join(', ')}).`
-        : `Пакет выполнен в БД (${summaryParts.join(', ')}).`;
+        ? `Executed in workspace (${summaryParts.join(', ')}).`
+        : `Выполнено в рабочем контуре (${summaryParts.join(', ')}).`;
       recordImmutableAuditEntry({
         companyId,
         actorId: currentUser?.id,
         actorName: currentUser?.name || 'Admin',
         actorRole: currentUser?.role_type || 'Manager',
-        actionType: 'Teddy AI Batch Commit',
+        actionType: 'CloudCode AI Batch Commit',
         targetEntity: 'tasks / crm_leads',
         details: summaryParts.join(', '),
       });
@@ -920,31 +983,75 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const selectedLeadForContract =
     leads.find((l) => l.id === selectedContractLeadId) || leads[0] || null;
   const checkedCount = stagingRows.filter((r) => r.checked).length;
-  const isBeamActive = isListening || isApplyingDb || inputText.trim().length > 0;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="max-w-3xl w-full max-h-[88vh] rounded-2xl bg-white/95 dark:bg-[#090A0F]/95 backdrop-blur-3xl border border-slate-200/90 dark:border-white/[0.09] text-slate-900 dark:text-zinc-100 shadow-[0_32px_90px_-15px_rgba(15,23,42,0.18)] dark:shadow-[0_32px_90px_-15px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden relative"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpenAssigneePopoverRowId(null);
-          setOpenDeptPopoverRowId(null);
-        }}
+        className="max-w-4xl w-full max-h-[90vh] rounded-2xl bg-white dark:bg-[#0E1017] border border-slate-200 dark:border-white/[0.1] text-slate-900 dark:text-zinc-100 shadow-2xl flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* =================================================================
-            1. SPOTLIGHT COMMAND BAR + VOICE TERMINAL + OPTICAL REFRACTION LINE
+            1. ARCHITECTURAL HEADER (CloudCode / Linear Style)
         ================================================================== */}
-        <form onSubmit={handleSendMessage} className="shrink-0 relative">
-          <div className="px-5 py-3.5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-slate-900 dark:bg-white/[0.05] border border-slate-800 dark:border-white/[0.12] text-white flex items-center justify-center shrink-0 shadow-xs">
-              <TeddyPrismIcon className="w-5 h-5" />
+        <div className="px-5 py-3.5 border-b border-slate-200/90 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#12151E] flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-slate-900 text-white dark:bg-white/[0.08] dark:border dark:border-white/[0.14] flex items-center justify-center shrink-0">
+              <TeddyPrismIcon className="w-4 h-4" />
             </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
+                  TedCloud Intelligence
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200/80 text-slate-700 dark:bg-white/[0.07] dark:text-zinc-300">
+                  CloudCode Core
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-zinc-400 truncate">
+                {statusLine}
+              </p>
+            </div>
+          </div>
 
-            <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-md border text-[11px] font-semibold tabular-nums ${
+                quotaState.isExhausted
+                  ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300'
+                  : 'border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300'
+              }`}
+              title={isEn ? 'Daily AI Operations Quota' : 'Суточный лимит операций ИИ по тарифу'}
+            >
+              {isEn ? quotaState.labelEn : quotaState.labelRu}
+            </span>
+
+            <span className="hidden md:inline-flex items-center px-2 py-1 rounded-md border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04] text-[10px] font-semibold text-slate-600 dark:text-zinc-400">
+              Alt+Space
+            </span>
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={isEn ? 'Close' : 'Закрыть'}
+              className="w-8 h-8 rounded-lg inline-flex items-center justify-center border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/[0.08] transition shrink-0 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* =================================================================
+            2. COMMAND PROMPT BAR + 5 SCENARIO TABS
+        ================================================================== */}
+        <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0E1017] space-y-3 shrink-0">
+          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-2.5 rounded-xl border border-slate-300 dark:border-white/[0.12] bg-slate-50/70 dark:bg-[#141722] px-3.5 py-2 focus-within:border-indigo-600 dark:focus-within:border-indigo-500 transition">
+              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 select-none">
+                &gt;_
+              </span>
               <input
                 ref={spotlightInputRef}
                 type="text"
@@ -952,124 +1059,156 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder={
                   isEn
-                    ? 'Teddy Spotlight: "Move Lytnev tasks to Friday and create Severstal deal for 1.2M"...'
-                    : 'Команда Teddy: «Перенеси задачи Лытнева на пятницу и создай сделку Северсталь на 1.2 млн»...'
+                    ? 'Enter command or goal: "Move Lytnev tasks to Friday and create Severstal deal for 1.2M"...'
+                    : 'Введите цель или команду: «Перенеси задачи Лытнева на пятницу и создай сделку Северсталь на 1.2 млн»...'
                 }
-                className="w-full !bg-transparent !border-0 text-xs sm:text-sm font-medium text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none"
+                className="w-full !bg-transparent !border-0 text-xs sm:text-sm font-medium text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none"
               />
             </div>
 
-            {/* Right Controls: Voice Microphone + Refract Submit + Close */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={handleToggleVoiceRecognition}
-                title={
-                  isEn
-                    ? 'Voice Terminal (Speech-to-Action)'
-                    : 'Голосовой терминал (распознавание речи в задачи и сделки)'
-                }
-                className={`h-8 px-2.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
-                  isListening
-                    ? 'border-rose-500/40 bg-rose-500/15 text-rose-600 dark:text-rose-300 animate-pulse'
-                    : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-white/[0.08]'
-                }`}
-              >
-                {isListening ? (
-                  <>
-                    <MicOff className="w-3.5 h-3.5 text-rose-500" />
-                    <span className="hidden sm:inline text-[11px]">
-                      {isEn ? 'Listening...' : 'Слушаю...'}
-                    </span>
-                  </>
-                ) : (
-                  <Mic className="w-3.5 h-3.5" />
-                )}
-              </button>
-
-              {inputText.trim() && (
-                <button
-                  type="submit"
-                  className="h-8 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 !text-white text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-                >
-                  <span>{isEn ? 'Refract' : 'Преломить'}</span>
-                  <CornerDownLeft className="w-3.5 h-3.5" />
-                </button>
+            <button
+              type="button"
+              onClick={handleToggleVoiceRecognition}
+              title={
+                isEn
+                  ? 'Voice dictation (Speech-to-Plan)'
+                  : 'Голосовой ввод команды (распознавание речи в задачи и сделки)'
+              }
+              className={`h-10 px-3 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
+                isListening
+                  ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300 animate-pulse'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-[#141722] dark:text-zinc-200 dark:hover:bg-white/[0.08]'
+              }`}
+            >
+              {isListening ? (
+                <>
+                  <MicOff className="w-4 h-4 text-rose-500" />
+                  <span className="hidden sm:inline">{isEn ? 'Listening...' : 'Слушаю...'}</span>
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4 text-slate-600 dark:text-zinc-300" />
+                  <span className="hidden md:inline">{isEn ? 'Voice' : 'Голос'}</span>
+                </>
               )}
+            </button>
 
-              <span
-                className={`hidden sm:inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-semibold tabular-nums ${
-                  quotaState.isExhausted
-                    ? 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-300'
-                    : 'border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-secondary)]'
-                }`}
-                title={isEn ? 'Daily AI Operations Quota' : 'Суточный лимит операций Teddy AI по тарифу'}
-              >
-                {isEn ? quotaState.labelEn : quotaState.labelRu}
-              </span>
+            <button
+              type="submit"
+              className="tc-btn-primary h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+            >
+              <span>{isEn ? 'Generate Plan' : 'Сформировать'}</span>
+              <CornerDownLeft className="w-3.5 h-3.5" />
+            </button>
+          </form>
 
-              <span className="hidden md:inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] text-[10px] font-medium text-slate-500 dark:text-zinc-400">
-                Alt+Space
-              </span>
-
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={isEn ? 'Close' : 'Закрыть'}
-                className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.06] transition shrink-0 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+          {/* 5 Clean Scenario Mode Selector Buttons */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                {
+                  id: 'decompose' as CloudCodeCanvasMode,
+                  label: isEn ? 'Decompose Goal' : 'Декомпозиция цели',
+                  icon: Layers,
+                },
+                {
+                  id: 'rebalance' as CloudCodeCanvasMode,
+                  label: isEn ? 'SLA & Staff Balance' : 'Балансировка штата и SLA',
+                  icon: SlidersHorizontal,
+                },
+                {
+                  id: 'deals_audit' as CloudCodeCanvasMode,
+                  label: isEn ? 'CRM Pipeline Follow-up' : 'Дожим сделок CRM',
+                  icon: Briefcase,
+                },
+                {
+                  id: 'contract' as CloudCodeCanvasMode,
+                  label: isEn ? 'A4 Document Generator' : 'Договор и счет А4',
+                  icon: FileText,
+                },
+                {
+                  id: 'brief' as CloudCodeCanvasMode,
+                  label: isEn ? 'Executive Audit' : 'Аналитическая сводка',
+                  icon: Activity,
+                },
+              ] as const
+            ).map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeCanvasMode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => triggerQuickAction(tab.id)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                    isActive
+                      ? 'border-indigo-600 bg-indigo-600 !text-white shadow-2xs'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
-
-          {/* OPTICAL REFRACTION LINE (h-[2px] w-full) */}
-          <div
-            className={`h-[2px] w-full transition-all duration-500 ${
-              isBeamActive
-                ? 'bg-gradient-to-r from-white via-amber-400 via-emerald-400 via-sky-500 to-violet-500 opacity-100 shadow-[0_0_12px_rgba(59,130,246,0.55)]'
-                : 'bg-gradient-to-r from-slate-200 via-amber-400/50 via-emerald-400/50 via-sky-500/50 to-violet-500/50 dark:from-white/20 dark:via-amber-400/40 dark:via-emerald-400/40 dark:via-sky-500/40 dark:to-violet-500/40 opacity-75'
-            }`}
-          />
-        </form>
+        </div>
 
         {/* =================================================================
-            2. UNIFIED OPTICAL STREAM: 3 PROACTIVE EXECUTIVE INSIGHTS + STAGING CARDS
+            3. MAIN SCROLLABLE AI WORKSPACE (Zero Horizontal Scrollbars)
         ================================================================== */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
-          {/* PROACTIVE EXECUTIVE DIRECTOR: 3 LIVE INSIGHTS (Calculated in Real Time) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
-                {isEn
-                  ? 'Proactive Executive Director · 3 Real-Time Decisions'
-                  : 'Проактивный исполнительный аудит · 3 готовых решения в 1 клик'}
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-zinc-400 truncate max-w-[280px]">
-                {statusLine}
-              </span>
+          {/* EXECUTIVE DIAGNOSTIC BRIEF & 3 COMPACT OPERATIONAL CARDS */}
+          <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-slate-50/70 dark:bg-[#12151E] p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-zinc-200">
+                  {isEn
+                    ? 'Live Operational Diagnosis'
+                    : 'Оперативная диагностика рабочего контура'}
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled={isQueryingAi}
+                onClick={() => void handleRunLiveServerAiBrief(inputText)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-white/[0.1] dark:text-zinc-200 text-[11px] font-semibold transition cursor-pointer disabled:opacity-50"
+              >
+                {isQueryingAi ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Activity className="w-3 h-3 text-indigo-500" />
+                )}
+                <span>{isEn ? 'Refresh AI Audit' : 'Обновить AI-сводку'}</span>
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-              {/* Insight 1: Bottleneck & Deadlines (Amber / Violet Spectrum) */}
-              <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] border-l-2 border-l-[#F59E0B] bg-slate-50/70 dark:bg-white/[0.02] p-3 flex flex-col justify-between gap-2.5">
+            <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed">
+              {aiAnalysisSummary || buildDefaultExecutiveSummary()}
+            </p>
+
+            {/* 3 Clean Single-Elevation Quick Cards (No thick colored left borders) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+              {/* Card 1: Workload Balance */}
+              <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-[#161924] p-3 flex flex-col justify-between gap-2.5">
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {isEn ? 'Bottleneck & SLA' : 'Узкое место и сроки'}
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-400 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-500" />
+                      {isEn ? 'Staff Load & SLA' : 'Нагрузка и сроки'}
                     </span>
-                    <span className="text-[10px] font-semibold tabular-nums px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                    <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30">
                       {executiveInsights.busiest.count} {isEn ? 'tasks' : 'задач'}
                     </span>
                   </div>
-                  <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
                     {executiveInsights.busiest.node?.name || 'Сотрудник'}
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 leading-snug">
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 leading-snug truncate">
                     {isEn
-                      ? `Reassign load to ${executiveInsights.leastBusy.node?.name || 'available staff'} (${executiveInsights.leastBusy.count} active)`
-                      : `Свободный ресурс: ${executiveInsights.leastBusy.node?.name || 'штат'} (${executiveInsights.leastBusy.count} в работе)`}
+                      ? `Available: ${executiveInsights.leastBusy.node?.name || 'Staff'} (${executiveInsights.leastBusy.count} active)`
+                      : `Свободен: ${executiveInsights.leastBusy.node?.name || 'штат'} (${executiveInsights.leastBusy.count} в раб.)`}
                   </p>
                 </div>
                 <button
@@ -1080,424 +1219,276 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                     setActiveCanvasMode('rebalance');
                     void handleCommitToDatabase(rebRows);
                   }}
-                  className="w-full h-7 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 !text-white dark:bg-white/10 dark:hover:bg-white/15 dark:!text-white text-[11px] font-semibold inline-flex items-center justify-between gap-1 transition cursor-pointer"
+                  className="w-full h-8 px-3 rounded-lg border border-slate-200 bg-slate-100 hover:bg-slate-200/80 text-slate-800 dark:border-white/10 dark:bg-white/[0.06] dark:hover:bg-white/[0.12] dark:text-zinc-100 text-[11px] font-semibold inline-flex items-center justify-between gap-1.5 transition cursor-pointer"
                 >
                   <span className="truncate">
                     {isEn ? 'Rebalance in 1 Click' : 'Перераспределить в 1 клик'}
                   </span>
-                  <ArrowRight className="w-3 h-3 shrink-0" />
+                  <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                 </button>
               </div>
 
-              {/* Insight 2: Money in CRM Pipeline (Emerald Spectrum) */}
-              <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] border-l-2 border-l-[#10B981] bg-slate-50/70 dark:bg-white/[0.02] p-3 flex flex-col justify-between gap-2.5">
+              {/* Card 2: Priority CRM Deal */}
+              <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-[#161924] p-3 flex flex-col justify-between gap-2.5">
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <Briefcase className="w-3 h-3" />
-                      {isEn ? 'Money in CRM' : 'Деньги в воронке CRM'}
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-400 flex items-center gap-1">
+                      <Briefcase className="w-3.5 h-3.5 text-emerald-500" />
+                      {isEn ? 'CRM Pipeline' : 'Приоритет CRM'}
                     </span>
-                    <span className="text-[10px] font-semibold tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                      {formatMoney(Number(executiveInsights.topDeal?.amount || 450000))}
+                    <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30">
+                      {executiveInsights.topDeal
+                        ? formatMoney(Number(executiveInsights.topDeal.amount || 0))
+                        : formatMoney(0)}
                     </span>
                   </div>
-                  <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
                     {executiveInsights.topDeal?.client_name ||
                       executiveInsights.topDeal?.title ||
-                      'Ключевой контрагент'}
+                      (isEn ? 'Active Pipeline' : 'Активная сделка')}
                   </div>
                   <p className="text-[11px] text-slate-600 dark:text-zinc-400 leading-snug">
                     {isEn
-                      ? 'Requires commercial follow-up & invoice approval'
-                      : 'Требует контрольного дожима ЛПР и выставления счета'}
+                      ? 'Schedule control follow-up & invoice'
+                      : 'Поставить задачу на дожим ЛПР и счет'}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
-                    const auditRows = buildDealsAuditRows();
-                    setStagingRows(auditRows);
+                    const crmRows = buildDealsAuditRows().slice(0, 1);
+                    setStagingRows(crmRows);
                     setActiveCanvasMode('deals_audit');
-                    void handleCommitToDatabase(auditRows.slice(0, 1));
+                    void handleCommitToDatabase(crmRows);
                   }}
-                  className="w-full h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 !text-white text-[11px] font-semibold inline-flex items-center justify-between gap-1 transition cursor-pointer"
+                  className="w-full h-8 px-3 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:hover:bg-emerald-500/25 dark:text-emerald-200 text-[11px] font-semibold inline-flex items-center justify-between gap-1.5 transition cursor-pointer"
                 >
                   <span className="truncate">
                     {isEn ? 'Create Follow-Up Task' : 'Создать задачу на дожим'}
                   </span>
-                  <ArrowRight className="w-3 h-3 shrink-0" />
+                  <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                 </button>
               </div>
 
-              {/* Insight 3: Express A4 Document (Sapphire Spectrum) */}
-              <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] border-l-2 border-l-[#3B82F6] bg-slate-50/70 dark:bg-white/[0.02] p-3 flex flex-col justify-between gap-2.5">
+              {/* Card 3: Express A4 Document */}
+              <div className="rounded-xl border border-slate-200/90 dark:border-white/[0.08] bg-white dark:bg-[#161924] p-3 flex flex-col justify-between gap-2.5">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                      <FileText className="w-3 h-3" />
-                      {isEn ? 'Express A4 Document' : 'Экспресс-документ А4'}
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-400 flex items-center gap-1">
+                      <FileText className="w-3.5 h-3.5 text-indigo-500" />
+                      {isEn ? 'A4 Legal Document' : 'Документ А4 по сделке'}
                     </span>
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-300">
-                      0.1s
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-white/[0.06] dark:text-zinc-300">
+                      PDF / A4
                     </span>
                   </div>
+
                   <select
                     value={selectedContractLeadId}
                     onChange={(e) => setSelectedContractLeadId(e.target.value)}
-                    className="w-full h-7 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#12141C] px-2 text-[11px] font-medium text-slate-900 dark:text-white focus:outline-none"
+                    aria-label={isEn ? 'Select CRM Deal' : 'Выберите сделку CRM'}
+                    className="w-full h-7 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#12151E] px-2 text-[11px] font-medium text-slate-900 dark:text-white focus:outline-none"
                   >
-                    {leads.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.client_name || l.title} ({formatMoney(Number(l.amount || 0))})
+                    {leads.length === 0 ? (
+                      <option value="">
+                        {isEn ? 'No deals available' : 'Нет активных сделок'}
                       </option>
-                    ))}
+                    ) : (
+                      leads.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.client_name || l.title} ({formatMoney(Number(l.amount || 0))})
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => {
                     if (selectedLeadForContract && onOpenLegalDocModal) {
                       onOpenLegalDocModal(selectedLeadForContract, 'contract');
-                    } else {
-                      triggerQuickAction('contract');
                     }
                   }}
-                  className="w-full h-7 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 !text-white text-[11px] font-semibold inline-flex items-center justify-between gap-1 transition cursor-pointer"
+                  disabled={!selectedLeadForContract}
+                  className="w-full h-8 px-3 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:hover:bg-indigo-500/25 dark:text-indigo-200 disabled:opacity-40 text-[11px] font-semibold inline-flex items-center justify-between gap-1.5 transition cursor-pointer"
                 >
                   <span className="truncate">
-                    {isEn ? 'Generate A4 Contract & Invoice' : 'Сформировать договор и счет А4'}
+                    {isEn ? 'Open Contract & Invoice A4' : 'Открыть договор и счет А4'}
                   </span>
-                  <Printer className="w-3 h-3 shrink-0" />
+                  <Printer className="w-3.5 h-3.5 shrink-0" />
                 </button>
               </div>
             </div>
           </div>
 
           {appliedSuccessBanner && (
-            <div className="rounded-xl border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-2.5 text-xs font-semibold text-emerald-900 dark:text-emerald-300 flex items-center gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span>{appliedSuccessBanner}</span>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 px-3.5 py-2.5 flex items-center justify-between gap-3 text-xs font-medium">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>{appliedSuccessBanner}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAppliedSuccessBanner(null)}
+                className="text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
           {/* =================================================================
-              3. SPECTRAL ACTION STREAM (PRISM DISPERSION CARDS OR A4 SHEET)
+              4. ACTION PLAN CARDS (Full-Width Titles + Structured 4-Col Metadata)
           ================================================================== */}
-          {activeCanvasMode === 'contract' ? (
-            <div className="space-y-4">
-              <div className="tc-a4-paper rounded-xl border border-slate-300 p-5 shadow-sm space-y-3.5 text-xs">
-                <div className="flex items-start justify-between border-b border-slate-300 pb-3">
-                  <div>
-                    <div className="text-sm font-bold uppercase tracking-tight">
-                      {isEn
-                        ? `COMMERCIAL CONTRACT #TC-${new Date().getFullYear()}-09`
-                        : `ДОГОВОР ПОСТАВКИ И РАБОТ № TC-${new Date().getFullYear()}-09`}
-                    </div>
-                    <div className="text-[11px] mt-0.5">
-                      {isEn ? 'City of Moscow' : 'г. Москва'} ·{' '}
-                      {new Date().toLocaleDateString(isEn ? 'en-US' : 'ru-RU')}
-                    </div>
-                  </div>
-                  <span className="tc-a4-badge px-2.5 py-1 rounded-md bg-slate-900 !text-white text-[11px] font-semibold">
-                    B2B A4
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <div className="text-[10px] font-semibold uppercase text-slate-600">
-                      {isEn ? 'Supplier / Contractor' : 'Исполнитель'}
-                    </div>
-                    <div className="font-semibold mt-0.5">{companyName}</div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <div className="text-[10px] font-semibold uppercase text-slate-600">
-                      {isEn ? 'Client / Counterparty' : 'Заказчик'}
-                    </div>
-                    <div className="font-semibold mt-0.5">
-                      {selectedLeadForContract?.client_name ||
-                        selectedLeadForContract?.title ||
-                        'ООО «Северсталь Контур»'}
-                    </div>
-                    <div className="text-[11px] mt-0.5">
-                      {selectedLeadForContract?.contact || 'Дирекция закупок'}
-                    </div>
-                  </div>
-                </div>
-
-                <table className="w-full border-collapse border border-slate-300 text-xs">
-                  <thead>
-                    <tr>
-                      <th className="border border-slate-300 py-2 px-3 text-left">
-                        {isEn ? 'Item / Deliverable' : 'Наименование работ / поставки'}
-                      </th>
-                      <th className="border border-slate-300 py-2 px-3 text-right">
-                        {isEn ? 'Amount' : 'Сумма'}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="border border-slate-300 py-2 px-3">
-                        {selectedLeadForContract?.notes ||
-                          (isEn
-                            ? 'Enterprise license & implementation package'
-                            : 'Комплексная поставка и внедрение по спецификации')}
-                      </td>
-                      <td className="border border-slate-300 py-2 px-3 text-right font-semibold tabular-nums">
-                        {formatMoney(Number(selectedLeadForContract?.amount || 450000))}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                  {isEn
+                    ? 'Action Plan & Database Staging (Editable)'
+                    : 'План действий к исполнению в базе данных (все поля редактируемы)'}
+                </h3>
+                <p className="text-[11px] text-slate-600 dark:text-zinc-400">
+                  {isEn
+                    ? 'Review or adjust titles, departments, assignees, priorities, and deadlines before committing.'
+                    : 'Проверьте формулировки задач, подразделения, ответственных и сроки перед записью в рабочее пространство.'}
+                </p>
               </div>
 
-              <div className="flex flex-wrap items-center justify-end gap-2.5">
-                {selectedLeadForContract && onOpenLegalDocModal && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenLegalDocModal(selectedLeadForContract, 'contract')}
-                    className="h-9 px-4 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-[#181B26] text-slate-900 dark:text-zinc-100 text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>{isEn ? 'Open Print A4' : 'Открыть печать А4'}</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => triggerQuickAction('decompose')}
-                  className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{isEn ? 'Back to Action Package' : 'К пакету поручений'}</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleAddBlankRow}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-white/[0.1] dark:text-zinc-200 text-xs font-semibold transition cursor-pointer shrink-0 shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{isEn ? 'Add Step' : 'Добавить шаг'}</span>
+              </button>
             </div>
-          ) : (
+
             <div className="space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">
-                    {isEn
-                      ? 'Refracted Action Package'
-                      : 'Пакет прямого действия (кликните по любому полю для правки)'}
-                  </span>
-                  <div className="hidden sm:flex items-center gap-1.5 text-[10px]">
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
-                      {isEn ? 'SLA' : 'Задачи'}
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
-                      CRM
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-300">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#3B82F6]" />
-                      A4
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-700 dark:text-violet-300">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6]" />
-                      {isEn ? 'Team' : 'Штат'}
-                    </span>
-                  </div>
-                </div>
+              {stagingRows.map((row, idx) => {
+                const modeMeta = getModeTagMeta(row.mode, isEn);
+                const prioMeta = getPriorityBadgeMeta(row.priority);
+                const assignedEmp =
+                  nodes.find((n) => n.id === row.assignedTo) || currentUser;
 
-                <button
-                  type="button"
-                  onClick={handleAddBlankRow}
-                  className="h-7 px-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] text-slate-800 dark:text-zinc-200 text-[11px] font-medium inline-flex items-center gap-1 hover:bg-slate-200/70 dark:hover:bg-white/[0.08] transition cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{isEn ? 'Add Card' : 'Добавить действие'}</span>
-                </button>
-              </div>
+                return (
+                  <div
+                    key={row.id}
+                    className={`rounded-xl border transition-all p-3.5 space-y-2.5 ${
+                      row.checked
+                        ? 'border-slate-200/90 dark:border-white/[0.1] bg-white dark:bg-[#141722] shadow-2xs'
+                        : 'border-slate-200/50 dark:border-white/[0.04] bg-slate-50/50 dark:bg-white/[0.01] opacity-60'
+                    }`}
+                  >
+                    {/* Top Row: Checkbox + Step Number & Mode Badge + Full-Width Editable Title + Delete */}
+                    <div className="flex items-start gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateRow(row.id, { checked: !row.checked })}
+                        className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition cursor-pointer ${
+                          row.checked
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'border-slate-300 dark:border-white/20 bg-transparent'
+                        }`}
+                        aria-label={isEn ? 'Toggle step' : 'Выбрать шаг'}
+                      >
+                        {row.checked && <Check className="w-3.5 h-3.5" />}
+                      </button>
 
-              <div className="space-y-2">
-                {stagingRows.map((row) => {
-                  const assigneeNode =
-                    nodes.find((n) => String(n.id) === String(row.assignedTo)) ||
-                    currentUser ||
-                    nodes[0];
-                  const prioMeta = getPriorityBadgeMeta(row.priority);
-                  const spectrumMeta = getSpectrumBadgeMeta(row.spectrum, isEn);
-                  const isAssigneeOpen = openAssigneePopoverRowId === row.id;
-                  const isDeptOpen = openDeptPopoverRowId === row.id;
-                  const isEditingTitle = editingTitleRowId === row.id;
-
-                  return (
-                    <div
-                      key={row.id}
-                      className={`group relative rounded-xl border ${getSpectrumBorderClass(
-                        row.spectrum
-                      )} transition px-3.5 py-2.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 ${
-                        row.checked
-                          ? 'border-slate-200/90 dark:border-white/[0.09] bg-white dark:bg-[#12141E] shadow-2xs'
-                          : 'border-slate-200/50 dark:border-white/[0.04] bg-slate-50/50 dark:bg-[#0E1018]/60 opacity-60'
-                      }`}
-                    >
-                      {/* Left: Checkbox + Spectrum Tag + Editable Title */}
-                      <div className="flex items-center gap-2.5 flex-1 min-w-[200px]">
-                        <input
-                          type="checkbox"
-                          checked={row.checked}
-                          onChange={(e) =>
-                            handleUpdateRow(row.id, { checked: e.target.checked })
-                          }
-                          className="w-4 h-4 rounded accent-indigo-600 shrink-0 cursor-pointer"
-                        />
-
-                        <span
-                          className={`hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-semibold shrink-0 ${spectrumMeta.bg} ${spectrumMeta.text}`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${spectrumMeta.dot}`} />
-                          <span>{spectrumMeta.label}</span>
-                        </span>
-
-                        {isEditingTitle ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            value={row.title}
-                            onChange={(e) =>
-                              handleUpdateRow(row.id, { title: e.target.value })
-                            }
-                            onBlur={() => setEditingTitleRowId(null)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === 'Escape') {
-                                setEditingTitleRowId(null);
-                              }
-                            }}
-                            className="flex-1 h-7 rounded-md border border-indigo-500 bg-white dark:bg-zinc-900 px-2 text-xs font-medium text-slate-900 dark:text-zinc-100"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setEditingTitleRowId(row.id)}
-                            title={
-                              isEn ? 'Click to edit title' : 'Нажмите для редактирования текста'
-                            }
-                            className="flex-1 text-left text-xs font-medium text-slate-900 dark:text-zinc-100 hover:text-indigo-600 dark:hover:text-indigo-400 truncate cursor-text"
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 tabular-nums">
+                            #{idx + 1}
+                          </span>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-semibold ${modeMeta.badgeClass}`}
                           >
-                            {row.title}
-                          </button>
-                        )}
+                            {modeMeta.label}
+                          </span>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={row.title}
+                          onChange={(e) => handleUpdateRow(row.id, { title: e.target.value })}
+                          placeholder={
+                            isEn ? 'Enter task or action title...' : 'Введите название задачи или действия...'
+                          }
+                          className="w-full rounded-lg border border-transparent hover:border-slate-200 focus:border-indigo-500 dark:hover:border-white/10 bg-transparent px-2 py-1 -mx-2 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:outline-none transition"
+                        />
                       </div>
 
-                      {/* Right: Department Pill + Assignee Avatar Popover + Priority Pill + Date + Delete */}
-                      <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap shrink-0">
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenAssigneePopoverRowId(null);
-                              setOpenDeptPopoverRowId(isDeptOpen ? null : row.id);
-                            }}
-                            className="h-7 px-2.5 rounded-lg border border-slate-200/90 dark:border-white/10 bg-slate-100 dark:bg-zinc-800/90 text-[11px] font-medium text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1 hover:bg-slate-200/70 transition cursor-pointer max-w-[130px]"
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRow(row.id)}
+                        className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:text-zinc-500 dark:hover:text-rose-400 dark:hover:bg-rose-500/10 transition shrink-0 cursor-pointer"
+                        title={isEn ? 'Remove step' : 'Удалить из пакета'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Bottom Row: 4-Column Responsive Metadata Controls (Department, Assignee, Priority, Deadline) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-2 border-t border-slate-100 dark:border-white/[0.06]">
+                      {/* 1. Department Select */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                          {isEn ? 'Department' : 'Подразделение'}
+                        </label>
+                        <select
+                          value={row.department}
+                          onChange={(e) =>
+                            handleUpdateRow(row.id, { department: e.target.value })
+                          }
+                          className="w-full h-8 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#0E1017] px-2.5 text-xs font-medium text-slate-800 dark:text-zinc-200 focus:outline-none"
+                        >
+                          {departments.map((dept) => (
+                            <option key={dept} value={dept}>
+                              {dept}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 2. Assignee Select with Avatar Preview */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                          {isEn ? 'Assignee' : 'Ответственный'}
+                        </label>
+                        <div className="flex items-center gap-1.5 h-8 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#0E1017] px-2">
+                          <UserAvatar
+                            name={assignedEmp?.name || 'TC'}
+                            avatarUrl={assignedEmp?.avatar_url}
+                            size="xs"
+                          />
+                          <select
+                            value={row.assignedTo}
+                            onChange={(e) =>
+                              handleUpdateRow(row.id, {
+                                assignedTo: e.target.value,
+                                department:
+                                  nodes.find((n) => n.id === e.target.value)?.department ||
+                                  row.department,
+                              })
+                            }
+                            className="flex-1 min-w-0 !bg-transparent !border-0 text-xs font-medium text-slate-800 dark:text-zinc-200 focus:outline-none truncate"
                           >
-                            <span className="truncate">{row.department}</span>
-                            <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
-                          </button>
-
-                          {isDeptOpen && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 top-8 z-30 w-48 rounded-xl border border-slate-200 dark:border-white/12 bg-white dark:bg-[#181B26] shadow-xl p-1.5 space-y-0.5"
-                            >
-                              {departments.map((dept) => (
-                                <button
-                                  key={dept}
-                                  type="button"
-                                  onClick={() => {
-                                    handleUpdateRow(row.id, { department: dept });
-                                    setOpenDeptPopoverRowId(null);
-                                  }}
-                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between cursor-pointer ${
-                                    row.department === dept
-                                      ? 'bg-indigo-600 !text-white font-semibold'
-                                      : 'text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
-                                  }`}
-                                >
-                                  <span className="truncate">{dept}</span>
-                                  {row.department === dept && <Check className="w-3.5 h-3.5 shrink-0" />}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                            {nodes.map((emp) => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
+                      </div>
 
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenDeptPopoverRowId(null);
-                              setOpenAssigneePopoverRowId(isAssigneeOpen ? null : row.id);
-                            }}
-                            className="h-7 pl-1.5 pr-2.5 rounded-lg border border-slate-200/90 dark:border-white/10 bg-slate-100 dark:bg-zinc-800/90 text-[11px] font-medium text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1.5 hover:bg-slate-200/70 transition cursor-pointer max-w-[150px]"
-                          >
-                            <UserAvatar
-                              name={assigneeNode?.name || 'Сотрудник'}
-                              avatarUrl={assigneeNode?.avatar_url}
-                              size="xs"
-                            />
-                            <span className="truncate">
-                              {assigneeNode?.name || 'Назначить'}
-                            </span>
-                            <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
-                          </button>
-
-                          {isAssigneeOpen && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 top-8 z-30 w-56 max-h-56 overflow-y-auto rounded-xl border border-slate-200 dark:border-white/12 bg-white dark:bg-[#181B26] shadow-xl p-1.5 space-y-0.5"
-                            >
-                              {nodes.map((emp) => {
-                                const isSel = String(emp.id) === String(row.assignedTo);
-                                return (
-                                  <button
-                                    key={emp.id}
-                                    type="button"
-                                    onClick={() => {
-                                      handleUpdateRow(row.id, {
-                                        assignedTo: emp.id,
-                                        ...(emp.department ? { department: emp.department } : {}),
-                                      });
-                                      setOpenAssigneePopoverRowId(null);
-                                    }}
-                                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between gap-2 cursor-pointer ${
-                                      isSel
-                                        ? 'bg-indigo-600 !text-white font-semibold'
-                                        : 'text-slate-800 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <UserAvatar
-                                        name={emp.name}
-                                        avatarUrl={emp.avatar_url}
-                                        size="xs"
-                                      />
-                                      <div className="min-w-0">
-                                        <div className="truncate">{emp.name}</div>
-                                        <div
-                                          className={`text-[10px] truncate ${
-                                            isSel
-                                              ? '!text-indigo-100'
-                                              : 'text-slate-500 dark:text-zinc-400'
-                                          }`}
-                                        >
-                                          {emp.role_type}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    {isSel && <Check className="w-3.5 h-3.5 shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-
+                      {/* 3. Priority Toggle Button */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                          {isEn ? 'Priority' : 'Приоритет'}
+                        </label>
                         <button
                           type="button"
                           onClick={() =>
@@ -1505,107 +1496,58 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                               priority: cyclePriority(row.priority),
                             })
                           }
-                          title={
-                            isEn ? 'Click to switch priority' : 'Нажмите для смены приоритета'
-                          }
-                          className={`h-7 px-2.5 rounded-lg border text-[11px] font-semibold transition cursor-pointer ${prioMeta.className}`}
+                          className={`w-full h-8 px-3 rounded-lg border text-xs font-semibold inline-flex items-center justify-center transition cursor-pointer ${prioMeta.className}`}
                         >
                           {prioMeta.label}
                         </button>
+                      </div>
 
-                        <label className="h-7 px-2 rounded-lg border border-slate-200/90 dark:border-white/10 bg-slate-100 dark:bg-zinc-800/90 text-[11px] font-medium text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1 cursor-pointer">
-                          <Calendar className="w-3 h-3 opacity-65 shrink-0" />
-                          <input
-                            type="date"
-                            value={row.dueDate}
-                            onChange={(e) =>
-                              handleUpdateRow(row.id, { dueDate: e.target.value })
-                            }
-                            className="bg-transparent !border-0 text-[11px] tabular-nums text-slate-800 dark:text-zinc-100 focus:outline-none w-[92px] cursor-pointer"
-                          />
+                      {/* 4. Single Clean Date Picker (Zero duplicate calendar icon) */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                          {isEn ? 'Due Date' : 'Срок исполнения'}
                         </label>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRow(row.id)}
-                          aria-label={isEn ? 'Remove card' : 'Удалить карточку'}
-                          className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <input
+                          type="date"
+                          value={row.dueDate}
+                          onChange={(e) =>
+                            handleUpdateRow(row.id, { dueDate: e.target.value })
+                          }
+                          className="w-full h-8 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#0E1017] px-2.5 text-xs font-medium text-slate-800 dark:text-zinc-200 tabular-nums focus:outline-none"
+                        />
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
+          </div>
         </div>
 
         {/* =================================================================
-            4. BOTTOM SPECTRAL BAR & EXECUTE PACKAGE BUTTON
+            5. FOOTER BAR (Selected Counter + Execute Batch Button)
         ================================================================== */}
-        <div className="px-5 py-3 border-t border-slate-200/80 dark:border-white/[0.08] bg-slate-50/90 dark:bg-[#0D0F17] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => triggerQuickAction('decompose')}
-              className={`h-7 px-2.5 rounded-lg border text-[11px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
-                activeCanvasMode === 'decompose'
-                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-semibold'
-                  : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-zinc-800/90 text-slate-700 dark:text-zinc-200 hover:bg-slate-100'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-[#F59E0B]" />
-              <span>{isEn ? 'Decompose Goal' : 'Разбить цель на задачи'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => triggerQuickAction('deals_audit')}
-              className={`h-7 px-2.5 rounded-lg border text-[11px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
-                activeCanvasMode === 'deals_audit'
-                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-semibold'
-                  : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-zinc-800/90 text-slate-700 dark:text-zinc-200 hover:bg-slate-100'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-[#10B981]" />
-              <span>{isEn ? 'Stalled CRM Deals' : 'Дожим сделок CRM'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => triggerQuickAction('contract')}
-              className={`h-7 px-2.5 rounded-lg border text-[11px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
-                activeCanvasMode === 'contract'
-                  ? 'border-blue-500/40 bg-blue-500/10 text-blue-800 dark:text-blue-300 font-semibold'
-                  : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-zinc-800/90 text-slate-700 dark:text-zinc-200 hover:bg-slate-100'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-[#3B82F6]" />
-              <span>{isEn ? 'A4 Contract' : 'Договор А4'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => triggerQuickAction('rebalance')}
-              className={`h-7 px-2.5 rounded-lg border text-[11px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
-                activeCanvasMode === 'rebalance'
-                  ? 'border-violet-500/40 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold'
-                  : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-zinc-800/90 text-slate-700 dark:text-zinc-200 hover:bg-slate-100'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-[#8B5CF6]" />
-              <span>{isEn ? 'Team Balance' : 'Баланс штата'}</span>
-            </button>
+        <div className="px-5 py-3.5 border-t border-slate-200/90 dark:border-white/[0.08] bg-slate-50/90 dark:bg-[#12151E] flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="text-xs font-medium text-slate-600 dark:text-zinc-400">
+            {isEn
+              ? `Selected actions to execute: ${checkedCount} of ${stagingRows.length}`
+              : `Выбрано действий к выполнению: ${checkedCount} из ${stagingRows.length}`}
           </div>
 
-          {activeCanvasMode !== 'contract' && (
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-9 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-white/[0.1] dark:text-zinc-200 text-xs font-semibold transition cursor-pointer"
+            >
+              {isEn ? 'Close' : 'Закрыть'}
+            </button>
+
             <button
               type="button"
               onClick={() => void handleCommitToDatabase()}
               disabled={isApplyingDb || checkedCount === 0}
-              className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 !text-white text-xs font-semibold inline-flex items-center gap-2 transition cursor-pointer shadow-sm shrink-0"
+              className="tc-btn-primary h-9 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white disabled:opacity-40 text-xs font-semibold inline-flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
             >
               {isApplyingDb ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1614,11 +1556,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
               )}
               <span>
                 {isEn
-                  ? `Execute Package (${checkedCount}) · Enter`
-                  : `Выполнить пакет (${checkedCount}) · Enter`}
+                  ? `Execute in Workspace (${checkedCount})`
+                  : `Выполнить в рабочем контуре (${checkedCount})`}
               </span>
             </button>
-          )}
+          </div>
         </div>
       </div>
     </div>

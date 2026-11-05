@@ -31,6 +31,7 @@ import {
   formatError,
 } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
+import { TeddyPrismIcon } from './TedCloudAiDrawer';
 
 export interface AuthGateProps {
   existingNodes?: OrganizationNode[];
@@ -323,25 +324,25 @@ export const AuthGate: React.FC<AuthGateProps> = ({
     >
       <header className="max-w-6xl w-full mx-auto flex items-center justify-between py-2">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm tracking-tight shadow-xs">
-            TC
+          <div className="w-8 h-8 rounded-lg bg-slate-900 text-white border border-slate-800 dark:bg-white/[0.08] dark:border-white/[0.14] flex items-center justify-center shadow-xs shrink-0">
+            <TeddyPrismIcon className="w-4 h-4" />
           </div>
           <div>
             <span
-              className={`text-sm font-semibold tracking-tight ${
+              className={`text-sm font-bold tracking-tight ${
                 isLight ? 'text-slate-900' : 'text-white'
               }`}
             >
               TedCloud
             </span>
             <span
-              className={`ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+              className={`ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-md border ${
                 isLight
-                  ? 'bg-white border-slate-200 text-slate-600'
-                  : 'bg-zinc-900 border-white/10 text-zinc-400'
+                  ? 'bg-white border-slate-200 text-slate-700'
+                  : 'bg-zinc-900 border-white/10 text-zinc-300'
               }`}
             >
-              Enterprise Workspace
+              CloudCode Workspace
             </span>
           </div>
         </div>

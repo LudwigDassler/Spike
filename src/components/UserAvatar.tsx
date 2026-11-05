@@ -5,110 +5,133 @@ export interface UserAvatarProps {
   avatarUrl?: string | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
-}
-
-export function getInitials(name?: string | null): string {
-  const cleaned = String(name || '').trim();
-  if (!cleaned) return 'TC';
-  const parts = cleaned.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
-
-const AVATAR_GRADIENT_PALETTES = [
-  'bg-gradient-to-br from-indigo-500/25 to-violet-500/10 text-indigo-200 border-indigo-400/30',
-  'bg-gradient-to-br from-emerald-500/25 to-teal-500/10 text-emerald-200 border-emerald-400/30',
-  'bg-gradient-to-br from-amber-500/25 to-orange-500/10 text-amber-200 border-amber-400/30',
-  'bg-gradient-to-br from-sky-500/25 to-blue-500/10 text-sky-200 border-sky-400/30',
-  'bg-gradient-to-br from-rose-500/25 to-pink-500/10 text-rose-200 border-rose-400/30',
-  'bg-gradient-to-br from-fuchsia-500/25 to-purple-500/10 text-fuchsia-200 border-fuchsia-400/30',
-] as const;
-
-export function getDeterministicAvatarPalette(name?: string | null): string {
-  const cleaned = String(name || 'TedCloud').trim();
-  let hash = 0;
-  for (let i = 0; i < cleaned.length; i += 1) {
-    hash = (hash * 31 + cleaned.charCodeAt(i)) >>> 0;
-  }
-  return AVATAR_GRADIENT_PALETTES[hash % AVATAR_GRADIENT_PALETTES.length];
-}
-
-/**
- * Сжимает и обрезает загруженный файл фотографии до компактного квадрата 160x160 (JPEG, 0.82)
- * и возвращает Base64 Data URL для мгновенного сохранения в organization_nodes.avatar_url.
- */
-export function cropAndCompressAvatarToDataUrl(file: File, targetSize = 160): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Не удалось прочитать файл изображения'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Некорректный формат изображения'));
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = targetSize;
-          canvas.height = targetSize;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('Canvas context недоступен'));
-            return;
-          }
-          const minSide = Math.min(img.width, img.height);
-          const sx = (img.width - minSide) / 2;
-          const sy = (img.height - minSide) / 2;
-          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, targetSize, targetSize);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-          resolve(dataUrl);
-        } catch (err) {
-          reject(err);
-        }
-      };
-      img.src = String(reader.result || '');
-    };
-    reader.readAsDataURL(file);
-  });
+  statusDot?: 'online' | 'offline' | 'busy' | null;
 }
 
 const SIZE_CLASSES: Record<NonNullable<UserAvatarProps['size']>, string> = {
   xs: 'w-6 h-6 text-[10px]',
   sm: 'w-7 h-7 text-[11px]',
-  md: 'w-8 h-8 text-xs',
+  md: 'w-9 h-9 text-xs',
   lg: 'w-11 h-11 text-sm',
   xl: 'w-16 h-16 text-lg',
 };
+
+const AVATAR_GRADIENT_PALETTES = [
+  'bg-indigo-100 text-indigo-900 border-indigo-200/90 dark:bg-indigo-500/20 dark:text-indigo-200 dark:border-indigo-400/30',
+  'bg-emerald-100 text-emerald-900 border-emerald-200/90 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-400/30',
+  'bg-amber-100 text-amber-900 border-amber-200/90 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-400/30',
+  'bg-sky-100 text-sky-900 border-sky-200/90 dark:bg-sky-500/20 dark:text-sky-200 dark:border-sky-400/30',
+  'bg-rose-100 text-rose-900 border-rose-200/90 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-400/30',
+  'bg-violet-100 text-violet-900 border-violet-200/90 dark:bg-violet-500/20 dark:text-violet-200 dark:border-violet-400/30',
+];
+
+export function getInitials(name?: string | null): string {
+  const clean = (name || '').trim();
+  if (!clean) return 'TC';
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
+}
+
+function getPaletteForName(name?: string | null): string {
+  const clean = (name || 'TC').trim();
+  let hash = 0;
+  for (let i = 0; i < clean.length; i++) {
+    hash = clean.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_GRADIENT_PALETTES.length;
+  return AVATAR_GRADIENT_PALETTES[index];
+}
 
 export const UserAvatar: React.FC<UserAvatarProps> = ({
   name,
   avatarUrl,
   size = 'md',
   className = '',
+  statusDot = null,
 }) => {
   const [imgError, setImgError] = useState(false);
-  const initials = getInitials(name);
-  const sizeClass = SIZE_CLASSES[size];
-  const paletteClass = getDeterministicAvatarPalette(name);
-  const validUrl = avatarUrl && avatarUrl.trim().length > 0 && !imgError;
-
-  if (validUrl) {
-    return (
-      <img
-        src={avatarUrl!}
-        alt={name || 'Avatar'}
-        onError={() => setImgError(true)}
-        className={`${sizeClass} rounded-full object-cover border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] shrink-0 ${className}`}
-      />
-    );
-  }
+  const trimmedUrl = (avatarUrl || '').trim();
+  const showImage = Boolean(trimmedUrl) && !imgError;
+  const sizeClass = SIZE_CLASSES[size] || SIZE_CLASSES.md;
+  const paletteClass = getPaletteForName(name);
 
   return (
-    <div
-      className={`${sizeClass} ${paletteClass} rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] flex items-center justify-center font-semibold tracking-tight shrink-0 select-none ${className}`}
-      title={name || 'TedCloud'}
-    >
-      {initials}
+    <div className={`relative inline-flex shrink-0 select-none ${className}`}>
+      {showImage ? (
+        <img
+          src={trimmedUrl}
+          alt={name || 'Avatar'}
+          onError={() => setImgError(true)}
+          className={`${sizeClass} rounded-full object-cover border border-slate-200 dark:border-white/15 bg-slate-100 dark:bg-zinc-900 shrink-0`}
+        />
+      ) : (
+        <div
+          className={`${sizeClass} ${paletteClass} rounded-full border font-bold tracking-tight flex items-center justify-center shrink-0`}
+          title={name || undefined}
+        >
+          {getInitials(name)}
+        </div>
+      )}
+
+      {statusDot && (
+        <span
+          className={`absolute -bottom-0.5 -right-0.5 rounded-full ring-2 ring-white dark:ring-[#09090B] ${
+            size === 'xs' || size === 'sm' ? 'w-2 h-2' : 'w-2.5 h-2.5'
+          } ${
+            statusDot === 'online'
+              ? 'bg-emerald-500 dark:bg-emerald-400'
+              : statusDot === 'busy'
+              ? 'bg-amber-500 dark:bg-amber-400'
+              : 'bg-slate-400 dark:bg-zinc-500'
+          }`}
+        />
+      )}
     </div>
   );
 };
+
+export function fileToDataUrlLimited(file: File, maxDimension = 256): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл изображения'));
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const img = new Image();
+      img.onerror = () => resolve(result);
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          let { width, height } = img;
+          if (width > height) {
+            if (width > maxDimension) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            }
+          } else if (height > maxDimension) {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(result);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.84));
+        } catch {
+          resolve(result);
+        }
+      };
+      img.src = result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+export const cropAndCompressAvatarToDataUrl = fileToDataUrlLimited;
+

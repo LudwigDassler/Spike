@@ -259,11 +259,16 @@ body.theme-light,
   background-color: #F8FAFC !important;
 }
 
-/* Primary text in Light Mode -> #0F172A */
-.theme-light .text-white:not(button):not(.bg-indigo-600):not(.bg-slate-900):not(.bg-emerald-600):not(.bg-rose-600):not(.tc-btn-primary):not(.tc-bubble-outgoing):not(.tc-pricing-featured),
+/* Primary text in Light Mode -> #0F172A (Crisp Slate-900) */
+.theme-light .text-white:not(.bg-indigo-600):not(.bg-slate-900):not(.bg-emerald-600):not(.bg-rose-600):not(.tc-btn-primary):not(.tc-bubble-outgoing):not(.tc-pricing-featured):not(.tc-attachment-download-btn),
 .theme-light .text-zinc-100,
 .theme-light .text-zinc-200,
 .theme-light .text-zinc-300,
+.theme-light .text-slate-100,
+.theme-light .text-slate-200,
+.theme-light .text-slate-300,
+.theme-light .text-\[\#F4F4F5\],
+.theme-light .text-\[\#E4E4E7\],
 .theme-light .text-\[\#D4D4D8\],
 .theme-light .text-\[\#18181B\],
 .theme-light .text-slate-800,
@@ -277,15 +282,19 @@ body.theme-light,
   color: #0F172A;
 }
 
-/* Secondary text in Light Mode -> #475569 */
+/* Secondary & Muted text in Light Mode -> High-legibility #334155 / #475569 so fonts never fade on light surfaces */
 .theme-light .text-zinc-400,
-.theme-light .text-zinc-500,
 .theme-light .text-slate-400,
-.theme-light .text-slate-500,
 .theme-light .text-slate-600,
 .theme-light .text-\[\#A1A1AA\],
-.theme-light .text-\[\#8E8E93\],
+.theme-light .text-\[\#8E8E93\] {
+  color: #334155;
+}
+
+.theme-light .text-zinc-500,
+.theme-light .text-slate-500,
 .theme-light .text-\[\#71717A\],
+.theme-light .text-\[\#6E6E77\],
 .theme-light .text-\[\#52525B\] {
   color: #475569;
 }
@@ -297,12 +306,14 @@ body.theme-light,
   opacity: 1 !important;
 }
 
-/* Accent & Primary buttons keep crisp white text */
+/* Accent & Primary buttons keep crisp white text in both themes */
 .bg-indigo-600,
 .theme-light .bg-indigo-600,
+.bg-slate-900,
+.theme-light .bg-slate-900,
 .tc-btn-primary,
 .theme-light .tc-btn-primary {
-  color: #FFFFFF;
+  color: #FFFFFF !important;
 }
 
 .theme-light .tc-btn-primary {

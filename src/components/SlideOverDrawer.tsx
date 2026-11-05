@@ -734,7 +734,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => commentFileInputRef.current?.click()}
-                        className="w-9 h-9 rounded-xl bg-[#14161C] hover:bg-white/[0.08] border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition cursor-pointer"
+                        className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 dark:bg-[#14161C] dark:hover:bg-white/[0.08] dark:border-white/10 dark:text-zinc-300 flex items-center justify-center shrink-0 transition cursor-pointer"
                         title={isEn ? 'Attach file' : 'Прикрепить файл'}
                       >
                         <Paperclip className="w-4 h-4" />
@@ -744,7 +744,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         value={commentText}
                         onChange={(e) => setCommentText(e.target.value)}
                         placeholder={t('drawer.threadPlaceholder')}
-                        className="flex-1 h-10 rounded-xl border border-white/10 bg-[#14161C] px-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
+                        className="flex-1 h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#14161C] px-3 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
                       />
                       <button
                         type="submit"
@@ -752,7 +752,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                           isSendingComment ||
                           (!commentText.trim() && commentAttachments.length === 0)
                         }
-                        className="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                        className="tc-btn-primary w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white disabled:opacity-60 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
                         title={t('drawer.threadSendBtn')}
                       >
                         {isSendingComment ? (
@@ -943,7 +943,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-white/[0.07] space-y-2">
+              <div className="pt-4 border-t border-slate-200/80 dark:border-white/[0.07] space-y-2">
                 {canEditTasks && onDeleteTask && (
                   <button
                     type="button"
@@ -951,7 +951,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       void onDeleteTask(taskRec.id, taskRec.title);
                       onClose();
                     }}
-                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 dark:text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>{isEn ? 'Delete Task' : 'Удалить задачу'}</span>
@@ -960,7 +960,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-full px-4 py-2 rounded-xl border border-white/10 bg-[#14161C] hover:bg-white/[0.06] text-xs font-medium text-white transition-colors cursor-pointer"
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200/90 bg-slate-100 hover:bg-slate-200/80 text-slate-800 dark:border-white/10 dark:bg-[#14161C] dark:hover:bg-white/[0.06] dark:text-white text-xs font-semibold transition-colors cursor-pointer"
                 >
                   {t('drawer.close')}
                 </button>
@@ -1375,7 +1375,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                     <button
                       type="button"
                       onClick={() => commentFileInputRef.current?.click()}
-                      className="w-9 h-9 rounded-xl bg-[#14161C] hover:bg-white/[0.08] border border-white/10 text-zinc-300 flex items-center justify-center shrink-0 transition"
+                      className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200/90 text-slate-700 dark:bg-[#14161C] dark:hover:bg-white/[0.08] dark:border-white/10 dark:text-zinc-300 flex items-center justify-center shrink-0 transition cursor-pointer"
                       title={isEn ? 'Attach file' : 'Прикрепить файл'}
                     >
                       <Paperclip className="w-4 h-4" />
@@ -1385,7 +1385,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                       value={commentText}
                       onChange={(e) => setCommentText(e.target.value)}
                       placeholder={t('drawer.threadPlaceholder')}
-                      className="flex-1 h-10 rounded-xl border border-white/10 bg-[#14161C] px-3 text-xs text-white placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
+                      className="flex-1 h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#14161C] px-3 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-[#52525B] focus:border-indigo-500 focus:outline-none"
                     />
                     <button
                       type="submit"
@@ -1393,7 +1393,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                         isSendingComment ||
                         (!commentText.trim() && commentAttachments.length === 0)
                       }
-                      className="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors"
+                      className="tc-btn-primary w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 !text-white disabled:opacity-60 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
                       title={t('drawer.threadSendBtn')}
                     >
                       {isSendingComment ? (
@@ -1432,11 +1432,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-white/[0.08] bg-[#181B22] flex justify-end sticky bottom-0">
+        <div className="px-6 py-4 border-t border-slate-200/80 dark:border-white/[0.08] bg-slate-50 dark:bg-[#181B22] flex justify-end sticky bottom-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-white/10 bg-[#14161C] hover:bg-white/[0.06] text-xs font-medium text-white transition-colors whitespace-nowrap"
+            className="px-4 py-2 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-100 text-slate-800 dark:border-white/10 dark:bg-[#14161C] dark:hover:bg-white/[0.06] dark:text-white text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
           >
             {t('drawer.close')}
           </button>
