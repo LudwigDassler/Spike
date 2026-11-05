@@ -2163,7 +2163,6 @@ export const TimeAndAttendanceView: React.FC<TimeAndAttendanceViewProps> = ({
           duration_minutes: durationMinutes,
           tasks_completed: myDoneTasks.length,
           summary: summaryText,
-          status: 'completed',
         });
       }
       if (onSyncShiftState) {
@@ -3221,8 +3220,8 @@ interface QaSuiteReport {
 interface SuperadminQaAuditPanelProps {
   company?: Company | null;
   nodes?: OrganizationNode[];
-  tasks?: Task[];
-  leads?: CrmLead[];
+  tasks?: TaskRecord[];
+  leads?: CrmLeadRecord[];
   onSendMessage?: (payload: {
     sender_id: string | null;
     recipient_id: string | null;
@@ -3416,10 +3415,14 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
   const safeLeads = Array.isArray(leads) ? leads : [];
 
   const totalStaff = safeNodes.length;
-  const telegramLinkedStaff = safeNodes.filter((n) => Boolean(String(n?.telegram_id || '').trim()));
+  const telegramLinkedStaff = safeNodes.filter((n) =>
+    Boolean(String(n?.telegram_chat_id || (n as any)?.telegram_id || '').trim())
+  );
   const passwordSetStaff = safeNodes.filter((n) => Boolean(String(n?.password || '').trim()));
   const vulnerableStaff = safeNodes.filter(
-    (n) => !String(n?.telegram_id || '').trim() || !String(n?.password || '').trim()
+    (n) =>
+      !String(n?.telegram_chat_id || (n as any)?.telegram_id || '').trim() ||
+      !String(n?.password || '').trim()
   );
 
   const nowMs = Date.now();
@@ -3816,7 +3819,9 @@ export const SuperadminQaAuditPanel: React.FC<SuperadminQaAuditPanelProps> = ({
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {vulnerableStaff.map((emp) => {
                   const missingPwd = !String(emp.password || '').trim();
-                  const missingTg = !String(emp.telegram_id || '').trim();
+                  const missingTg = !String(
+                    emp.telegram_chat_id || (emp as any).telegram_id || ''
+                  ).trim();
                   const isReminded = remindedIds.includes(emp.id);
                   return (
                     <div

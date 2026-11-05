@@ -14,6 +14,11 @@ import {
 } from './types/database';
 import { LocaleProvider, useLocale } from './i18n/LocaleContext';
 import { formatError } from './utils/enterpriseLogic';
+import {
+  installGlobalErrorTelemetry,
+  recordImmutableAuditEntry,
+  recordTelemetryError,
+} from './utils/saasEnterpriseEngine';
 
 const SESSION_PROFILE_ID_KEY = 'tedcloud_session_profile_id';
 const SESSION_CHAT_ID_KEY = 'tedcloud_chat_id';
@@ -52,6 +57,11 @@ class GlobalErrorBoundary extends React.Component<
 
   componentDidCatch(error: any, errorInfo: any) {
     console.error('[GlobalErrorBoundary] Caught runtime error:', error, errorInfo);
+    recordTelemetryError(
+      'ErrorBoundary',
+      formatError(error),
+      error?.stack || String(errorInfo?.componentStack || '')
+    );
   }
 
   handleResetCache = () => {
@@ -126,8 +136,8 @@ function AppContent() {
   >(new Map());
   const latestMaxMsgTimestampRef = useRef<number>(0);
 
-  // Global crash protection for unhandled promise rejections (Block 4)
   useEffect(() => {
+    installGlobalErrorTelemetry();
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       const reasonMsg = String(event?.reason?.message || event?.reason || '');
       event.preventDefault();
@@ -615,6 +625,18 @@ function AppContent() {
           Object.keys(updates).every((k) => k === 'shift_status' || k === 'shift_started_at');
 
         if (table !== 'workspace_messages' && !isShiftOnlyUpdate) {
+          recordImmutableAuditEntry({
+            companyId: company?.id || currentProfile?.company_id || 'default',
+            actorId: currentProfile?.id,
+            actorName: currentProfile?.name || 'Admin',
+            actorRole: currentProfile?.role_type || 'Manager',
+            actionType:
+              table === 'organization_nodes' && (updates.access_level || updates.permissions)
+                ? 'PERMISSIONS_UPDATED'
+                : 'UPDATE',
+            targetEntity: table,
+            details: `Обновлена запись в «${table}» (ID: ${id.slice(0, 8)})`,
+          });
           void loadWorkspaceData(false, true);
         }
 
@@ -863,6 +885,16 @@ function AppContent() {
         } else if (table === 'organization_nodes') {
           setNodes((prev) => (Array.isArray(prev) ? prev : []).filter((item) => item.id !== id));
         }
+
+        recordImmutableAuditEntry({
+          companyId: company?.id || currentProfile?.company_id || 'default',
+          actorId: currentProfile?.id,
+          actorName: currentProfile?.name || 'Admin',
+          actorRole: currentProfile?.role_type || 'Manager',
+          actionType: 'DELETE',
+          targetEntity: table,
+          details: `Удален объект из «${table}» (ID: ${id.slice(0, 8)})`,
+        });
 
         void loadWorkspaceData(false, true);
 

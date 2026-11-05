@@ -19,9 +19,9 @@ import {
 } from '../types/database';
 import { searchWorkspaceEntities } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
-import { TeddyAvatar } from './TedCloudAiDrawer';
+import { TeddyAvatar } from './TeddyPrismEngine';
 
-interface CommandBarModalProps {
+export interface CommandBarModalProps {
   isOpen: boolean;
   onClose: () => void;
   tasks: TaskRecord[];
@@ -79,12 +79,11 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-[calc(100vw-24px)] max-w-2xl rounded-2xl border border-white/10 bg-[#111115] shadow-2xl overflow-hidden"
+        className="w-[calc(100vw-24px)] max-w-2xl rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Omnisearch Input */}
-        <div className="px-4 py-3.5 border-b border-white/[0.07] flex items-center gap-3 bg-[#141419]">
-          <Search className="w-4 h-4 text-zinc-400 shrink-0" />
+        <div className="px-4 py-3.5 border-b border-[var(--border-subtle)] flex items-center gap-3 bg-[var(--surface-elevated)]">
+          <Search className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -101,17 +100,17 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                 ? 'Search tasks, deals, Tax ID, team members, and chat...'
                 : 'Поиск по задачам, сделкам, ИНН, сотрудникам и чату...'
             }
-            className="tc-composer-input !bg-transparent bg-transparent border-0 outline-none focus:ring-0 flex-1 w-full text-sm text-white placeholder-zinc-500"
+            className="tc-composer-input !bg-transparent bg-transparent border-0 outline-none focus:ring-0 flex-1 w-full text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-400">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">
               ESC
             </span>
             <button
               type="button"
               onClick={onClose}
               aria-label={isEn ? 'Close search' : 'Закрыть поиск'}
-              className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06]"
+              className="p-1 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -119,9 +118,8 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto no-scrollbar p-4 space-y-5">
-          {/* Quick Actions */}
           <div className="space-y-1.5">
-            <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
               {isEn ? 'QUICK ACTIONS' : 'БЫСТРЫЕ КОМАНДЫ'}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -132,13 +130,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                     onClose();
                     onCreateTask();
                   }}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-white/[0.08] bg-[#16161C] hover:border-white/30 text-xs font-medium text-white transition-colors"
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-indigo-500/40 text-xs font-medium text-[var(--text-primary)] transition-colors cursor-pointer"
                 >
                   <span className="inline-flex items-center gap-2">
-                    <Plus className="w-3.5 h-3.5 text-zinc-300" />
+                    <Plus className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
                     <span>{isEn ? 'Create Task' : 'Создать задачу'}</span>
                   </span>
-                  <ArrowRight className="w-3 h-3 text-zinc-500" />
+                  <ArrowRight className="w-3 h-3 text-[var(--text-muted)]" />
                 </button>
               )}
 
@@ -148,13 +146,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                   onClose();
                   onSelectSection('communications');
                 }}
-                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-white/[0.08] bg-[#16161C] hover:border-white/30 text-xs font-medium text-white transition-colors"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-indigo-500/40 text-xs font-medium text-[var(--text-primary)] transition-colors cursor-pointer"
               >
                 <span className="inline-flex items-center gap-2">
-                  <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+                  <MessageSquare className="w-3.5 h-3.5 text-sky-500" />
                   <span>{isEn ? 'Open Chat' : 'Перейти в чат'}</span>
                 </span>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
+                <ArrowRight className="w-3 h-3 text-[var(--text-muted)]" />
               </button>
 
               <button
@@ -163,13 +161,13 @@ export const CommandBarModal: React.FC<CommandBarModalProps> = ({
                   onClose();
                   onOpenAiCopilot();
                 }}
-                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-indigo-500/30 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 transition-colors"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-indigo-500/40 text-xs font-semibold text-[var(--text-primary)] transition-colors cursor-pointer"
               >
                 <span className="inline-flex items-center gap-2">
                   <TeddyAvatar size="xs" />
                   <span>Teddy</span>
                 </span>
-                <ArrowRight className="w-3 h-3 text-zinc-400" />
+                <ArrowRight className="w-3 h-3 text-[var(--text-muted)]" />
               </button>
             </div>
           </div>

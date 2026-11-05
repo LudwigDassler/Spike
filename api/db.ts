@@ -4918,7 +4918,8 @@ ${builtInResult.reply}
         });
       }
 
-      const { table, payload } = body;
+      const table = body.table;
+      const payload = body.payload || body.record;
 
       if (!table || !payload) {
         return res.status(400).json({
@@ -4926,7 +4927,27 @@ ${builtInResult.reply}
         });
       }
 
-      const companyId = payload.company_id || (await resolveDefaultCompanyId(supabase));
+      const postActorId = body.actor_id || payload.actor_id;
+      if (postActorId) {
+        const rbacCheck = await verifyServerRbac({
+          supabase,
+          actorId: String(postActorId),
+          requiredPermission:
+            table === 'organization_nodes'
+              ? 'team_manage'
+              : table === 'companies' || table === 'billing_invoices'
+              ? 'billing_admin'
+              : table === 'crm_leads'
+              ? 'crm_edit'
+              : 'not_observer',
+        });
+        if (!rbacCheck.allowed) {
+          return res.status(403).json({ error: rbacCheck.reason });
+        }
+      }
+
+      const companyId =
+        body.company_id || payload.company_id || (await resolveDefaultCompanyId(supabase));
 
       if (table === 'tasks') {
         const title = String(payload.title || '').trim();

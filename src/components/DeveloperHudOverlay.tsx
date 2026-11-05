@@ -29,6 +29,14 @@ import {
   getDefaultPermissionsForAccessLevel,
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
+import {
+  clearErrorTelemetryLogs,
+  ErrorTelemetryEvent,
+  getErrorTelemetryLogs,
+  installGlobalErrorTelemetry,
+  recordTelemetryError,
+  subscribeErrorTelemetry,
+} from '../utils/saasEnterpriseEngine';
 
 export interface SnifferLogEntry {
   id: string;
@@ -252,7 +260,8 @@ type DevHudTabId =
   | 'state'
   | 'rbac'
   | 'webhook'
-  | 'e2e';
+  | 'e2e'
+  | 'telemetry';
 
 const QA_STEP_LABELS = [
   'Шаг 1/8: Изоляция Multi-Tenancy (Company A vs Company B)',
@@ -344,12 +353,20 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
     }))
   );
 
+  const [telemetryEvents, setTelemetryEvents] = useState<ErrorTelemetryEvent[]>(() =>
+    getErrorTelemetryLogs()
+  );
+
   useEffect(() => {
     installGlobalFetchSniffer();
+    installGlobalErrorTelemetry();
     const update = () => setLogs([...snifferBuffer]);
+    const updateTelemetry = () => setTelemetryEvents([...getErrorTelemetryLogs()]);
     snifferListeners.add(update);
+    const unsubTelemetry = subscribeErrorTelemetry(updateTelemetry);
     return () => {
       snifferListeners.delete(update);
+      unsubTelemetry();
     };
   }, []);
 
@@ -675,6 +692,12 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
     { id: 'rbac', label: '5. RBAC & Theme Sim', icon: SlidersHorizontal },
     { id: 'webhook', label: '6. TG Webhook Sim', icon: Send },
     { id: 'e2e', label: '7. E2E 8/8 & Purge', icon: Shield },
+    {
+      id: 'telemetry',
+      label: '8. Error Telemetry (Sentry)',
+      icon: AlertCircle,
+      badge: telemetryEvents.length,
+    },
   ];
 
   return (
@@ -1238,6 +1261,80 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* 8. ERROR TELEMETRY (SENTRY HOOK) */}
+          {activeTab === 'telemetry' && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="font-semibold">
+                    Error Telemetry & Runtime Crash Logger (Sentry-Ready Hook)
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                    Автоматический перехват `window.onerror` и `unhandledrejection` со стек-трейсами
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      recordTelemetryError(
+                        'ManualProbe',
+                        'Synthetic Probe: Tested Sentry-ready Error Telemetry Pipeline',
+                        new Error('SyntheticTelemetryProbeError').stack
+                      );
+                      setTelemetryEvents([...getErrorTelemetryLogs()]);
+                    }}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Тестовый перехват исключения</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearErrorTelemetryLogs();
+                      setTelemetryEvents([]);
+                    }}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-900 font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Очистить лог</span>
+                  </button>
+                </div>
+              </div>
+
+              {telemetryEvents.length === 0 ? (
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 flex items-center gap-2.5 text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>
+                    Исключений в рантайме (`window.onerror` / `unhandledrejection`) не зафиксировано.
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {telemetryEvents.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-3 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-rose-600 dark:text-rose-300">
+                          [{ev.source}] {ev.message}
+                        </span>
+                        <span className="text-[11px] text-slate-500 tabular-nums">
+                          {ev.timestamp} · {ev.url}
+                        </span>
+                      </div>
+                      <pre className="text-[11px] text-slate-600 dark:text-zinc-400 whitespace-pre-wrap break-all bg-slate-100/80 dark:bg-black/30 p-2 rounded-lg border border-slate-200/70 dark:border-white/5">
+                        {ev.stack}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

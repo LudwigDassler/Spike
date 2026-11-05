@@ -21,25 +21,48 @@ import {
 import { CrmLeadRecord, OrganizationNode, TaskPriority, TaskRecord } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 import { UserAvatar } from './UserAvatar';
+import {
+  getAiQuotaState,
+  incrementAiQuotaUsage,
+  recordImmutableAuditEntry,
+} from '../utils/saasEnterpriseEngine';
 
-export const TeddyPrismIcon: React.FC<{ className?: string }> = ({
-  className = 'w-4 h-4',
+export interface TeddyAvatarProps {
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  className?: string;
+}
+
+const SIZE_MAP: Record<NonNullable<TeddyAvatarProps['size']>, string> = {
+  xs: 'w-5 h-5',
+  sm: 'w-6 h-6',
+  md: 'w-8 h-8',
+  lg: 'w-10 h-10',
+};
+
+const ICON_SIZE_MAP: Record<NonNullable<TeddyAvatarProps['size']>, string> = {
+  xs: 'w-3 h-3',
+  sm: 'w-3.5 h-3.5',
+  md: 'w-4 h-4',
+  lg: 'w-5 h-5',
+};
+
+export const TeddyPrismIcon: React.FC<TeddyAvatarProps> = ({
+  size = 'sm',
+  className = '',
 }) => (
   <svg
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className={className}
+    className={className || SIZE_MAP[size] || 'w-4 h-4'}
     aria-hidden="true"
   >
-    {/* Incoming pure light beam */}
     <path
       d="M1.5 13.8L7.3 11.3"
       stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"
     />
-    {/* Internal optical refraction */}
     <path
       d="M7.3 11.3L14.7 11.6"
       stroke="currentColor"
@@ -47,7 +70,6 @@ export const TeddyPrismIcon: React.FC<{ className?: string }> = ({
       strokeWidth="1.2"
       strokeLinecap="round"
     />
-    {/* 4 Diverging Spectral Rays */}
     <path
       d="M14.2 9.8L22.5 6.8"
       stroke="#F59E0B"
@@ -72,7 +94,6 @@ export const TeddyPrismIcon: React.FC<{ className?: string }> = ({
       strokeWidth="1.5"
       strokeLinecap="round"
     />
-    {/* Equilateral Optical Prism */}
     <path
       d="M11 3.5L19 18.5H3L11 3.5Z"
       stroke="currentColor"
@@ -82,13 +103,14 @@ export const TeddyPrismIcon: React.FC<{ className?: string }> = ({
   </svg>
 );
 
-export const TeddyAvatar: React.FC<{ className?: string }> = ({
-  className = 'w-8 h-8',
+export const TeddyAvatar: React.FC<TeddyAvatarProps> = ({
+  size = 'md',
+  className = '',
 }) => (
   <div
-    className={`rounded-lg bg-slate-900 dark:bg-white/[0.06] border border-slate-800 dark:border-white/[0.12] text-white flex items-center justify-center shrink-0 shadow-xs ${className}`}
+    className={`rounded-lg bg-slate-900 dark:bg-white/[0.06] border border-slate-800 dark:border-white/[0.12] text-white flex items-center justify-center shrink-0 shadow-xs ${SIZE_MAP[size]} ${className}`}
   >
-    <TeddyPrismIcon className="w-4 h-4" />
+    <TeddyPrismIcon className={ICON_SIZE_MAP[size]} />
   </div>
 );
 
@@ -112,11 +134,12 @@ export interface StagingRowItem {
 
 type TeddyCanvasMode = 'decompose' | 'deals_audit' | 'rebalance' | 'contract';
 
-interface TedCloudAiDrawerProps {
+export interface TedCloudAiDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   companyId: string;
   companyName: string;
+  planTier?: string;
   currentUser: OrganizationNode;
   nodes: OrganizationNode[];
   tasks: TaskRecord[];
@@ -214,6 +237,7 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   onClose,
   companyId,
   companyName,
+  planTier = 'Business',
   currentUser,
   nodes,
   tasks,
@@ -238,6 +262,11 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   const [openAssigneePopoverRowId, setOpenAssigneePopoverRowId] = useState<string | null>(null);
   const [openDeptPopoverRowId, setOpenDeptPopoverRowId] = useState<string | null>(null);
   const [editingTitleRowId, setEditingTitleRowId] = useState<string | null>(null);
+  const [quotaState, setQuotaState] = useState(() => getAiQuotaState(companyId, planTier));
+
+  useEffect(() => {
+    setQuotaState(getAiQuotaState(companyId, planTier));
+  }, [companyId, planTier, isOpen]);
 
   // Voice Terminal State (Web Speech API)
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -607,6 +636,18 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
   if (!isOpen) return null;
 
   const triggerQuickAction = (mode: TeddyCanvasMode, customTopic?: string) => {
+    const currentQuota = getAiQuotaState(companyId, planTier);
+    if (currentQuota.isExhausted) {
+      const msg = isEn
+        ? `Daily AI quota reached (${currentQuota.usedToday}/${currentQuota.dailyLimit}). Upgrade plan for more.`
+        : `Дневной лимит AI-операций исчерпан (${currentQuota.usedToday}/${currentQuota.dailyLimit}). Повысьте тариф.`;
+      setStatusLine(msg);
+      if (showToast) showToast(msg);
+      return;
+    }
+    const nextQuota = incrementAiQuotaUsage(companyId, planTier, 1);
+    setQuotaState(nextQuota);
+
     setAppliedSuccessBanner(null);
     setOpenAssigneePopoverRowId(null);
     setOpenDeptPopoverRowId(null);
@@ -742,6 +783,16 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
     const selected = sourceRows.filter((r) => r.checked && r.title.trim());
     if (selected.length === 0 || isApplyingDb) return;
 
+    const currentQuota = getAiQuotaState(companyId, planTier);
+    if (currentQuota.isExhausted) {
+      const msg = isEn
+        ? `Daily AI quota reached (${currentQuota.usedToday}/${currentQuota.dailyLimit}).`
+        : `Дневной лимит AI-операций исчерпан (${currentQuota.usedToday}/${currentQuota.dailyLimit}).`;
+      if (showToast) showToast(msg);
+      return;
+    }
+    setQuotaState(incrementAiQuotaUsage(companyId, planTier, 1));
+
     setIsApplyingDb(true);
     setAppliedSuccessBanner(null);
 
@@ -850,6 +901,15 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
       const msg = isEn
         ? `Batch executed (${summaryParts.join(', ')}).`
         : `Пакет выполнен в БД (${summaryParts.join(', ')}).`;
+      recordImmutableAuditEntry({
+        companyId,
+        actorId: currentUser?.id,
+        actorName: currentUser?.name || 'Admin',
+        actorRole: currentUser?.role_type || 'Manager',
+        actionType: 'Teddy AI Batch Commit',
+        targetEntity: 'tasks / crm_leads',
+        details: summaryParts.join(', '),
+      });
       setAppliedSuccessBanner(msg);
       if (showToast) showToast(msg);
     } finally {
@@ -936,6 +996,17 @@ export const TedCloudAiDrawer: React.FC<TedCloudAiDrawerProps> = ({
                   <CornerDownLeft className="w-3.5 h-3.5" />
                 </button>
               )}
+
+              <span
+                className={`hidden sm:inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-semibold tabular-nums ${
+                  quotaState.isExhausted
+                    ? 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                    : 'border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-secondary)]'
+                }`}
+                title={isEn ? 'Daily AI Operations Quota' : 'Суточный лимит операций Teddy AI по тарифу'}
+              >
+                {isEn ? quotaState.labelEn : quotaState.labelRu}
+              </span>
 
               <span className="hidden md:inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] text-[10px] font-medium text-slate-500 dark:text-zinc-400">
                 Alt+Space

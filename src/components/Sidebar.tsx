@@ -26,7 +26,7 @@ import { UserAvatar } from './UserAvatar';
 
 export type NavSection = DashboardSection;
 
-interface SidebarProps {
+export interface SidebarProps {
   activeSection: DashboardSection;
   onSelectSection: (section: DashboardSection) => void;
   currentProfile: OrganizationNode | null;
@@ -34,7 +34,7 @@ interface SidebarProps {
     tasks: number;
     nodes: number;
     leads: number;
-    messages: number;
+    messages?: number;
   };
   onRequestSignOut?: () => void;
 }

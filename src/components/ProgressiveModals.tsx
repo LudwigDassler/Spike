@@ -33,12 +33,16 @@ import {
 } from '../types/database';
 import { useLocale } from '../i18n/LocaleContext';
 import { UserAvatar } from './UserAvatar';
+import {
+  exportToCsvOrXlsx,
+  getLocalImmutableAuditLogs,
+} from '../utils/saasEnterpriseEngine';
 
 export const PRIMARY_BTN_CLASS =
-  'tc-btn-primary inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-sm shadow-indigo-500/20 transition-all whitespace-nowrap disabled:opacity-50';
+  'tc-btn-primary inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 !text-white font-medium text-xs shadow-sm shadow-indigo-500/20 transition-all whitespace-nowrap disabled:opacity-50 cursor-pointer';
 
 export const SECONDARY_BTN_CLASS =
-  'tc-btn-secondary inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-200 border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] text-xs font-medium transition-all whitespace-nowrap disabled:opacity-50';
+  'tc-btn-secondary inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border-subtle)] shadow-2xs text-xs font-medium transition-all whitespace-nowrap disabled:opacity-50 cursor-pointer';
 
 /* ============================================================================
  * 1. МОДАЛЬНОЕ ОКНО: «Мои полномочия (Контур доступа)» — 4 чистые категории без дублей
@@ -965,11 +969,22 @@ export const SecurityAuditLogModal: React.FC<SecurityAuditLogModalProps> = ({
   const [query, setQuery] = useState('');
 
   const enrichedLogs = useMemo(() => {
-    return (Array.isArray(auditLogs) ? auditLogs : []).map((log) => ({
+    const serverLogs = Array.isArray(auditLogs) ? auditLogs : [];
+    const companyId = serverLogs[0]?.company_id || 'default';
+    const localLogs = getLocalImmutableAuditLogs(companyId);
+    const seenIds = new Set<string>();
+    const combined: AuditLogRecord[] = [];
+    for (const item of [...localLogs, ...serverLogs]) {
+      if (item && item.id && !seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        combined.push(item);
+      }
+    }
+    return combined.map((log) => ({
       raw: log,
       formatted: formatAuditLogEntry(log, isEn),
     }));
-  }, [auditLogs, isEn]);
+  }, [auditLogs, isEn, isOpen]);
 
   const filteredLogs = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -985,27 +1000,39 @@ export const SecurityAuditLogModal: React.FC<SecurityAuditLogModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleExportAuditCsv = () => {
+    const rows = filteredLogs.map(({ raw, formatted }) => ({
+      Timestamp: raw.created_at || new Date().toISOString(),
+      Actor: raw.actor_name || 'System',
+      Role: formatRole(raw.actor_role || 'member'),
+      Action: formatted.actionLabel,
+      Entity: formatted.entityLabel,
+      Details: formatted.cleanDetails,
+    }));
+    exportToCsvOrXlsx(`TedCloud_Audit_Log_${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl rounded-2xl border border-white/[0.08] bg-[#101014] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        className="w-full max-w-4xl rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
+        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
-              <History className="w-4 h-4 text-emerald-400" />
+              <History className="w-4 h-4 text-emerald-500" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">
                 {isEn
                   ? 'Security & Action Audit Log'
                   : 'Журнал безопасности и аудита действий (Audit Log)'}
               </h3>
-              <p className="text-[11px] text-[#8E8E93]">
+              <p className="text-[11px] text-[var(--text-secondary)]">
                 {isEn
                   ? `Immutable ledger of security events and record mutations in ${companyName}`
                   : `Неизменяемый реестр критически важных событий безопасности в ${companyName}`}
@@ -1015,20 +1042,29 @@ export const SecurityAuditLogModal: React.FC<SecurityAuditLogModalProps> = ({
 
           <div className="flex items-center gap-2">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-[#71717A] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={isEn ? 'Filter events...' : 'Поиск по событиям...'}
-                className="w-48 sm:w-60 rounded-lg border border-white/[0.08] bg-[#17171B] pl-8 pr-3 py-1.5 text-xs text-white placeholder-[#71717A] focus:border-white/30 focus:outline-none"
+                className="w-44 sm:w-56 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] pl-8 pr-3 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
               />
             </div>
 
             <button
               type="button"
+              onClick={handleExportAuditCsv}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] text-xs font-semibold text-[var(--text-primary)] hover:border-indigo-500/40 transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>CSV / Excel</span>
+            </button>
+
+            <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-[#8E8E93] hover:text-white hover:bg-white/[0.06] transition-colors"
+              className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
