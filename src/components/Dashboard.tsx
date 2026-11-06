@@ -90,7 +90,7 @@ import {
 } from '../types/database';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
-import { AddRecordModal, InitialTaskDraft, ModalRecordType } from './AddRecordModal';
+import type { InitialTaskDraft, ModalRecordType } from './AddRecordModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   PermissionsMatrixModal,
@@ -104,7 +104,17 @@ import { TedCloudAiDrawer, TeddyPrismIcon } from './workspace/TeddyPrismEngine';
 import { CommandBarModal } from './workspace/CommandBarModal';
 import { TeamworkGraphView } from './TeamworkGraphView';
 import { DeveloperHudOverlay, installGlobalFetchSniffer } from './workspace/DevHudOverlay';
-import { SubscriptionCheckoutModal, PrintableInvoiceModal } from './BillingModals';
+import { AppearanceSettings } from './AppearanceSettings';
+// Тяжёлые модалки грузятся отдельными чанками при первом открытии.
+const AddRecordModal = React.lazy(() =>
+  import('./AddRecordModal').then((m) => ({ default: m.AddRecordModal }))
+);
+const SubscriptionCheckoutModal = React.lazy(() =>
+  import('./BillingModals').then((m) => ({ default: m.SubscriptionCheckoutModal }))
+);
+const PrintableInvoiceModal = React.lazy(() =>
+  import('./BillingModals').then((m) => ({ default: m.PrintableInvoiceModal }))
+);
 import {
   MyPermissionsModal,
   MyAccessKeysModal,
@@ -5995,6 +6005,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </button>
                 </div>
               </form>
+
+              <AppearanceSettings />
             </div>
           )}
 
@@ -6754,6 +6766,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </nav>
 
       {/* Add Record Modal */}
+      {modalType && (
+      <React.Suspense fallback={null}>
       <AddRecordModal
         type={modalType}
         companyId={companyId}
@@ -6776,6 +6790,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           }
         }}
       />
+      </React.Suspense>
+      )}
 
       {/* Employee Inspector & Granular Permissions Matrix Modal (БЛОК 3) */}
       <PermissionsMatrixModal
@@ -6885,6 +6901,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       />
 
       {/* Subscription Checkout & B2B Invoice Generator Modal (БЛОК 4) */}
+      {checkoutModalPlan && (
+      <React.Suspense fallback={null}>
       <SubscriptionCheckoutModal
         isOpen={Boolean(checkoutModalPlan)}
         initialPlan={checkoutModalPlan || selectedPlan}
@@ -6902,8 +6920,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onClose={() => setCheckoutModalPlan(null)}
         onConfirmSubscription={handleConfirmSubscription}
       />
+      </React.Suspense>
+      )}
 
       {/* Printable Official B2B Invoice Modal (БЛОК 4) */}
+      {printableInvoice && (
+      <React.Suspense fallback={null}>
       <PrintableInvoiceModal
         invoice={printableInvoice}
         companyName={companyName}
@@ -6920,6 +6942,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onClose={() => setPrintableInvoice(null)}
         onMarkPaid={handleMarkInvoicePaid}
       />
+      </React.Suspense>
+      )}
 
       {/* Цифровой пропуск сотрудника (Digital Employee Pass — Единый компонент без сырых <input> URL) */}
       {inspectInviteNode && (

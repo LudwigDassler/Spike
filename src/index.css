@@ -27,6 +27,11 @@
     --text-primary: #0F172A;
     --text-secondary: #334155;
     --text-muted: #64748B;
+    --accent: #4F46E5;
+    --accent-hover: #4338CA;
+    --accent-soft: rgba(79, 70, 229, 0.09);
+    --focus-ring: rgba(79, 70, 229, 0.65);
+    --overlay: rgba(15, 23, 42, 0.45);
     color-scheme: light;
   }
 
@@ -44,7 +49,12 @@
     --border-strong: rgba(255, 255, 255, 0.14);
     --text-primary: #F1F5F9;
     --text-secondary: #94A3B8;
-    --text-muted: #64748B;
+    --text-muted: #8B95A7;
+    --accent: #6366F1;
+    --accent-hover: #4F46E5;
+    --accent-soft: rgba(99, 102, 241, 0.16);
+    --focus-ring: rgba(129, 140, 248, 0.8);
+    --overlay: rgba(0, 0, 0, 0.7);
     color-scheme: dark;
   }
 
@@ -78,12 +88,66 @@
   }
 }
 
-*:focus {
-  outline: none !important;
+/* ---------------------------------------------------------------------------
+   Accessibility: mouse clicks get no outline, keyboard navigation always gets
+   a clearly visible focus ring (WCAG 2.4.7).
+--------------------------------------------------------------------------- */
+*:focus:not(:focus-visible) {
+  outline: none;
 }
 
-*:focus-visible {
-  outline: none !important;
+:focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline-offset: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Theme switching: freeze every transition for one frame so the UI flips
+   atomically instead of "washing" through half-dark / half-light states.
+--------------------------------------------------------------------------- */
+.tc-theme-switching,
+.tc-theme-switching *,
+.tc-theme-switching *::before,
+.tc-theme-switching *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Unified primary action button — one brand color in both themes.
+--------------------------------------------------------------------------- */
+.tc-btn-primary {
+  background-image: none !important;
+  background-color: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #FFFFFF !important;
+}
+
+.tc-btn-primary:hover:not(:disabled) {
+  background-color: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+}
+
+.tc-btn-primary svg,
+.tc-btn-primary span {
+  color: #FFFFFF !important;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -306,27 +370,19 @@ body.theme-light,
   opacity: 1 !important;
 }
 
-/* Accent & Primary buttons keep crisp white text in both themes */
-.bg-indigo-600,
+/* Solid accent / dark surfaces keep crisp white text in Light Mode
+   (counteracts the generic .text-white → slate-900 remap above).
+   Scoped to .theme-light only so dark-mode variants like dark:bg-white dark:text-slate-900 keep working. */
 .theme-light .bg-indigo-600,
-.bg-slate-900,
+.theme-light .bg-indigo-500,
 .theme-light .bg-slate-900,
-.tc-btn-primary,
-.theme-light .tc-btn-primary {
+.theme-light .bg-emerald-600,
+.theme-light .bg-rose-600 {
   color: #FFFFFF !important;
 }
 
 .theme-light .tc-btn-primary {
-  background-image: none !important;
-  background-color: #4f46e5 !important;
-  color: #FFFFFF !important;
-  border-color: #4f46e5 !important;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2) !important;
-}
-
-.theme-light .tc-btn-primary:hover {
-  background-color: #4338ca !important;
-  color: #FFFFFF !important;
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.25) !important;
 }
 
 .theme-light .tc-btn-secondary {
@@ -341,9 +397,9 @@ body.theme-light,
   border-color: #CBD5E1 !important;
 }
 
-.theme-light input:not([type="checkbox"]):not([type="radio"]):not(.tc-composer-input),
-.theme-light select,
-.theme-light textarea {
+.theme-light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.tc-composer-input):not(.tc-inline-input):not(.bg-transparent):not(.border-0),
+.theme-light select:not(.tc-inline-input):not(.bg-transparent):not(.border-0),
+.theme-light textarea:not(.tc-inline-input):not(.bg-transparent):not(.border-0) {
   background-color: #FFFFFF !important;
   border-color: #CBD5E1 !important;
   color: #0F172A !important;
@@ -480,7 +536,7 @@ body.theme-light,
   color: #334155 !important;
 }
 
-.theme-light input:not(.tc-composer-input):focus,
+.theme-light input:not(.tc-composer-input):not(.tc-inline-input):focus,
 .theme-light select:focus,
 .theme-light textarea:focus {
   border-color: #4f46e5 !important;
@@ -549,4 +605,365 @@ body.theme-light,
 .theme-light .bg-emerald-950\/30 {
   background-color: #ecfdf5 !important;
   border-color: #a7f3d0 !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Light Mode: pale accent text shades (200–400) are designed for dark surfaces.
+   On light surfaces they drop below WCAG contrast, so remap them to the
+   700 shade. Elements explicitly marked as dark islands (.tc-on-dark,
+   featured pricing card, solid buttons) keep the original pale shade.
+--------------------------------------------------------------------------- */
+.theme-light .text-emerald-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-emerald-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-emerald-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-emerald-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-emerald-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-emerald-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-emerald-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-emerald-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-emerald-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #047857;
+}
+
+.theme-light .text-green-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-green-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-green-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-green-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-green-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-green-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-green-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-green-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-green-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #15803D;
+}
+
+.theme-light .text-teal-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-teal-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-teal-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-teal-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-teal-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-teal-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-teal-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-teal-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-teal-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #0F766E;
+}
+
+.theme-light .text-cyan-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-cyan-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-cyan-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-cyan-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-cyan-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-cyan-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-cyan-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-cyan-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-cyan-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #0E7490;
+}
+
+.theme-light .text-sky-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-sky-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-sky-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-sky-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-sky-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-sky-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-sky-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-sky-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-sky-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #0369A1;
+}
+
+.theme-light .text-blue-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-blue-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-blue-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-blue-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-blue-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-blue-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-blue-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-blue-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-blue-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #1D4ED8;
+}
+
+.theme-light .text-indigo-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-indigo-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-indigo-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-indigo-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-indigo-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-indigo-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-indigo-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-indigo-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-indigo-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #4338CA;
+}
+
+.theme-light .text-violet-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-violet-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-violet-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-violet-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-violet-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-violet-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-violet-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-violet-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-violet-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #6D28D9;
+}
+
+.theme-light .text-purple-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-purple-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-purple-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-purple-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-purple-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-purple-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-purple-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-purple-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-purple-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #7E22CE;
+}
+
+.theme-light .text-fuchsia-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-fuchsia-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-fuchsia-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-fuchsia-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-fuchsia-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-fuchsia-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-fuchsia-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-fuchsia-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-fuchsia-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #A21CAF;
+}
+
+.theme-light .text-pink-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-pink-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-pink-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-pink-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-pink-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-pink-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-pink-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-pink-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-pink-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #BE185D;
+}
+
+.theme-light .text-rose-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-rose-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-rose-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-rose-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-rose-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-rose-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-rose-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-rose-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-rose-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #BE123C;
+}
+
+.theme-light .text-red-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-red-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-red-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-red-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-red-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-red-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-red-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-red-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-red-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #B91C1C;
+}
+
+.theme-light .text-orange-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-orange-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-orange-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-orange-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-orange-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-orange-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-orange-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-orange-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-orange-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #C2410C;
+}
+
+.theme-light .text-amber-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-amber-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-amber-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-amber-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-amber-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-amber-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-amber-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-amber-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-amber-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #B45309;
+}
+
+.theme-light .text-yellow-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-yellow-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-yellow-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-yellow-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-yellow-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-yellow-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-yellow-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-yellow-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-yellow-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #A16207;
+}
+
+.theme-light .text-lime-200:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-lime-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-lime-200/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-lime-300:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-lime-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-lime-300/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light .text-lime-400:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class^="text-lime-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *),
+.theme-light [class*=" text-lime-400/"]:not(.tc-on-dark *):not(.tc-pricing-featured *):not(.bg-slate-900 *):not(.bg-indigo-600 *) {
+  color: #4D7C0F;
+}
+
+/* Light Mode: neutral dark fills used as segmented-control / chip backgrounds */
+.theme-light .bg-zinc-800,
+.theme-light .bg-zinc-900,
+.theme-light .bg-zinc-950,
+.theme-light .bg-neutral-800,
+.theme-light .bg-neutral-900 {
+  background-color: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+/* Inline (borderless) editable fields — look like text until hovered/focused */
+.tc-inline-input {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html {
+  background-color: var(--surface-canvas);
+}
+
+::selection {
+  background-color: var(--accent);
+  color: #FFFFFF;
+}
+
+/* Modal backdrop shared by dialogs (AI console, confirmations) */
+.tc-overlay {
+  background-color: var(--overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+@keyframes tc-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tc-pop-in {
+  animation: tc-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes tc-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.tc-skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.12) 25%, rgba(148, 163, 184, 0.24) 37%, rgba(148, 163, 184, 0.12) 63%);
+  background-size: 800px 100%;
+  animation: tc-shimmer 1.2s linear infinite;
+}
+
+/* Inline inputs live inside a wrapper that already shows the focus state */
+.tc-inline-input:focus-visible {
+  outline: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Light Mode: hover states written only for dark surfaces.
+   Without these, "hover:text-white" makes labels vanish on light backgrounds
+   and "hover:bg-white/[0.06]" / dark hex hovers flash black blocks.
+--------------------------------------------------------------------------- */
+.theme-light .hover\:text-white:hover:not(.tc-btn-primary):not(.bg-indigo-600):not(.bg-indigo-500):not(.bg-slate-900):not(.bg-emerald-600):not(.bg-rose-600):not([class*="hover:bg-indigo-"]):not([class*="hover:bg-rose-"]):not([class*="hover:bg-red-"]):not([class*="hover:bg-emerald-"]):not([class*="hover:bg-slate-8"]):not([class*="hover:bg-slate-9"]):not(.tc-on-dark *),
+.theme-light .hover\:text-zinc-100:hover,
+.theme-light .hover\:text-zinc-200:hover {
+  color: #0F172A !important;
+}
+
+.theme-light .hover\:bg-white\/\[0\.02\]:hover,
+.theme-light .hover\:bg-white\/\[0\.03\]:hover,
+.theme-light .hover\:bg-white\/\[0\.09\]:hover,
+.theme-light .hover\:bg-white\/\[0\.1\]:hover,
+.theme-light .hover\:bg-white\/\[0\.12\]:hover,
+.theme-light .hover\:bg-white\/10:hover,
+.theme-light .hover\:bg-white\/15:hover,
+.theme-light .hover\:bg-white\/20:hover,
+.theme-light .hover\:bg-zinc-700:hover,
+.theme-light .hover\:bg-zinc-800\/80:hover,
+.theme-light .hover\:bg-\[\#1F1F1F\]:hover,
+.theme-light .hover\:bg-\[\#222226\]:hover,
+.theme-light .hover\:bg-\[\#2E2E34\]:hover,
+.theme-light .hover\:bg-\[\#2A2A32\]:hover,
+.theme-light .hover\:bg-\[\#1C1C22\]:hover {
+  background-color: #F1F5F9 !important;
+}
+
+.theme-light .hover\:border-white\/20:hover,
+.theme-light .hover\:border-white\/25:hover,
+.theme-light .hover\:border-white\/\[0\.16\]:hover,
+.theme-light .hover\:border-white\/\[0\.18\]:hover,
+.theme-light .hover\:border-\[\#3F3F46\]:hover,
+.theme-light .hover\:border-white:hover {
+  border-color: #CBD5E1 !important;
+}
+
+/* Light Mode: dark hex / zinc text and backgrounds not covered by the lists above */
+.theme-light .text-\[\#EDEDED\]:not(.tc-on-dark *),
+.theme-light .text-\[\#FAFAFA\]:not(.tc-on-dark *),
+.theme-light .text-zinc-50:not(.tc-on-dark *) {
+  color: #0F172A;
+}
+
+.theme-light .bg-\[\#0B0B0E\],
+.theme-light .bg-\[\#0E1015\],
+.theme-light .bg-\[\#0E1017\],
+.theme-light .bg-\[\#12151E\],
+.theme-light .bg-\[\#111114\],
+.theme-light .bg-\[\#161924\],
+.theme-light .bg-\[\#141722\] {
+  background-color: #F8FAFC !important;
+}
+
+.theme-light .bg-\[\#14161C\] {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+}
+
+/* Light Mode: 600-shades of bright hues are below 4.5:1 on white → use 700 */
+.theme-light .text-emerald-600:not(.tc-on-dark *) { color: #047857; }
+.theme-light .text-green-600:not(.tc-on-dark *) { color: #15803D; }
+.theme-light .text-teal-600:not(.tc-on-dark *) { color: #0F766E; }
+.theme-light .text-cyan-600:not(.tc-on-dark *) { color: #0E7490; }
+.theme-light .text-amber-600:not(.tc-on-dark *) { color: #B45309; }
+.theme-light .text-yellow-600:not(.tc-on-dark *) { color: #A16207; }
+.theme-light .text-lime-600:not(.tc-on-dark *) { color: #4D7C0F; }
+.theme-light .text-orange-600:not(.tc-on-dark *) { color: #C2410C; }
+
+/* Dark Mode: very dark greys used for secondary text are unreadable on near-black */
+.theme-dark .text-\[\#52525B\]:not([class*="dark:text-"]),
+.theme-dark .text-zinc-600:not([class*="dark:text-"]),
+.theme-dark .text-\[\#3F3F46\]:not([class*="dark:text-"]) {
+  color: #8B8B94;
+}
+
+/* Light Mode: translucent dark zinc fills (bg-zinc-900/50, bg-zinc-950/85 …) */
+.theme-light [class^="bg-zinc-8"],
+.theme-light [class*=" bg-zinc-8"],
+.theme-light [class^="bg-zinc-9"],
+.theme-light [class*=" bg-zinc-9"],
+.theme-light [class^="bg-neutral-9"],
+.theme-light [class*=" bg-neutral-9"] {
+  background-color: #F1F5F9 !important;
 }

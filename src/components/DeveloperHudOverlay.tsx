@@ -370,10 +370,34 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
     };
   }, []);
 
+  // The developer HUD is hidden from regular users. It is enabled with ?dev=1 in the URL
+  // or the Ctrl+Alt+D shortcut (the choice is remembered in localStorage).
+  const [isLauncherEnabled, setIsLauncherEnabled] = useState<boolean>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('dev') === '1') {
+        localStorage.setItem('tedcloud_dev_hud', '1');
+        return true;
+      }
+      if (params.get('dev') === '0') {
+        localStorage.removeItem('tedcloud_dev_hud');
+        return false;
+      }
+      return localStorage.getItem('tedcloud_dev_hud') === '1';
+    } catch {
+      return false;
+    }
+  });
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.altKey || e.ctrlKey || e.metaKey) && e.code === 'KeyD') {
+      // Ctrl+Alt+D (Cmd+Alt+D) — never hijack the browser's own Ctrl+D (bookmark) shortcut.
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyD') {
         e.preventDefault();
+        setIsLauncherEnabled(true);
+        try {
+          localStorage.setItem('tedcloud_dev_hud', '1');
+        } catch {}
         setIsOpen((prev) => !prev);
       }
     };
@@ -490,13 +514,14 @@ export const DeveloperHudOverlay: React.FC<DeveloperHudOverlayProps> = ({
   }, [highlightDomIssues, domIssues, isOpen]);
 
   if (!isOpen) {
+    if (!isLauncherEnabled) return null;
     return (
       <button
         type="button"
         data-dev-hud="true"
         onClick={() => setIsOpen(true)}
         className="fixed bottom-3 right-3 z-[9999] bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg hover:opacity-90 transition cursor-pointer inline-flex items-center gap-1.5"
-        title="Открыть панель разработчика (Alt+D / Ctrl+D)"
+        title="Открыть панель разработчика (Ctrl+Alt+D)"
       >
         <Terminal className="w-3.5 h-3.5" />
         <span>DEV · Аудит</span>

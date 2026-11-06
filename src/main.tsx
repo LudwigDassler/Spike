@@ -1,6 +1,9 @@
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { installApiAuthFetch } from './lib/apiSession';
+
+installApiAuthFetch();
 
 if (typeof window !== 'undefined') {
   window.addEventListener(

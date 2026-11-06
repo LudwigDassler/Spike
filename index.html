@@ -2,7 +2,29 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0B0C10" />
+    <script>
+      /* Apply the saved / system theme before first paint (no flash of the wrong theme). */
+      (function () {
+        try {
+          var pref = (localStorage.getItem('tedcloud_theme') || 'system').toLowerCase();
+          var theme =
+            pref === 'light' || pref === 'dark'
+              ? pref
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+          var root = document.documentElement;
+          root.classList.add(theme === 'light' ? 'theme-light' : 'theme-dark');
+          if (theme !== 'light') root.classList.add('dark');
+          root.style.colorScheme = theme;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', theme === 'light' ? '#F4F4F1' : '#0B0C10');
+        } catch (e) {}
+      })();
+    </script>
     <script>
       (function () {
         if (typeof window === 'undefined') return;
@@ -75,7 +97,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
-  <body class="bg-[#09090B] text-[#EDEDED] antialiased selection:bg-emerald-700 selection:text-white">
+  <body class="antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

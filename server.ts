@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import {
   addCopilotTaskComment,
@@ -27,7 +28,7 @@ import { CrmLead, TaskStatus } from './src/types/saas';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '15mb' }));
 
@@ -351,6 +352,11 @@ async function startServer() {
     await dbHandler(req, res);
   });
 
+  app.get('/api/fx-rates', async (req, res) => {
+    const { default: fxHandler } = await import('./api/fx-rates');
+    await fxHandler(req, res);
+  });
+
   app.all('/api/telegram/setup', async (req, res) => {
     const { default: setupHandler } = await import('./api/telegram/setup');
     await setupHandler(req, res);
@@ -397,18 +403,45 @@ async function startServer() {
 
   // Вся обработка сообщений Telegram идет строго через серверный вебхук /api/telegram/webhook
 
-  if (process.env.NODE_ENV !== 'production') {
+  // Unknown API routes → JSON 404 instead of falling through to the SPA HTML.
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
+
+  const isProduction =
+    process.env.NODE_ENV === 'production' || process.argv.includes('--production');
+
+  if (!isProduction) {
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false, watch: null },
+      // File watching keeps served modules fresh after edits (a browser reload picks them up).
+      // DISABLE_HMR=true turns it off for sandboxed environments such as AI Studio.
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static('dist'));
+    const distDir = path.resolve(process.cwd(), 'dist');
+    // Hashed assets can be cached forever; index.html must always be revalidated.
+    app.use(
+      '/assets',
+      express.static(path.join(distDir, 'assets'), { immutable: true, maxAge: '1y' })
+    );
+    app.use(express.static(distDir, { index: false }));
+    // SPA fallback: deep links (e.g. /?deal_room=… or future client routes) load the app shell.
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(path.join(distDir, 'index.html'));
+    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`TedCloud Full-Stack Server listening on http://0.0.0.0:${PORT}`);
+    console.log(
+      `TedCloud server (${isProduction ? 'production' : 'development'}) listening on http://0.0.0.0:${PORT}`
+    );
   });
 }
 

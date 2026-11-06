@@ -60,7 +60,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <header className="h-14 border-b border-slate-200/90 dark:border-white/[0.07] bg-white/95 dark:bg-[#09090B]/90 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20 font-sans">
-      <div className="flex items-center gap-2 min-w-0 text-xs">
+      <nav aria-label={isEn ? 'Breadcrumbs' : 'Навигация'} className="flex flex-1 items-center gap-2 min-w-0 overflow-hidden text-xs">
         {onOpenMobileMenu && (
           <button
             type="button"
@@ -80,14 +80,17 @@ export const TopBar: React.FC<TopBarProps> = ({
           {t('topbar.workspace')}
         </span>
         <span className="text-slate-400 dark:text-zinc-600 hidden md:inline">/</span>
-        <span className="font-semibold text-slate-700 dark:text-zinc-300 truncate max-w-[110px] sm:max-w-[180px]">
+        <span className="font-semibold text-slate-700 dark:text-zinc-300 truncate min-w-0 max-w-[110px] sm:max-w-[180px]">
           {companyName}
         </span>
         <span className="text-slate-400 dark:text-zinc-600 hidden sm:inline">/</span>
-        <span className="font-bold text-slate-900 dark:text-white tracking-tight whitespace-nowrap hidden sm:inline">
+        <span
+          aria-current="page"
+          className="font-bold text-slate-900 dark:text-white tracking-tight truncate min-w-0 hidden sm:inline"
+        >
           {sectionLabel}
         </span>
-      </div>
+      </nav>
 
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {onOpenCommandBar && (
@@ -114,7 +117,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             }}
             placeholder={effectivePlaceholder}
             aria-label={effectivePlaceholder}
-            className="w-40 md:w-56 lg:w-64 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111114] pl-8 pr-14 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-500 focus:border-indigo-500 dark:focus:border-white/25 focus:outline-none transition-colors"
+            className="w-40 lg:w-48 xl:w-64 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#111114] pl-8 pr-14 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-500 focus:border-indigo-500 dark:focus:border-white/25 focus:outline-none transition-colors"
           />
           {searchQuery ? (
             <button
@@ -158,16 +161,13 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onOpenAiCopilot}
-            aria-label="TedCloud Intelligence"
-            title={
-              isEn
-                ? 'TedCloud Intelligence · CloudCode Console (Alt+Space)'
-                : 'ИИ-консоль TedCloud Intelligence (Alt+Space)'
-            }
+            aria-label={isEn ? 'AI assistant' : 'ИИ-ассистент'}
+            aria-keyshortcuts="Alt+Space"
+            title={isEn ? 'AI assistant (Alt+Space)' : 'ИИ-ассистент (Alt+Space)'}
             className="inline-flex items-center justify-center gap-2 h-8 px-2.5 sm:px-3 rounded-lg border border-slate-200/90 dark:border-white/10 bg-slate-100 text-slate-900 hover:bg-slate-200/70 dark:bg-zinc-800/90 dark:text-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold transition-colors whitespace-nowrap shadow-2xs shrink-0 cursor-pointer"
           >
             <TeddyPrismIcon className="w-4 h-4 shrink-0" />
-            <span className="hidden md:inline">{isEn ? 'CloudAI' : 'ИИ-контур'}</span>
+            <span className="hidden md:inline">{isEn ? 'AI assistant' : 'ИИ-ассистент'}</span>
           </button>
         )}
 

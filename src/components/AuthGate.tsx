@@ -32,6 +32,7 @@ import {
 } from '../utils/enterpriseLogic';
 import { useLocale } from '../i18n/LocaleContext';
 import { TeddyPrismIcon } from './TedCloudAiDrawer';
+import { rememberSessionTokenFrom } from '../lib/apiSession';
 
 export interface AuthGateProps {
   existingNodes?: OrganizationNode[];
@@ -136,6 +137,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
         return;
       }
 
+      rememberSessionTokenFrom(data);
       await onAuthenticated(data.profile, data.company || resolvedCompany);
     } catch (err: any) {
       setErrorMessage(formatError(err));
@@ -219,6 +221,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
         return;
       }
       setOtpModeActive(false);
+      rememberSessionTokenFrom(data);
       await onAuthenticated(data.profile, data.company || resolvedCompany);
     } catch (err: any) {
       setErrorMessage(formatError(err));
@@ -265,6 +268,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
         return;
       }
 
+      rememberSessionTokenFrom(data);
       await onAuthenticated(data.profile, data.company || resolvedCompany);
     } catch (err: any) {
       setErrorMessage(formatError(err));
@@ -308,6 +312,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
         return;
       }
 
+      rememberSessionTokenFrom(data);
       await onAuthenticated(data.profile, data.company || null);
     } catch (err: any) {
       setErrorMessage(formatError(err));

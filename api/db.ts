@@ -1,4 +1,12 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import {
+  extractBearerToken,
+  type SessionClaims,
+  SessionConfigError,
+  signSessionToken,
+  verifySessionToken,
+} from './_lib/sessionAuth';
+import { createSnapshotWriter, loadSnapshot, resolveLocalDataFile } from './_lib/localPersistence';
 
 export const dynamic = 'force-dynamic';
 
@@ -1301,6 +1309,59 @@ const localStore: InMemoryStore = {
   audit_logs: [],
 };
 
+// -----------------------------------------------------------------------------
+// Резервное сохранение на диск (только когда Supabase не настроен).
+// Данные переживают перезапуск сервера; см. api/_lib/localPersistence.ts.
+// -----------------------------------------------------------------------------
+const LOCAL_DATA_FILE = hasSupabaseConfig() ? null : resolveLocalDataFile();
+
+function hasSupabaseConfig(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    '';
+  return Boolean(url && key && !url.includes('placeholder'));
+}
+
+(function restoreLocalSnapshot() {
+  const snapshot = loadSnapshot(LOCAL_DATA_FILE);
+  if (!snapshot) return;
+  const data = snapshot.data as Record<string, any>;
+  for (const key of Object.keys(localStore) as Array<keyof InMemoryStore>) {
+    if (Array.isArray(data[key])) localStore[key] = data[key];
+  }
+  for (const [k, v] of Object.entries((data.recordNotesOverlay || {}) as Record<string, any>)) {
+    recordNotesOverlay.set(k, v);
+  }
+  for (const [k, v] of Object.entries((data.recordExtrasOverlay || {}) as Record<string, any>)) {
+    recordExtrasOverlay.set(k, v);
+  }
+  console.log(
+    `[persistence] Восстановлено из ${LOCAL_DATA_FILE}: компаний ${localStore.companies.length}, задач ${localStore.tasks.length}, сделок ${localStore.crm_leads.length}`
+  );
+})();
+
+const localSnapshotWriter = createSnapshotWriter(LOCAL_DATA_FILE, () => ({
+  ...localStore,
+  recordNotesOverlay: Object.fromEntries(recordNotesOverlay),
+  recordExtrasOverlay: Object.fromEntries(recordExtrasOverlay),
+}));
+
+if (LOCAL_DATA_FILE) {
+  const flushOnExit = () => localSnapshotWriter.flush();
+  process.once('beforeExit', flushOnExit);
+  process.once('SIGINT', () => {
+    flushOnExit();
+    process.exit(0);
+  });
+  process.once('SIGTERM', () => {
+    flushOnExit();
+    process.exit(0);
+  });
+}
+
 function getAdminSupabaseOrNull(): SupabaseClient | null {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseKey =
@@ -2189,6 +2250,268 @@ async function verifyServerRbac(params: {
   return { allowed: true };
 }
 
+// =========================================================================
+// СЕРВЕРНАЯ СЕССИЯ И RBAC: компания и профиль берутся только из подписанного токена
+// =========================================================================
+
+export interface SessionContext {
+  claims: SessionClaims;
+  profileId: string;
+  companyId: string;
+  /** Внутреннее представление профиля (с паролем) — наружу не отдавать */
+  actor: any;
+}
+
+type SessionResolution =
+  | { ok: true; session: SessionContext }
+  | { ok: false; status: 401 | 500; error: string; code: string };
+
+async function loadNodeById(supabase: SupabaseClient | null, id: string): Promise<any | null> {
+  const localMatch = localStore.organization_nodes.find((n) => String(n.id) === String(id));
+  if (localMatch) return normalizeNodeRowInternal(localMatch);
+  if (supabase) {
+    const rows = await safeSelect(supabase, 'organization_nodes', (q) =>
+      q.eq('id', String(id)).limit(1)
+    );
+    if (rows[0]) return normalizeNodeRowInternal(rows[0]);
+  }
+  return null;
+}
+
+/**
+ * Проверяет Bearer-токен и подтверждает, что профиль существует и всё ещё
+ * принадлежит компании из токена (удалённый/перемещённый сотрудник теряет доступ).
+ */
+async function resolveRequestSession(
+  req: any,
+  supabase: SupabaseClient | null
+): Promise<SessionResolution> {
+  const token = extractBearerToken(req);
+  if (!token) {
+    return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'Требуется вход в систему.' };
+  }
+  let claims: SessionClaims | null;
+  try {
+    claims = verifySessionToken(token);
+  } catch (err) {
+    if (err instanceof SessionConfigError) {
+      return { ok: false, status: 500, code: 'AUTH_MISCONFIGURED', error: err.message };
+    }
+    throw err;
+  }
+  if (!claims) {
+    return {
+      ok: false,
+      status: 401,
+      code: 'SESSION_INVALID',
+      error: 'Сессия недействительна или истекла. Войдите снова.',
+    };
+  }
+  const actor = await loadNodeById(supabase, claims.sub);
+  if (!actor || String(actor.company_id || '') !== String(claims.cid)) {
+    return {
+      ok: false,
+      status: 401,
+      code: 'SESSION_REVOKED',
+      error: 'Профиль сессии не найден в организации. Войдите снова.',
+    };
+  }
+  return {
+    ok: true,
+    session: { claims, profileId: String(claims.sub), companyId: String(claims.cid), actor },
+  };
+}
+
+/** Выдаёт токен для профиля, прошедшего вход/регистрацию. */
+function issueSessionTokenFor(profile: any): string {
+  return signSessionToken({
+    profileId: String(profile?.id || ''),
+    companyId: String(profile?.company_id || ''),
+  });
+}
+
+/**
+ * Возвращает id компании, на который ссылается клиент, если он отличается от компании сессии.
+ * Клиентские company_id не используются для выбора данных — только для обнаружения подмены.
+ */
+export function findForeignCompanyReference(
+  sessionCompanyId: string,
+  candidates: Array<unknown>
+): string | null {
+  for (const raw of candidates) {
+    if (raw === undefined || raw === null || raw === '') continue;
+    const value = String(raw).trim();
+    if (value && value !== String(sessionCompanyId)) return value;
+  }
+  return null;
+}
+
+const NODE_SELF_EDITABLE_FIELDS = new Set([
+  'name',
+  'email',
+  'avatar_url',
+  'telegram_chat_id',
+  'password',
+  'otp_code',
+  'shift_status',
+  'shift_started_at',
+]);
+
+const NODE_PRIVILEGED_FIELDS = new Set(['access_level', 'permissions', 'invite_code', 'tree_path']);
+
+export type MutationOperation = 'create' | 'update' | 'delete';
+
+/**
+ * Политика RBAC для изменяющих операций.
+ * `actor` — нормализованный профиль из сессии; `record` — существующая запись
+ * (для update/delete) или создаваемая (для create); `updates` — поля PATCH.
+ */
+export function evaluateMutationAccess(params: {
+  actor: any;
+  table: string;
+  operation: MutationOperation;
+  record?: any;
+  updates?: Record<string, any> | null;
+}): { allowed: boolean; reason?: string } {
+  const { actor, table, operation } = params;
+  const record = params.record || {};
+  const updates = params.updates || {};
+  if (!actor) return { allowed: false, reason: 'Требуется вход в систему.' };
+
+  const level = normalizeAccessLevel(actor.access_level, actor.role_type);
+  const perms = normalizePermissionsObject(level, actor.permissions);
+  const actorId = String(actor.id || '');
+  const deny = (reason: string) => ({ allowed: false, reason });
+  const needPerm = (perm: keyof GranularPermissions) =>
+    perms[perm]
+      ? { allowed: true }
+      : deny(`Недостаточно полномочий RBAC: требуется право «${String(perm)}».`);
+  const readOnly = () =>
+    deny('Роль «Аудитор / Наблюдатель» (observer) имеет доступ только для чтения.');
+
+  switch (table) {
+    case 'tasks': {
+      if (level === 'root') return { allowed: true };
+      if (level === 'observer') return readOnly();
+      if (operation === 'delete') return needPerm('tasks_assign');
+      const targetAssignee =
+        updates.assigned_to !== undefined
+          ? updates.assigned_to
+          : updates.owner_node_id !== undefined
+          ? updates.owner_node_id
+          : operation === 'create'
+          ? record.assigned_to ?? record.owner_node_id
+          : undefined;
+      if (
+        targetAssignee !== undefined &&
+        targetAssignee !== null &&
+        targetAssignee !== '' &&
+        String(targetAssignee) !== actorId &&
+        !perms.tasks_assign
+      ) {
+        return deny('Недостаточно полномочий RBAC: назначать задачи другим может только «tasks_assign».');
+      }
+      if (operation === 'update' && !perms.tasks_assign) {
+        const related = [record.assigned_to, record.owner_node_id, record.created_by, record.creator_id]
+          .filter(Boolean)
+          .map(String);
+        if (!related.includes(actorId)) {
+          return deny('Изменять можно только свои задачи (требуется право «tasks_assign»).');
+        }
+      }
+      return { allowed: true };
+    }
+    case 'crm_leads': {
+      if (level === 'root') return { allowed: true };
+      if (level === 'observer') return readOnly();
+      return needPerm('crm_edit');
+    }
+    case 'organization_nodes': {
+      const targetLevel = normalizeAccessLevel(record.access_level, record.role_type);
+      const isSelf = operation !== 'create' && String(record.id || '') === actorId;
+      if (operation === 'delete' && isSelf) {
+        return deny('Нельзя удалить собственный профиль.');
+      }
+      if (level === 'root') return { allowed: true };
+      if (operation === 'update' && isSelf) {
+        const keys = Object.keys(updates);
+        if (keys.every((k) => NODE_SELF_EDITABLE_FIELDS.has(k))) return { allowed: true };
+      }
+      if (level === 'observer') return readOnly();
+      if (!perms.team_manage) {
+        return deny('Недостаточно полномочий RBAC: требуется право «team_manage».');
+      }
+      if (targetLevel === 'root' && operation !== 'create') {
+        return deny('Изменять или удалять профиль руководителя (root) может только root.');
+      }
+      if (operation === 'create' && normalizeAccessLevel(record.access_level, record.role_type) === 'root') {
+        return deny('Создавать профили уровня root может только root.');
+      }
+      const touchesPrivileged = Object.keys(updates).some((k) => NODE_PRIVILEGED_FIELDS.has(k));
+      if (touchesPrivileged || operation === 'create') {
+        const requestedLevel = normalizeAccessLevel(
+          updates.access_level ?? record.access_level,
+          updates.role_type ?? record.role_type
+        );
+        if (requestedLevel === 'root') {
+          return deny('Назначать уровень root может только root.');
+        }
+        const requestedPerms = updates.permissions ?? (operation === 'create' ? record.permissions : null);
+        if (requestedPerms && typeof requestedPerms === 'object' && requestedPerms.billing_admin) {
+          return deny('Выдавать право «billing_admin» может только root.');
+        }
+      }
+      return { allowed: true };
+    }
+    case 'billing_invoices': {
+      if (level === 'root') return { allowed: true };
+      if (level === 'observer') return readOnly();
+      return needPerm('billing_admin');
+    }
+    case 'companies': {
+      if (level === 'root') return { allowed: true };
+      if (level === 'observer') return readOnly();
+      const keys = Object.keys(updates);
+      if (keys.length > 0 && keys.every((k) => k === 'departments')) {
+        return needPerm('team_manage');
+      }
+      return needPerm('billing_admin');
+    }
+    case 'workspace_messages': {
+      if (operation === 'delete') return level === 'root' ? { allowed: true } : deny('Удаление сообщений запрещено.');
+      if (operation === 'update' && (updates.message_text !== undefined || updates.text !== undefined)) {
+        if (level !== 'root' && String(record.sender_id || '') !== actorId) {
+          return deny('Редактировать можно только свои сообщения.');
+        }
+      }
+      return { allowed: true };
+    }
+    case 'work_shifts':
+    case 'audit_logs':
+      if (operation !== 'create') return level === 'root' ? { allowed: true } : deny('Операция запрещена.');
+      return { allowed: true };
+    default:
+      return deny(`Таблица «${table}» недоступна для изменения.`);
+  }
+}
+
+/** Загружает существующую запись (localStore → Supabase) для проверки владельца и RBAC. */
+async function loadExistingRecord(
+  supabase: SupabaseClient | null,
+  table: string,
+  id: string
+): Promise<any | null> {
+  const list = (localStore as any)[table] as any[] | undefined;
+  const local = Array.isArray(list) ? list.find((r) => String(r?.id) === String(id)) : null;
+  const extras = recordExtrasOverlay.get(`${table}:${id}`) || {};
+  if (local) return { ...extras, ...local };
+  if (supabase) {
+    const rows = await safeSelect(supabase, table, (q) => q.eq('id', String(id)).limit(1));
+    if (rows[0]) return { ...extras, ...rows[0] };
+  }
+  return null;
+}
+
 function normalizeLeadRow(row: any) {
   const overlay = row.id ? recordNotesOverlay.get(`crm_leads:${row.id}`) : undefined;
   const extras = row.id ? recordExtrasOverlay.get(`crm_leads:${row.id}`) : undefined;
@@ -2502,16 +2825,31 @@ function findMatchingNodeByInput(nodes: any[], rawInput: string): any | null {
   );
 }
 
+const PUBLIC_POST_ACTIONS = new Set([
+  'login',
+  'register',
+  'register_workspace',
+  'send_telegram_otp',
+  'verify_telegram_otp',
+]);
+
 export default async function handler(req: any, res: any) {
+  try {
+    return await handleDbRequest(req, res);
+  } finally {
+    // Любой запрос может изменить локальное хранилище (в т.ч. GET создаёт компанию по умолчанию).
+    // Writer сам пропускает запись, если данные не изменились.
+    localSnapshotWriter.schedule();
+  }
+}
+
+async function handleDbRequest(req: any, res: any) {
   try {
     const supabase = getAdminSupabaseOrNull();
     const method = (req.method || 'GET').toUpperCase();
 
     if (method === 'GET') {
-      const chatId = req.query?.chatId ? String(req.query.chatId).trim() : null;
-      const tgId = req.query?.tg_id ? String(req.query.tg_id).trim() : null;
       const inviteCode = req.query?.invite ? String(req.query.invite).trim() : null;
-      const profileId = req.query?.profileId ? String(req.query.profileId).trim() : null;
       const requestedCompanyId =
         req.query?.company_id || req.query?.companyId
           ? String(req.query.company_id || req.query.companyId).trim()
@@ -2519,43 +2857,59 @@ export default async function handler(req: any, res: any) {
 
       const botUsername = await resolveTelegramBotUsername();
 
+      // Профиль и компания определяются только по подписанному токену.
+      // Исключение — персональный инвайт-код из ссылки (?invite=TC-XXXX): это секрет входа,
+      // по нему выдаётся новый токен (аналог action: 'login' с loginMode 'invite').
+      let sessionResult = await resolveRequestSession(req, supabase);
+      let issuedSessionToken: string | null = null;
+      if (inviteCode) {
+        const inviteLower = inviteCode.toLowerCase();
+        let inviteNodes: any[] = [];
+        if (!supabase) {
+          inviteNodes = localStore.organization_nodes.map(normalizeNodeRowInternal);
+        } else {
+          const nodesRes = await safeSelectTable(supabase, 'organization_nodes', true);
+          inviteNodes = (nodesRes.data || []).map(normalizeNodeRowInternal);
+        }
+        const inviteMatch = inviteNodes.find(
+          (n: any) => String(n.invite_code || '').trim().toLowerCase() === inviteLower
+        );
+        if (inviteMatch?.company_id) {
+          issuedSessionToken = issueSessionTokenFor(inviteMatch);
+          sessionResult = {
+            ok: true,
+            session: {
+              claims: verifySessionToken(issuedSessionToken)!,
+              profileId: String(inviteMatch.id),
+              companyId: String(inviteMatch.company_id),
+              actor: inviteMatch,
+            },
+          };
+        }
+      }
+
+      if (!sessionResult.ok) {
+        return res.status(sessionResult.status).json({
+          ok: false,
+          error: sessionResult.error,
+          code: sessionResult.code,
+          botUsername,
+        });
+      }
+      const session = sessionResult.session;
+      if (findForeignCompanyReference(session.companyId, [requestedCompanyId])) {
+        return res.status(403).json({
+          ok: false,
+          code: 'TENANT_MISMATCH',
+          error: 'Межконтурный доступ запрещен (Cross-Tenant Access Denied).',
+        });
+      }
+      const sessionTokenField = issuedSessionToken ? { sessionToken: issuedSessionToken } : {};
+
       if (!supabase) {
         const allNodes = localStore.organization_nodes.map(normalizeNodeRow);
-        let currentProfile = null;
-        if (profileId) {
-          currentProfile =
-            allNodes.find((n) => String(n.id) === profileId) ||
-            findMatchingNodeByInput(allNodes, profileId);
-        }
-        if (!currentProfile && inviteCode) {
-          currentProfile = findMatchingNodeByInput(allNodes, inviteCode);
-        }
-        if (!currentProfile && tgId) {
-          currentProfile = findMatchingNodeByInput(allNodes, tgId);
-        }
-        if (!currentProfile && chatId) {
-          currentProfile = findMatchingNodeByInput(allNodes, chatId);
-        }
-
-        const activeCompanyId =
-          currentProfile?.company_id || requestedCompanyId || null;
-
-        if (!activeCompanyId) {
-          return res.status(200).json({
-            ok: true,
-            mode: 'local_empty',
-            botUsername,
-            company: null,
-            currentProfile: null,
-            nodes: allNodes,
-            tasks: [],
-            leads: [],
-            messages: [],
-            invoices: [],
-            workShifts: [],
-            auditLogs: [],
-          });
-        }
+        const currentProfile = normalizeNodeRow(session.actor);
+        const activeCompanyId = session.companyId;
 
         const matchedCompany =
           localStore.companies.find((c) => String(c.id) === String(activeCompanyId)) || null;
@@ -2608,6 +2962,7 @@ export default async function handler(req: any, res: any) {
 
         return res.status(200).json({
           ok: true,
+          ...sessionTokenField,
           mode: 'local_empty',
           botUsername,
           company: normalizeCompanyRow(matchedCompany),
@@ -2655,41 +3010,8 @@ export default async function handler(req: any, res: any) {
       const rawTasks = (tasksData || []).map(normalizeTaskRow);
       const rawLeads = (leadsData || []).map(normalizeLeadRow);
 
-      let currentProfile = null;
-      if (profileId) {
-        currentProfile =
-          rawNodes.find((n: any) => String(n.id) === profileId) ||
-          findMatchingNodeByInput(rawNodes, profileId);
-      }
-      if (!currentProfile && inviteCode) {
-        currentProfile = findMatchingNodeByInput(rawNodes, inviteCode);
-      }
-      if (!currentProfile && tgId) {
-        currentProfile = findMatchingNodeByInput(rawNodes, tgId);
-      }
-      if (!currentProfile && chatId) {
-        currentProfile = findMatchingNodeByInput(rawNodes, chatId);
-      }
-
-      const activeCompanyId =
-        currentProfile?.company_id || requestedCompanyId || null;
-
-      if (!activeCompanyId) {
-        return res.status(200).json({
-          ok: true,
-          mode: 'supabase',
-          botUsername,
-          company: null,
-          currentProfile: null,
-          nodes: rawNodes,
-          tasks: [],
-          leads: [],
-          messages: [],
-          invoices: [],
-          workShifts: [],
-          auditLogs: [],
-        });
-      }
+      const currentProfile = normalizeNodeRow(session.actor);
+      const activeCompanyId = session.companyId;
 
       let activeCompany =
         rawCompanies.find((c: any) => String(c?.id) === String(activeCompanyId)) || null;
@@ -2805,6 +3127,7 @@ export default async function handler(req: any, res: any) {
 
       return res.status(200).json({
         ok: true,
+        ...sessionTokenField,
         mode: 'supabase',
         botUsername,
         company: activeCompany,
@@ -2825,6 +3148,62 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ error: parsedBody.error });
       }
       const body = parsedBody.data;
+      const postAction = String(body.action || '');
+
+      // Публичны только действия входа/регистрации. Всё остальное — по подписанному токену.
+      let postSession: SessionContext | null = null;
+      if (!PUBLIC_POST_ACTIONS.has(postAction)) {
+        const sessionResult = await resolveRequestSession(req, supabase);
+        if (!sessionResult.ok) {
+          return res
+            .status(sessionResult.status)
+            .json({ ok: false, error: sessionResult.error, code: sessionResult.code });
+        }
+        postSession = sessionResult.session;
+        const postPayload =
+          body.payload && typeof body.payload === 'object'
+            ? body.payload
+            : body.record && typeof body.record === 'object'
+            ? body.record
+            : null;
+        if (
+          findForeignCompanyReference(postSession.companyId, [
+            body.company_id,
+            body.companyId,
+            postPayload?.company_id,
+            postPayload?.companyId,
+          ])
+        ) {
+          return res.status(403).json({
+            ok: false,
+            code: 'TENANT_MISMATCH',
+            error: 'Межконтурный доступ запрещен (Cross-Tenant Access Denied).',
+          });
+        }
+        body.company_id = postSession.companyId;
+        delete body.companyId;
+        body.actor_id = postSession.profileId;
+        body.profile_id = postSession.profileId;
+        delete body.profileId;
+        if (postPayload) {
+          postPayload.company_id = postSession.companyId;
+          delete postPayload.companyId;
+          if (postPayload.actor_id !== undefined) postPayload.actor_id = postSession.profileId;
+        }
+
+        if (postAction === 'run_qa_suite' || postAction === 'cleanup_qa_sandbox') {
+          const level = normalizeAccessLevel(
+            postSession.actor.access_level,
+            postSession.actor.role_type
+          );
+          if (level !== 'root') {
+            return res.status(403).json({
+              ok: false,
+              error: 'QA-раннер доступен только руководителю организации (root).',
+            });
+          }
+        }
+      }
 
       // =========================================================================
       // ЭТАП 1: АВТОМАТИЗИРОВАННЫЙ E2E QA & SECURITY РАННЕР (action: 'run_qa_suite')
@@ -3900,7 +4279,11 @@ export default async function handler(req: any, res: any) {
           return null;
         };
 
-        if (mode === 'custom' && promptText.length > 0) {
+        // execute_actions === false → режим «только анализ»: ИИ ничего не пишет в БД.
+        // Используется окном ИИ, где изменения применяются только после подтверждения пользователя.
+        const allowActionExecution = body.execute_actions !== false && body.dry_run !== true;
+
+        if (allowActionExecution && mode === 'custom' && promptText.length > 0) {
           const cleanPrompt = promptText.replace(/\[Attached files:[^\]]*\]/gi, '').trim();
           const lowerPrompt = cleanPrompt.toLowerCase();
 
@@ -4451,7 +4834,16 @@ ${builtInResult.reply}
 
         // If taskId is provided during decompose_task, persist checklist & ai_summary to DB
         let updatedTaskRecord: any = null;
-        if (mode === 'decompose_task' && taskId && finalResult.checklist) {
+        const aiTaskWriteAllowed =
+          Boolean(targetTaskRecord) &&
+          evaluateMutationAccess({
+            actor: postSession?.actor,
+            table: 'tasks',
+            operation: 'update',
+            record: targetTaskRecord,
+            updates: { checklist: finalResult.checklist },
+          }).allowed;
+        if (mode === 'decompose_task' && taskId && finalResult.checklist && aiTaskWriteAllowed) {
           const prevExtras = recordExtrasOverlay.get(`tasks:${taskId}`) || {};
           recordExtrasOverlay.set(`tasks:${taskId}`, {
             ...prevExtras,
@@ -4644,8 +5036,12 @@ ${builtInResult.reply}
           }
         }
 
+        if (!matched.company_id) {
+          return res.status(403).json({ error: 'Профиль не привязан к организации.' });
+        }
         return res.status(200).json({
           ok: true,
+          sessionToken: issueSessionTokenFor(matched),
           profile: normalizeNodeRow({ ...matched, otp_code: null }),
           company,
         });
@@ -4757,8 +5153,12 @@ ${builtInResult.reply}
           }
         }
 
+        if (!matched.company_id) {
+          return res.status(403).json({ error: 'Профиль не привязан к организации.' });
+        }
         return res.status(200).json({
           ok: true,
+          sessionToken: issueSessionTokenFor(matched),
           profile: normalizeNodeRow(matched),
           company,
         });
@@ -4838,6 +5238,7 @@ ${builtInResult.reply}
 
           return res.status(200).json({
             ok: true,
+            sessionToken: issueSessionTokenFor(rootNode),
             company: normalizeCompanyRow(newCompany),
             profile: normalizeNodeRow(rootNode),
           });
@@ -4911,10 +5312,12 @@ ${builtInResult.reply}
           details: `Зарегистрирована организация «${companyName}» (Root: ${leaderName})`,
         });
 
+        const createdRootProfile = { ...rawRootNode, ...createdNode };
         return res.status(200).json({
           ok: true,
+          sessionToken: issueSessionTokenFor(createdRootProfile),
           company: normalizeCompanyRow({ ...createdCompany, departments: initialDepts }),
-          profile: normalizeNodeRow({ ...rawRootNode, ...createdNode }),
+          profile: normalizeNodeRow(createdRootProfile),
         });
       }
 
@@ -4927,27 +5330,17 @@ ${builtInResult.reply}
         });
       }
 
-      const postActorId = body.actor_id || payload.actor_id;
-      if (postActorId) {
-        const rbacCheck = await verifyServerRbac({
-          supabase,
-          actorId: String(postActorId),
-          requiredPermission:
-            table === 'organization_nodes'
-              ? 'team_manage'
-              : table === 'companies' || table === 'billing_invoices'
-              ? 'billing_admin'
-              : table === 'crm_leads'
-              ? 'crm_edit'
-              : 'not_observer',
-        });
-        if (!rbacCheck.allowed) {
-          return res.status(403).json({ error: rbacCheck.reason });
-        }
+      const postRbac = evaluateMutationAccess({
+        actor: postSession!.actor,
+        table: String(table),
+        operation: 'create',
+        record: payload,
+      });
+      if (!postRbac.allowed) {
+        return res.status(403).json({ ok: false, code: 'RBAC_DENIED', error: postRbac.reason });
       }
 
-      const companyId =
-        body.company_id || payload.company_id || (await resolveDefaultCompanyId(supabase));
+      const companyId = postSession!.companyId;
 
       if (table === 'tasks') {
         const title = String(payload.title || '').trim();
@@ -5668,20 +6061,65 @@ ${builtInResult.reply}
         });
       }
 
-      if (body.actor_id) {
-        const rbacCheck = await verifyServerRbac({
-          supabase,
-          actorId: String(body.actor_id),
-          requiredPermission:
-            table === 'companies' || table === 'billing_invoices'
-              ? 'billing_admin'
-              : table === 'crm_leads'
-              ? 'crm_edit'
-              : 'not_observer',
+      const patchSessionResult = await resolveRequestSession(req, supabase);
+      if (!patchSessionResult.ok) {
+        return res
+          .status(patchSessionResult.status)
+          .json({ ok: false, error: patchSessionResult.error, code: patchSessionResult.code });
+      }
+      const patchSession = patchSessionResult.session;
+      body.actor_id = patchSession.profileId;
+      if (
+        findForeignCompanyReference(patchSession.companyId, [
+          body.company_id,
+          body.companyId,
+          updates.company_id,
+          updates.companyId,
+        ])
+      ) {
+        return res.status(403).json({
+          ok: false,
+          code: 'TENANT_MISMATCH',
+          error: 'Межконтурный доступ запрещен (Cross-Tenant Access Denied).',
         });
-        if (!rbacCheck.allowed) {
-          return res.status(403).json({ error: rbacCheck.reason });
+      }
+      delete updates.company_id;
+      delete updates.companyId;
+
+      let patchTarget: any = null;
+      if (table === 'companies') {
+        if (String(id) !== patchSession.companyId) {
+          return res.status(403).json({
+            ok: false,
+            code: 'TENANT_MISMATCH',
+            error: 'Межконтурный доступ запрещен (Cross-Tenant Access Denied).',
+          });
         }
+        patchTarget = { id, company_id: patchSession.companyId };
+      } else {
+        patchTarget = await loadExistingRecord(supabase, String(table), String(id));
+        if (!patchTarget) {
+          return res.status(404).json({ ok: false, error: 'Запись не найдена.' });
+        }
+        if (String(patchTarget.company_id || '') !== patchSession.companyId) {
+          return res.status(403).json({
+            ok: false,
+            code: 'TENANT_MISMATCH',
+            error: 'Межконтурный доступ запрещен (Cross-Tenant Access Denied).',
+          });
+        }
+      }
+
+      const patchRbac = evaluateMutationAccess({
+        actor: patchSession.actor,
+        table: String(table),
+        operation: 'update',
+        record:
+          table === 'organization_nodes' ? normalizeNodeRowInternal(patchTarget) : patchTarget,
+        updates,
+      });
+      if (!patchRbac.allowed) {
+        return res.status(403).json({ ok: false, code: 'RBAC_DENIED', error: patchRbac.reason });
       }
 
       if (table === 'companies') {
@@ -6256,20 +6694,36 @@ ${builtInResult.reply}
         });
       }
 
-      if (body.actor_id) {
-        const rbacCheck = await verifyServerRbac({
-          supabase,
-          actorId: String(body.actor_id),
-          requiredPermission:
-            table === 'organization_nodes'
-              ? 'team_manage'
-              : table === 'crm_leads'
-              ? 'crm_edit'
-              : 'tasks_assign',
+      const deleteSessionResult = await resolveRequestSession(req, supabase);
+      if (!deleteSessionResult.ok) {
+        return res
+          .status(deleteSessionResult.status)
+          .json({ ok: false, error: deleteSessionResult.error, code: deleteSessionResult.code });
+      }
+      const deleteSession = deleteSessionResult.session;
+      const deleteTarget = await loadExistingRecord(supabase, String(table), String(id));
+      if (!deleteTarget) {
+        return res.status(404).json({ ok: false, error: 'Запись не найдена.' });
+      }
+      if (
+        String(deleteTarget.company_id || '') !== deleteSession.companyId ||
+        findForeignCompanyReference(deleteSession.companyId, [body.company_id, body.companyId])
+      ) {
+        return res.status(403).json({
+          ok: false,
+          code: 'TENANT_MISMATCH',
+          error: 'Межконтурный доступ запрещен (Cross-Tenant Access Denied).',
         });
-        if (!rbacCheck.allowed) {
-          return res.status(403).json({ error: rbacCheck.reason });
-        }
+      }
+      const deleteRbac = evaluateMutationAccess({
+        actor: deleteSession.actor,
+        table: String(table),
+        operation: 'delete',
+        record:
+          table === 'organization_nodes' ? normalizeNodeRowInternal(deleteTarget) : deleteTarget,
+      });
+      if (!deleteRbac.allowed) {
+        return res.status(403).json({ ok: false, code: 'RBAC_DENIED', error: deleteRbac.reason });
       }
 
       if (!supabase) {

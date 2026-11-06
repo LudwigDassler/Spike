@@ -30,7 +30,30 @@ export default defineConfig(({ mode }) => {
     '';
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'tedcloud-safe-auth-fetch',
+        transform(code, id) {
+          const cleanId = id.replace(/\\/g, '/');
+          if (
+            !cleanId.includes('/src/') ||
+            cleanId.includes('/node_modules/') ||
+            cleanId.endsWith('/src/lib/apiSession.ts') ||
+            cleanId.includes('/src/server/')
+          ) {
+            return null;
+          }
+          if (!/\bfetch\s*\(/.test(code)) return null;
+          const transformed = code.replace(
+            /(?<![.\w$])fetch\s*\(/g,
+            '((typeof window !== "undefined" && window.__tedcloudFetch) || fetch)('
+          );
+          return transformed !== code ? { code: transformed, map: null } : null;
+        },
+      },
+    ],
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     define: {
       'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(supabaseUrl),

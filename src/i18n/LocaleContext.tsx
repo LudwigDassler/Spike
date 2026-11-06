@@ -1,17 +1,101 @@
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+} from 'react';
 import { formatRoleOrDept } from '../utils/enterpriseLogic';
 
 export type SupportedLocale = 'ru' | 'en';
 export type SupportedCurrency = 'RUB' | 'USD' | 'EUR';
 export type SupportedTheme = 'dark' | 'light';
+/** What the user picked. 'system' follows the OS setting (prefers-color-scheme). */
+export type ThemePreference = SupportedTheme | 'system';
+
+const THEME_STORAGE_KEY = 'tedcloud_theme';
+const THEME_META_COLORS: Record<SupportedTheme, string> = { light: '#F4F4F1', dark: '#0B0C10' };
+
+function readStoredThemePreference(): ThemePreference {
+  try {
+    const saved = (localStorage.getItem(THEME_STORAGE_KEY) || '').toLowerCase().trim();
+    if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+  } catch {}
+  return 'system';
+}
+
+function getSystemTheme(): SupportedTheme {
+  try {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
+/**
+ * Applies the theme classes to <html>/<body> synchronously. Transitions are frozen for
+ * two frames so every component flips at once instead of animating through mixed states.
+ */
+export function applyThemeToDocument(theme: SupportedTheme, animate = false) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  const body = document.body;
+  if (!animate) root.classList.add('tc-theme-switching');
+  const isLight = theme === 'light';
+  for (const el of [root, body]) {
+    if (!el) continue;
+    el.classList.toggle('theme-light', isLight);
+    el.classList.toggle('theme-dark', !isLight);
+    el.classList.toggle('dark', !isLight);
+  }
+  root.style.colorScheme = theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', THEME_META_COLORS[theme]);
+  if (!animate) {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => root.classList.remove('tc-theme-switching'))
+    );
+  }
+}
 export type AppLanguage = SupportedLocale;
 export type AppCurrency = SupportedCurrency;
 
-const CURRENCY_RATES_FROM_RUB: Record<SupportedCurrency, number> = {
+/** Запасные курсы, если /api/fx-rates недоступен (сколько единиц валюты за 1 ₽). */
+const FALLBACK_RATES_FROM_RUB: Record<SupportedCurrency, number> = {
   RUB: 1,
   USD: 1 / 92.5,
-  EUR: 1 / 100.0,
+  EUR: 1 / 100.5,
 };
+
+const FX_CACHE_KEY = 'tedcloud_fx_rates';
+const FX_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+interface FxCache {
+  rates: Record<SupportedCurrency, number>;
+  date: string | null;
+  fetchedAt: number;
+}
+
+function isValidRates(r: any): r is Record<SupportedCurrency, number> {
+  return (
+    r &&
+    Number(r.RUB) === 1 &&
+    Number(r.USD) > 0 &&
+    Number(r.EUR) > 0 &&
+    Number.isFinite(Number(r.USD)) &&
+    Number.isFinite(Number(r.EUR))
+  );
+}
+
+function readFxCache(): FxCache | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || 'null');
+    if (parsed && isValidRates(parsed.rates)) return parsed as FxCache;
+  } catch {}
+  return null;
+}
 
 type Dictionary = Record<string, string>;
 
@@ -863,7 +947,11 @@ interface LocaleContextValue {
   locale: SupportedLocale;
   language: SupportedLocale;
   currency: SupportedCurrency;
+  /** Resolved theme actually shown on screen. */
   theme: SupportedTheme;
+  /** User choice, including 'system'. */
+  themePreference: ThemePreference;
+  setThemePreference: (next: ThemePreference) => void;
   setLocale: (loc: SupportedLocale) => void;
   setLanguage: (loc: SupportedLocale) => void;
   setCurrency: (cur: SupportedCurrency) => void;
@@ -900,39 +988,65 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   });
 
-  const [theme, setThemeState] = useState<SupportedTheme>(() => {
-    try {
-      const saved = (localStorage.getItem('tedcloud_theme') || '')
-        .toLowerCase()
-        .trim() as SupportedTheme;
-      return saved === 'light' || saved === 'dark' ? saved : 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
+  // Курсы валют ЦБ РФ: сначала кэш браузера (или запасные значения), затем /api/fx-rates.
+  const [fxRates, setFxRates] = useState<Record<SupportedCurrency, number>>(
+    () => readFxCache()?.rates || FALLBACK_RATES_FROM_RUB
+  );
 
   useEffect(() => {
+    const cachedFx = readFxCache();
+    if (cachedFx && Date.now() - cachedFx.fetchedAt < FX_CACHE_TTL_MS) return;
+    let cancelled = false;
+    fetch('/api/fx-rates')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data || !isValidRates(data.rates)) return;
+        setFxRates(data.rates);
+        // Запасные значения сервера не кэшируем надолго — попробуем снова при следующей загрузке.
+        if (data.source === 'cbr') {
+          try {
+            const entry: FxCache = { rates: data.rates, date: data.date ?? null, fetchedAt: Date.now() };
+            localStorage.setItem(FX_CACHE_KEY, JSON.stringify(entry));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>(
+    readStoredThemePreference
+  );
+  const [systemTheme, setSystemTheme] = useState<SupportedTheme>(getSystemTheme);
+  const theme: SupportedTheme = themePreference === 'system' ? systemTheme : themePreference;
+
+  // Follow OS-level theme changes while the user is on "system".
+  useEffect(() => {
+    let mql: MediaQueryList | null = null;
     try {
-      const root = document.documentElement;
-      const body = document.body;
-      if (theme === 'light') {
-        root.classList.remove('dark', 'theme-dark');
-        root.classList.add('theme-light');
-        body.classList.remove('dark', 'theme-dark');
-        body.classList.add('theme-light');
-        root.style.backgroundColor = '#F4F4F1';
-        body.style.backgroundColor = '#F4F4F1';
-        body.style.color = '#0F172A';
-      } else {
-        root.classList.add('dark', 'theme-dark');
-        root.classList.remove('theme-light');
-        body.classList.add('dark', 'theme-dark');
-        body.classList.remove('theme-light');
-        root.style.backgroundColor = '#0B0C10';
-        body.style.backgroundColor = '#0B0C10';
-        body.style.color = '#F1F5F9';
-      }
-    } catch {}
+      mql = window.matchMedia('(prefers-color-scheme: light)');
+    } catch {
+      return;
+    }
+    const onChange = () => setSystemTheme(mql!.matches ? 'light' : 'dark');
+    mql.addEventListener?.('change', onChange);
+    return () => mql?.removeEventListener?.('change', onChange);
+  }, []);
+
+  // Keep several open tabs in sync.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === THEME_STORAGE_KEY) setThemePreferenceState(readStoredThemePreference());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Layout effect → classes are in place before the browser paints the new frame.
+  useLayoutEffect(() => {
+    applyThemeToDocument(theme);
   }, [theme]);
 
   const setLocale = useCallback((next: SupportedLocale | string) => {
@@ -954,24 +1068,26 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch {}
   }, []);
 
-  const setTheme = useCallback((next: SupportedTheme | string) => {
-    const normalized: SupportedTheme =
-      String(next || '').toLowerCase().trim() === 'light' ? 'light' : 'dark';
-    setThemeState(normalized);
+  const setThemePreference = useCallback((next: ThemePreference | string) => {
+    const raw = String(next || '').toLowerCase().trim();
+    const normalized: ThemePreference =
+      raw === 'light' || raw === 'dark' || raw === 'system' ? raw : 'system';
+    setThemePreferenceState(normalized);
     try {
-      localStorage.setItem('tedcloud_theme', normalized);
+      localStorage.setItem(THEME_STORAGE_KEY, normalized);
     } catch {}
   }, []);
 
+  const setTheme = useCallback(
+    (next: SupportedTheme | string) => {
+      setThemePreference(String(next || '').toLowerCase().trim() === 'light' ? 'light' : 'dark');
+    },
+    [setThemePreference]
+  );
+
   const toggleTheme = useCallback(() => {
-    setThemeState((prev) => {
-      const next: SupportedTheme = prev === 'light' ? 'dark' : 'light';
-      try {
-        localStorage.setItem('tedcloud_theme', next);
-      } catch {}
-      return next;
-    });
-  }, []);
+    setThemePreference(theme === 'light' ? 'dark' : 'light');
+  }, [theme, setThemePreference]);
 
   const t = useCallback(
     (key: string): string => {
@@ -1000,7 +1116,7 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const formatMoney = useCallback(
     (amountInRub: number): string => {
       const safeRub = Number.isFinite(amountInRub) ? amountInRub : 0;
-      const rate = CURRENCY_RATES_FROM_RUB[currency] || 1;
+      const rate = fxRates[currency] || 1;
       const converted = safeRub * rate;
       const intlLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
 
@@ -1010,7 +1126,7 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         maximumFractionDigits: 0,
       }).format(converted);
     },
-    [currency, locale]
+    [currency, locale, fxRates]
   );
 
   const value = useMemo<LocaleContextValue>(
@@ -1019,6 +1135,8 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       language: locale,
       currency,
       theme,
+      themePreference,
+      setThemePreference,
       setLocale,
       setLanguage: setLocale,
       setCurrency,
@@ -1029,7 +1147,20 @@ export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       formatMoney,
       formatCurrency: formatMoney,
     }),
-    [locale, currency, theme, setLocale, setCurrency, setTheme, toggleTheme, t, formatRole, formatMoney]
+    [
+      locale,
+      currency,
+      theme,
+      themePreference,
+      setThemePreference,
+      setLocale,
+      setCurrency,
+      setTheme,
+      toggleTheme,
+      t,
+      formatRole,
+      formatMoney,
+    ]
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;

@@ -1,7 +1,13 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { Suspense, lazy, useEffect, useState, useCallback, useRef } from 'react';
 import { Loader2, AlertTriangle, RefreshCw, LogOut } from 'lucide-react';
-import { Dashboard } from './components/Dashboard';
-import { AuthGate } from './components/AuthGate';
+// Экран входа и рабочее пространство никогда не показываются одновременно —
+// грузим их отдельными чанками, чтобы первая загрузка была легче.
+const Dashboard = lazy(() =>
+  import('./components/Dashboard').then((m) => ({ default: m.Dashboard }))
+);
+const AuthGate = lazy(() =>
+  import('./components/AuthGate').then((m) => ({ default: m.AuthGate }))
+);
 import {
   AuditLogRecord,
   BillingInvoiceRecord,
@@ -14,6 +20,11 @@ import {
 } from './types/database';
 import { LocaleProvider, useLocale } from './i18n/LocaleContext';
 import { formatError } from './utils/enterpriseLogic';
+import {
+  clearSessionToken,
+  rememberSessionTokenFrom,
+  SESSION_EXPIRED_EVENT,
+} from './lib/apiSession';
 import {
   installGlobalErrorTelemetry,
   recordImmutableAuditEntry,
@@ -71,6 +82,7 @@ class GlobalErrorBoundary extends React.Component<
       localStorage.removeItem(SESSION_COMPANY_ID_KEY);
       localStorage.removeItem('tedcloud_custom_departments');
     } catch {}
+    clearSessionToken();
     window.location.href = window.location.pathname;
   };
 
@@ -186,9 +198,6 @@ function AppContent() {
       const storedProfileId = hasUrlAutoAuth
         ? null
         : localStorage.getItem(SESSION_PROFILE_ID_KEY);
-      const storedCompanyId = hasUrlAutoAuth
-        ? null
-        : localStorage.getItem(SESSION_COMPANY_ID_KEY);
 
       const resolvedChatId = urlTgId || urlChatId || storedChatId || null;
       if (urlTgId || urlChatId) {
@@ -198,12 +207,10 @@ function AppContent() {
       }
       setActiveChatId((prev) => (prev === resolvedChatId ? prev : resolvedChatId));
 
+      // Профиль и компания определяются сервером по токену в заголовке Authorization.
+      // В запрос передаётся только персональный инвайт-код из ссылки (он сам является секретом входа).
       const queryParams = new URLSearchParams();
       if (urlInvite) queryParams.set('invite', urlInvite);
-      if (urlTgId) queryParams.set('tg_id', urlTgId);
-      if (resolvedChatId) queryParams.set('chatId', resolvedChatId);
-      if (storedProfileId) queryParams.set('profileId', storedProfileId);
-      if (storedCompanyId) queryParams.set('company_id', storedCompanyId);
 
       const qs = queryParams.toString();
       const endpoint = qs ? `/api/db?${qs}` : '/api/db';
@@ -216,6 +223,23 @@ function AppContent() {
       });
 
       const payload = await safeParseJson(response);
+
+      if (response.status === 401) {
+        // Нет действующей сессии — показываем экран входа без ошибки.
+        clearSessionToken();
+        try {
+          localStorage.removeItem(SESSION_PROFILE_ID_KEY);
+          localStorage.removeItem(SESSION_COMPANY_ID_KEY);
+        } catch {}
+        if (typeof payload?.botUsername === 'string' && payload.botUsername.trim()) {
+          const cleanBot = payload.botUsername.replace(/^@/, '').trim();
+          setServerBotUsername((prev) => (prev === cleanBot ? prev : cleanBot));
+        }
+        setCurrentProfile(null);
+        return;
+      }
+
+      rememberSessionTokenFrom(payload);
 
       if (!response.ok || payload?.error) {
         throw new Error(formatError(payload?.error || `HTTP ${response.status}`));
@@ -462,6 +486,18 @@ function AppContent() {
   useEffect(() => {
     loadWorkspaceData(true);
   }, [loadWorkspaceData]);
+
+  useEffect(() => {
+    const onSessionExpired = () => {
+      try {
+        localStorage.removeItem(SESSION_PROFILE_ID_KEY);
+        localStorage.removeItem(SESSION_COMPANY_ID_KEY);
+      } catch {}
+      setCurrentProfile(null);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpired);
+  }, []);
 
   useEffect(() => {
     if (!currentProfile?.id) return;
@@ -915,6 +951,7 @@ function AppContent() {
       localStorage.removeItem(SESSION_COMPANY_ID_KEY);
       localStorage.removeItem('tedcloud_custom_departments');
     } catch {}
+    clearSessionToken();
     const url = new URL(window.location.href);
     url.searchParams.delete('chatId');
     url.searchParams.delete('tg_id');
@@ -933,13 +970,19 @@ function AppContent() {
     setAuditLogs([]);
   }, []);
 
+  const loadingScreen = (
+    <div
+      role="status"
+      aria-live="polite"
+      className="min-h-screen bg-[#09090B] text-white flex flex-col items-center justify-center gap-3 font-sans"
+    >
+      <Loader2 className="w-6 h-6 animate-spin text-[#A1A1AA]" />
+      <p className="text-xs text-[#8E8E93]">{t('system.loading')}</p>
+    </div>
+  );
+
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#09090B] text-white flex flex-col items-center justify-center gap-3 font-sans">
-        <Loader2 className="w-6 h-6 animate-spin text-[#A1A1AA]" />
-        <p className="text-xs text-[#8E8E93]">{t('system.loading')}</p>
-      </div>
-    );
+    return loadingScreen;
   }
 
   if (
@@ -984,6 +1027,7 @@ function AppContent() {
 
   if (!currentProfile) {
     return (
+      <Suspense fallback={loadingScreen}>
       <AuthGate
         existingNodes={nodes}
         nodes={nodes}
@@ -993,10 +1037,12 @@ function AppContent() {
         company={company}
         onAuthenticated={handleAuthenticated}
       />
+      </Suspense>
     );
   }
 
   return (
+    <Suspense fallback={loadingScreen}>
     <Dashboard
       company={company}
       currentProfile={currentProfile}
@@ -1018,6 +1064,7 @@ function AppContent() {
       onCreateWorkShift={handleCreateWorkShift}
       onResetSession={handleResetSession}
     />
+    </Suspense>
   );
 }
 
